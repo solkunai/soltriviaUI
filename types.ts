@@ -4,7 +4,9 @@ export enum View {
   RANKS = 'RANKS',
   PLAY = 'PLAY',
   QUESTS = 'QUESTS',
-  PROFILE = 'PROFILE'
+  PROFILE = 'PROFILE',
+  QUIZ = 'QUIZ',
+  RESULTS = 'RESULTS'
 }
 
 export interface Player {
@@ -25,4 +27,11 @@ export interface Quest {
   reward: string;
   status: 'LOCKED' | 'CLAIM' | 'GO';
   icon?: string;
+}
+
+export interface Question {
+  id: number;
+  text: string;
+  options: string[];
+  correctAnswer: number;
 }

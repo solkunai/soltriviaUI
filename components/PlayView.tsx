@@ -2,10 +2,11 @@
 import React from 'react';
 
 interface PlayViewProps {
+  onStartQuiz: () => void;
   onOpenBuyLives: () => void;
 }
 
-const PlayView: React.FC<PlayViewProps> = ({ onOpenBuyLives }) => {
+const PlayView: React.FC<PlayViewProps> = ({ onStartQuiz, onOpenBuyLives }) => {
   return (
     <div className="h-full flex flex-col items-center justify-center p-6 md:p-12 relative overflow-hidden">
       {/* Dynamic Background Elements */}
@@ -36,7 +37,10 @@ const PlayView: React.FC<PlayViewProps> = ({ onOpenBuyLives }) => {
 
       {/* Big Play CTA */}
       <div className="flex flex-col gap-4 w-full max-w-md relative z-10">
-        <button className="w-full bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#10b981] hover:brightness-110 active:scale-95 transition-all duration-300 py-6 md:py-8 px-10 italic font-[1000] text-2xl md:text-4xl text-white shadow-[0_0_40px_rgba(59,130,246,0.3)] group overflow-hidden relative border border-white/20">
+        <button 
+          onClick={onStartQuiz}
+          className="w-full bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#10b981] hover:brightness-110 active:scale-95 transition-all duration-300 py-6 md:py-8 px-10 italic font-[1000] text-2xl md:text-4xl text-white shadow-[0_0_40px_rgba(59,130,246,0.3)] group overflow-hidden relative border border-white/20"
+        >
           <div className="absolute inset-0 bg-white/10 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
           START TRIVIA
         </button>
