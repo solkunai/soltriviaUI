@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 interface GuideModalProps {
@@ -19,7 +18,7 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 backdrop-blur-3xl bg-black/90 animate-fade-in overflow-hidden">
-      <div className="relative w-full max-w-lg bg-[#0D0D0D] border border-white/10 shadow-[0_0_100px_rgba(0,0,0,1)] overflow-hidden max-h-[85vh] flex flex-col rounded-2xl">
+      <div className="relative w-full max-w-md md:max-w-lg bg-[#0D0D0D] border border-white/10 shadow-[0_0_100px_rgba(0,0,0,1)] overflow-hidden max-h-[85vh] flex flex-col rounded-2xl">
         {/* Color Strip */}
         <div className="h-1.5 w-full bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#10b981]"></div>
         
