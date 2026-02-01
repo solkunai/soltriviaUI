@@ -1,85 +1,147 @@
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface HomeViewProps {
+  lives: number;
   onEnterTrivia: () => void;
   onOpenGuide: () => void;
   onOpenBuyLives: () => void;
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ onEnterTrivia, onOpenGuide, onOpenBuyLives }) => {
+const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives }) => {
+  const [prizePool, setPrizePool] = useState(25402.15);
+  const [playersEntered, setPlayersEntered] = useState(12482);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPrizePool(prev => prev + (Math.random() > 0.5 ? 0.05 : 0));
+      setPlayersEntered(prev => prev + (Math.random() > 0.8 ? 1 : 0));
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="flex flex-col h-full bg-[#050505] overflow-y-auto custom-scrollbar relative px-6 md:px-12 lg:px-24">
-      {/* Background Decor */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden select-none opacity-[0.02] z-0">
-        <div className="absolute top-[10%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[300px] md:text-[500px] font-black italic leading-none">88</div>
-      </div>
+      {/* Top Header Row - Mobile: Integrated Balance & Quick Buy */}
+      <div className="flex flex-col md:flex-row md:justify-end items-stretch md:items-center pt-4 md:pt-12 z-20 gap-3 md:gap-4 w-full safe-top">
+        
+        {/* Mobile-Only Balance Display: Enhanced with Buy Lives Button */}
+        <div className="md:hidden flex items-center justify-between bg-[#0A0A0A] border border-white/5 p-4 rounded-2xl shadow-xl backdrop-blur-md mb-2">
+            <div>
+              <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest block mb-0.5 italic">YOUR BALANCE</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xl font-[1000] italic text-white leading-none">12.42</span>
+                <span className="text-[#14F195] text-[9px] font-[1000] italic uppercase">SOL</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="w-[1px] h-8 bg-white/5"></div>
+              <div className="text-right flex flex-col items-end">
+                <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest block mb-0.5 italic">LIVES</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[#FF3131] text-xl font-[1000] italic leading-none">{lives.toString().padStart(2, '0')}</span>
+                  <button 
+                    onClick={onOpenBuyLives}
+                    className="px-2 py-1 bg-[#FF3131] text-white text-[8px] font-black uppercase italic rounded-sm shadow-[0_0_15px_rgba(255,49,49,0.3)] active:scale-95 transition-all"
+                  >
+                    BUY MORE
+                  </button>
+                </div>
+              </div>
+            </div>
+        </div>
 
-      {/* Top Header Row */}
-      <div className="flex justify-end items-center pt-8 md:pt-12 z-20">
-        <button 
-          onClick={onOpenGuide}
-          className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-full transition-all group backdrop-blur-md"
-        >
-          <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 group-hover:text-white">HOW TO PLAY</span>
-          <div className="w-4 h-4 rounded-full bg-[#14F195]/20 flex items-center justify-center text-[#14F195] font-black text-[9px] italic">?</div>
-        </button>
+        <div className="flex justify-between md:justify-end items-center gap-3 w-full md:w-auto">
+          {/* How to Play */}
+          <button 
+            onClick={onOpenGuide}
+            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-[#14F195] hover:bg-[#14F195]/90 h-9 md:h-10 px-3 md:px-6 rounded-full transition-all group shadow-[0_0_15px_rgba(20,241,149,0.15)] active:scale-95"
+          >
+            <span className="text-[8px] md:text-[10px] font-black uppercase tracking-wider text-black">HOW TO PLAY</span>
+            <div className="flex w-4 h-4 md:w-5 md:h-5 rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] items-center justify-center text-white font-black text-[9px] md:text-[10px] italic shadow-sm">?</div>
+          </button>
+
+          {/* Connect Wallet */}
+          <button 
+            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-[#14F195] hover:bg-[#14F195]/90 h-9 md:h-10 px-3 md:px-6 rounded-full transition-all group shadow-[0_0_15px_rgba(20,241,149,0.15)] active:scale-95"
+          >
+            <svg className="w-3.5 h-3.5 md:w-4 md:h-4 text-black shrink-0" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M21 18H3V6h18v12zm-2-2V8H5v8h14zM16 11h2v2h-2v-2z" />
+            </svg>
+            <span className="text-[8px] md:text-[10px] font-black uppercase tracking-wider text-black">
+              <span className="hidden sm:inline">Connect Wallet</span>
+              <span className="sm:hidden">Connect</span>
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Main Content Container */}
-      <div className="max-w-6xl mx-auto w-full flex-1 flex flex-col justify-center pb-32 md:pb-12 z-10">
+      <div className="max-w-6xl mx-auto w-full flex-1 flex flex-col justify-center pb-32 md:pb-12 z-10 pt-6 md:pt-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-20 items-center">
           
           {/* Left Side: Branding & CTA */}
           <div className="lg:col-span-7 flex flex-col items-start text-left">
-            <div className="mb-8 md:mb-10">
-              <h1 className="text-[80px] sm:text-[100px] md:text-[130px] leading-[0.7] font-[1000] italic text-white uppercase tracking-tighter ml-[-4px]">
+            <div className="mb-6 md:mb-10">
+              <h1 className="text-[64px] sm:text-[100px] md:text-[130px] leading-[0.7] font-[1000] italic text-white uppercase tracking-tighter ml-[-4px]">
                 SOL
               </h1>
-              <h1 className="text-[80px] sm:text-[100px] md:text-[130px] leading-[0.9] font-[1000] italic sol-gradient-text uppercase tracking-tighter ml-[-4px]">
+              <h1 className="text-[64px] sm:text-[100px] md:text-[130px] leading-[0.9] font-[1000] italic sol-gradient-text uppercase tracking-tighter ml-[-4px]">
                 TRIVIA
               </h1>
-              <p className="text-zinc-500 font-black uppercase tracking-[0.4em] text-xs mt-6 max-w-sm">
+              <div className="h-0.5 w-16 md:w-32 bg-[#00FFA3] opacity-30 mt-4 shadow-[0_0_10px_#00FFA3]"></div>
+              <p className="text-zinc-300 font-black uppercase tracking-[0.3em] text-[10px] md:text-[11px] mt-6 max-w-sm leading-relaxed italic">
                 THE HIGH-STAKES INTELLIGENCE TRIVIA ON SOLANA
               </p>
             </div>
 
-            {/* Play Now Button - High Fidelity Refinement */}
-            <button 
-              onClick={onEnterTrivia}
-              className="w-full sm:max-w-md h-24 bg-gradient-to-r from-[#9945FF] via-[#3b82f6] to-[#14F195] rounded-xl flex items-center justify-between px-10 active:scale-[0.98] transition-all group shadow-[0_15px_40px_-10px_rgba(153,69,255,0.4)] hover:shadow-[0_20px_60px_-10px_rgba(20,241,149,0.5)] border-t border-white/20 relative overflow-hidden"
-            >
-              {/* Animated Sheen Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
-              
-              <div className="flex flex-col items-start relative z-10">
-                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/60 mb-1 group-hover:text-white/80 transition-colors">INITIALIZE ARENA</span>
-                <div className="text-white text-3xl md:text-4xl font-[1000] italic leading-none uppercase tracking-tighter">
-                  PLAY NOW
+            {/* Play Now Area */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full sm:max-w-2xl">
+              <button 
+                onClick={onEnterTrivia}
+                className="flex-1 h-20 md:h-24 bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#14F195] rounded-full flex items-center justify-between px-8 md:px-10 active:scale-[0.98] transition-all group shadow-[0_15px_40px_-10px_rgba(153,69,255,0.4)] hover:shadow-[0_20px_60px_-10px_rgba(20,241,149,0.5)] border-t border-white/20 relative overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
+                
+                <div className="flex flex-col items-start relative z-10">
+                  <span className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] text-white/60 mb-1 group-hover:text-white/80 transition-colors">INITIALIZE ARENA</span>
+                  <div className="text-white text-2xl md:text-4xl font-[1000] italic leading-none uppercase tracking-tighter">
+                    PLAY NOW
+                  </div>
+                </div>
+                
+                <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center transition-all group-hover:bg-white/20 group-hover:scale-110 relative z-10">
+                  <svg className="w-5 h-5 md:w-6 md:h-6 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                </div>
+              </button>
+
+              <div className="bg-[#0A0A0A] border border-white/5 rounded-xl p-4 flex flex-col justify-center gap-2 min-w-[180px] shadow-xl">
+                <div>
+                   <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic leading-none block mb-1">TRIVIA POOL</span>
+                   <div className="flex items-baseline gap-1">
+                      <span className="text-[#00FFA3] text-lg font-black italic tabular-nums leading-none">
+                        {prizePool.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                      <span className="text-[#00FFA3] text-[8px] font-black italic">SOL</span>
+                   </div>
+                </div>
+                <div className="pt-2 border-t border-white/5">
+                   <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic leading-none block mb-1">PLAYERS ENTERED</span>
+                   <span className="text-white text-base font-black italic tabular-nums leading-none">
+                     {playersEntered.toLocaleString()}
+                   </span>
                 </div>
               </div>
-              
-              <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center transition-all group-hover:bg-white/20 group-hover:scale-110 relative z-10">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                </svg>
-              </div>
-            </button>
+            </div>
           </div>
 
-          {/* Right Side: Stats Grid */}
-          <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
+          {/* Right Side: Secondary Stats Grid */}
+          <div className="hidden lg:grid lg:col-span-5 grid-cols-1 gap-4">
             
-            {/* Balance Stat */}
-            <div className="bg-[#0A0A0A] border border-white/5 p-6 rounded-xl min-h-[140px] flex flex-col justify-between shadow-xl backdrop-blur-md relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-[#14F195]/5 blur-3xl rounded-full translate-x-12 -translate-y-12"></div>
-              <div className="w-10 h-10 bg-[#14F195]/5 border border-[#14F195]/20 rounded-lg flex items-center justify-center text-[#14F195]">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                </svg>
-              </div>
-              <div className="mt-6">
-                <span className="text-zinc-600 text-[10px] font-black uppercase tracking-widest block mb-1">Balance</span>
+            <div className="bg-[#0A0A0A] border border-white/5 p-6 rounded-xl min-h-[140px] flex flex-col justify-center shadow-xl backdrop-blur-md relative overflow-hidden group">
+              <div>
+                <span className="text-zinc-300 text-[10px] font-black uppercase tracking-widest block mb-1 italic">Balance</span>
                 <div className="flex items-baseline gap-2">
                   <span className="text-[28px] font-[1000] italic text-white">12.42</span>
                   <span className="text-[#14F195] text-xs font-[1000] italic uppercase">SOL</span>
@@ -87,53 +149,19 @@ const HomeView: React.FC<HomeViewProps> = ({ onEnterTrivia, onOpenGuide, onOpenB
               </div>
             </div>
 
-            {/* Lives Stat */}
-            <button 
-              onClick={onOpenBuyLives}
-              className="bg-[#0A0A0A] border border-white/5 p-6 rounded-xl min-h-[140px] flex flex-col justify-between shadow-xl text-left hover:border-[#FF3131]/30 transition-all group relative overflow-hidden"
-            >
-              <div className="absolute top-6 right-6 text-[9px] font-black text-[#FF3131] opacity-60 group-hover:opacity-100 transition-opacity uppercase tracking-widest flex items-center gap-1">
-                REFILL <span className="text-lg leading-none">+</span>
-              </div>
-              <div className="w-10 h-10 bg-[#FF3131]/5 border border-[#FF3131]/20 rounded-lg flex items-center justify-center text-[#FF3131]">
-                 <svg className="w-6 h-6 fill-[#FF3131]" viewBox="0 0 24 24">
-                  <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                </svg>
-              </div>
-              <div className="mt-6">
-                <span className="text-zinc-600 text-[10px] font-black uppercase tracking-widest block mb-1">Rolling Lives</span>
-                <div className="text-[28px] font-[1000] italic text-[#FF3131]">03</div>
-              </div>
-            </button>
-
-            {/* Global Ranking Stat */}
-            <div className="bg-[#0A0A0A] border border-white/5 p-6 rounded-xl min-h-[140px] flex flex-col justify-between shadow-xl sm:col-span-2 lg:col-span-1">
-              <div className="w-10 h-10 bg-[#14F195]/5 border border-[#14F195]/20 rounded-lg flex items-center justify-center text-[#14F195]">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                </svg>
-              </div>
-              <div className="mt-6">
-                <span className="text-zinc-600 text-[10px] font-black uppercase tracking-widest block mb-1">Global Standing</span>
-                <div className="flex items-center gap-4">
-                  <span className="text-[28px] font-[1000] italic text-white">#842</span>
-                  <div className="h-1 flex-1 bg-white/5 rounded-full overflow-hidden">
-                    <div className="h-full w-[65%] bg-[#14F195] shadow-[0_0_10px_#14F195]"></div>
+            <div className="bg-[#0A0A0A] border border-white/5 p-6 rounded-xl min-h-[140px] flex flex-col justify-center shadow-xl text-left hover:border-[#FF3131]/30 transition-all group relative overflow-hidden">
+              <div>
+                <span className="text-zinc-300 text-[10px] font-black uppercase tracking-widest block mb-1 italic">VITALITY LIVES</span>
+                <div className="flex items-center justify-between">
+                  <div className="text-[28px] font-[1000] italic text-[#FF3131] tabular-nums">
+                    {lives.toString().padStart(2, '0')}
                   </div>
+                  <button 
+                    onClick={onOpenBuyLives}
+                    className="px-5 py-2.5 bg-[#FF3131] hover:bg-[#FF3131]/90 text-white text-[10px] font-black uppercase italic rounded-full shadow-[0_0_20px_rgba(255,49,49,0.3)] hover:scale-105 active:scale-95 transition-all border border-white/10"
+                  >
+                    BUY MORE LIVES
+                  </button>
                 </div>
               </div>
             </div>
-
-          </div>
-        </div>
-      </div>
-
-      {/* Floating Mascot Decor - Repositioned for web */}
-      <div className="fixed right-4 bottom-24 w-[280px] lg:w-[450px] opacity-10 lg:opacity-30 pointer-events-none z-0 floating hidden md:block">
-        <img src="brainy-gaming.png" alt="" className="w-full h-auto" onError={(e) => (e.currentTarget.style.display = 'none')} />
-      </div>
-    </div>
-  );
-};
-
-export default HomeView;
