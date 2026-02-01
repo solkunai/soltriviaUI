@@ -47,7 +47,7 @@ const App: React.FC = () => {
             onOpenBuyLives={() => setIsBuyLivesOpen(true)}
           />
         );
-      case View.RANKS:
+      case View.LEADERBOARD:
         return <LeaderboardView />;
       case View.PLAY:
         return <PlayView onStartQuiz={() => setCurrentView(View.QUIZ)} onOpenBuyLives={() => setIsBuyLivesOpen(true)} />;

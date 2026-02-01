@@ -51,11 +51,8 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile }) => {
         />
       </div>
 
-      {/* Header Section - Fixed 'D' clipping */}
+      {/* Header Section */}
       <div className="relative z-10 mb-16">
-        <div className="inline-block bg-[#00FFA3] text-black px-3 py-0.5 font-[1000] text-[11px] italic mb-4 tracking-[0.2em]">
-          LOG: V2.5
-        </div>
         <h1 className="text-6xl sm:text-7xl md:text-[110px] font-[1000] italic leading-[0.82] tracking-tight uppercase text-white mb-8 pr-12">
           MISSION<br />
           <span className="sol-gradient-text pr-6 inline-block">BOARD</span>

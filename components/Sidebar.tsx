@@ -24,7 +24,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
       label: 'PLAY', 
       isPlayButton: true 
     },
-    { id: View.RANKS, label: 'RANKS', icon: (color: string) => (
+    { id: View.LEADERBOARD, label: 'LEADERBOARD', icon: (color: string) => (
       <svg className="w-5 h-5" fill="none" stroke={color} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
       </svg>
@@ -38,26 +38,33 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
 
   return (
     <>
-      {/* Mobile Bottom Navigation - Replicating Screenshot Style */}
-      <nav className="md:hidden fixed bottom-6 left-6 right-6 bg-[#0A0A0A]/90 backdrop-blur-xl border border-white/5 grid grid-cols-5 h-[76px] z-[60] px-2 rounded-[24px] shadow-2xl items-center ring-1 ring-white/5">
+      {/* Mobile Bottom Navigation */}
+      <nav className="md:hidden fixed bottom-6 left-6 right-6 bg-[#0A0A0A]/95 backdrop-blur-3xl border border-white/5 grid grid-cols-5 h-[76px] z-[60] px-2 rounded-[28px] shadow-2xl items-center ring-1 ring-white/5">
         {navItems.map((item) => {
           const isActive = currentView === item.id;
           
           if (item.isPlayButton) {
             return (
-              <div key={item.id} className="relative flex flex-col items-center justify-center">
+              <div key={item.id} className="relative flex justify-center items-center h-full">
                 <button
                   onClick={() => setView(item.id)}
-                  className="absolute -top-11 flex flex-col items-center justify-center outline-none group"
+                  className="absolute bottom-1 flex flex-col items-center outline-none group -translate-y-3"
                 >
-                  <div className="w-16 h-16 bg-gradient-to-br from-[#818cf8] via-[#3b82f6] to-[#2dd4bf] rounded-full flex items-center justify-center shadow-[0_10px_30px_rgba(59,130,246,0.5)] border-[5px] border-[#0A0A0A] group-hover:scale-105 transition-transform">
-                    <div className="w-8 h-8 rounded-full border-[1.5px] border-white flex items-center justify-center pl-0.5">
-                        <svg className="w-3.5 h-3.5 text-white fill-white" viewBox="0 0 24 24">
-                            <path d="M8 5v14l11-7z" />
-                        </svg>
+                  <div className="relative flex items-center justify-center">
+                    {/* Concentric Aura Ring */}
+                    <div className="absolute w-[76px] h-[76px] bg-gradient-to-br from-[#8B5CF6]/20 to-[#2DD4BF]/20 rounded-full blur-[2px] z-0 opacity-60 group-hover:scale-110 transition-transform duration-300"></div>
+                    
+                    {/* Main Circle - Vibrant Gradient */}
+                    <div className="w-[60px] h-[60px] bg-gradient-to-br from-[#8B5CF6] via-[#3B82F6] to-[#2DD4BF] rounded-full flex items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative z-10 border border-white/10 active:scale-95 transition-all">
+                      {/* Play Triangle */}
+                      <svg className="w-6 h-6 text-white fill-current translate-x-[2px]" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                      </svg>
                     </div>
                   </div>
-                  <span className={`text-[10px] font-black tracking-tighter mt-1 ${isActive ? 'text-[#00FFA3]' : 'text-zinc-500'}`}>
+                  
+                  {/* PLAY Text */}
+                  <span className={`text-[11px] font-[1000] tracking-[0.25em] mt-[14px] uppercase transition-colors select-none ${isActive ? 'text-[#00FFA3]' : 'text-zinc-600 group-hover:text-zinc-400'}`}>
                     {item.label}
                   </span>
                 </button>
@@ -69,12 +76,12 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
             <button
               key={item.id}
               onClick={() => setView(item.id)}
-              className="flex flex-col items-center justify-center gap-1.5 w-full outline-none"
+              className="flex flex-col items-center justify-center gap-1.5 w-full h-full outline-none"
             >
               <div className="transition-all duration-300">
-                {item.icon && item.icon(isActive ? '#00FFA3' : '#52525b')}
+                {item.icon && item.icon(isActive ? '#00FFA3' : '#3f3f46')}
               </div>
-              <span className={`text-[9px] font-black tracking-tighter transition-colors ${isActive ? 'text-[#00FFA3]' : 'text-zinc-600'}`}>
+              <span className={`text-[9px] font-black tracking-tighter transition-colors select-none ${isActive ? 'text-[#00FFA3]' : 'text-zinc-600'}`}>
                 {item.label}
               </span>
             </button>
@@ -82,19 +89,48 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
         })}
       </nav>
 
-      {/* Desktop Sidebar (Simplified) */}
+      {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-[84px] h-full bg-[#050505] border-r border-white/10 flex-col items-center py-10 z-50">
-        <div className="flex flex-col gap-12">
-           {navItems.map(item => (
-              <button 
-                key={item.id} 
-                onClick={() => setView(item.id)}
-                className={`flex flex-col items-center gap-1.5 transition-all ${currentView === item.id ? 'text-[#00FFA3] scale-110' : 'text-zinc-600 hover:text-white'}`}
-              >
-                {item.icon && item.icon(currentView === item.id ? '#00FFA3' : 'currentColor')}
-                <span className="text-[9px] font-black">{item.label}</span>
-              </button>
-           ))}
+        <div className="flex flex-col gap-10 items-center">
+           {navItems.map(item => {
+              const isActive = currentView === item.id;
+              
+              if (item.isPlayButton) {
+                return (
+                  <button 
+                    key={item.id} 
+                    onClick={() => setView(item.id)}
+                    className="relative group outline-none flex flex-col items-center"
+                  >
+                    <div className="relative flex items-center justify-center">
+                      <div className="absolute w-[68px] h-[68px] bg-white/5 rounded-full blur-[1px] opacity-40 group-hover:scale-110 transition-transform"></div>
+                      
+                      <div className={`w-14 h-14 bg-gradient-to-br from-[#8B5CF6] via-[#3B82F6] to-[#2DD4BF] rounded-full flex items-center justify-center shadow-lg border border-white/10 group-hover:scale-110 transition-all relative z-10 ${isActive ? 'ring-2 ring-[#00FFA3] ring-offset-4 ring-offset-[#050505]' : ''}`}>
+                        <svg className="w-6 h-6 text-white fill-current translate-x-[2px]" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-[1000] uppercase tracking-[0.15em] mt-3 block text-center transition-colors select-none ${isActive ? 'text-[#00FFA3]' : 'text-zinc-500 group-hover:text-white'}`}>
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              }
+
+              return (
+                <button 
+                  key={item.id} 
+                  onClick={() => setView(item.id)}
+                  className={`flex flex-col items-center gap-1.5 transition-all outline-none ${isActive ? 'text-[#00FFA3] scale-110' : 'text-zinc-600 hover:text-white'}`}
+                >
+                  <div className="transition-all duration-300">
+                    {item.icon && item.icon(isActive ? '#00FFA3' : 'currentColor')}
+                  </div>
+                  <span className="text-[9px] font-black uppercase tracking-tighter select-none">{item.label}</span>
+                </button>
+              );
+           })}
         </div>
       </aside>
     </>

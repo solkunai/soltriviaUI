@@ -32,9 +32,6 @@ const LeaderboardView: React.FC = () => {
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 md:mb-24 gap-6 md:gap-8 relative z-10">
         <div className="w-full md:w-auto">
-          <h4 className="text-[#00FFA3] text-[9px] md:text-sm tracking-[0.4em] font-black uppercase mb-2 animate-pulse">
-            Protocol Apex Global Ranking
-          </h4>
           <h2 className="text-5xl md:text-7xl lg:text-8xl font-[1000] italic uppercase tracking-tighter text-white leading-[0.8] pr-8">
             TOP<br/><span className="sol-gradient-text pr-4 inline-block">RANKINGS</span>
           </h2>
