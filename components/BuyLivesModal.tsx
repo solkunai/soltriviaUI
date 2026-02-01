@@ -1,25 +1,31 @@
-
 import React from 'react';
 
 interface BuyLivesModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onBuySuccess?: () => void;
 }
 
-const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose }) => {
+const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuccess }) => {
   if (!isOpen) return null;
+
+  const handlePurchase = () => {
+    if (onBuySuccess) onBuySuccess();
+    onClose();
+  };
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 backdrop-blur-3xl bg-black/90 animate-fade-in overflow-hidden">
-      <div className="relative w-full max-w-sm bg-[#0D0D0D] border border-white/10 shadow-[0_0_100px_rgba(255,49,49,0.1)] overflow-hidden flex flex-col rounded-2xl">
+      {/* Use max-w-md for professional desktop size, w-full for mobile */}
+      <div className="relative w-full max-w-md bg-[#0D0D0D] border border-white/10 shadow-[0_0_100px_rgba(255,49,49,0.1)] overflow-hidden flex flex-col rounded-2xl">
         {/* Top Accent Strip */}
         <div className="h-1.5 w-full bg-gradient-to-r from-[#FF3131] via-[#818cf8] to-[#FF3131]"></div>
         
         <div className="p-8">
           <div className="flex justify-between items-start mb-8">
             <div>
-              <span className="text-[#FF3131] text-[10px] font-black tracking-[0.4em] uppercase mb-1 block">Refill Protocol</span>
-              <h2 className="text-3xl font-[1000] italic uppercase tracking-tighter text-white leading-none">EXTRA <span className="text-[#FF3131]">LIVES</span></h2>
+              <span className="text-[#FF3131] text-[10px] font-black tracking-[0.4em] uppercase mb-1 block italic">Neural Restoration</span>
+              <h2 className="text-3xl font-[1000] italic uppercase tracking-tighter text-white leading-none">VITALITY <span className="text-[#FF3131]">SYNC</span></h2>
             </div>
             <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors p-2">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -39,26 +45,29 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose }) => {
           </div>
 
           <div className="text-center mb-8">
-              <p className="text-zinc-500 text-[11px] font-black uppercase tracking-widest mb-4">
+              <p className="text-zinc-300 text-[11px] font-black uppercase tracking-widest mb-4 italic">
                 Unlock multi-entry access. Unused lives roll over and can be used for any future trivia round.
               </p>
               <div className="bg-black/40 border border-white/5 p-4 rounded-xl mb-6">
                 <div className="flex justify-between items-center mb-2">
-                    <span className="text-zinc-600 text-[10px] font-black uppercase">Service</span>
+                    <span className="text-zinc-300 text-[10px] font-black uppercase italic">Service</span>
                     <span className="text-white font-black text-sm italic tracking-tighter">3 ROLLING LIVES</span>
                 </div>
                 <div className="flex justify-between items-center">
-                    <span className="text-zinc-600 text-[10px] font-black uppercase">Cost</span>
+                    <span className="text-zinc-300 text-[10px] font-black uppercase italic">Cost</span>
                     <span className="text-[#00FFA3] font-black text-sm italic tracking-tighter">0.03 SOL</span>
                 </div>
               </div>
           </div>
 
-          <button className="w-full py-5 bg-[#FF3131] text-white font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_0_30px_rgba(255,49,49,0.4)] active:scale-95 transition-all">
-            CONFIRM PURCHASE
+          <button 
+            onClick={handlePurchase}
+            className="w-full py-5 bg-[#FF3131] text-white font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_0_30px_rgba(255,49,49,0.4)] active:scale-95 transition-all rounded-sm"
+          >
+            PURCHASE LIVES
           </button>
           
-          <p className="text-[8px] text-zinc-600 text-center font-black uppercase tracking-[0.2em] mt-4">
+          <p className="text-[8px] text-zinc-600 text-center font-black uppercase tracking-[0.2em] mt-4 italic">
             Secured by Solana Protocol
           </p>
         </div>
