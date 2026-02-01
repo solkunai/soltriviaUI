@@ -59,7 +59,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose }) => {
           </button>
           
           <p className="text-[8px] text-zinc-600 text-center font-black uppercase tracking-[0.2em] mt-4">
-            Secured by Solana Protocol v2.5
+            Secured by Solana Protocol
           </p>
         </div>
 

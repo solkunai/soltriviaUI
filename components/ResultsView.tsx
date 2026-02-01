@@ -87,7 +87,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, onRestart, onGoHome 
           </div>
 
           <p className="text-[8px] text-zinc-700 text-center font-black uppercase tracking-[0.4em] mt-8">
-            Operation ID: {Math.random().toString(36).substring(7).toUpperCase()} // v2.5
+            Operation ID: {Math.random().toString(36).substring(7).toUpperCase()}
           </p>
         </div>
       </div>
