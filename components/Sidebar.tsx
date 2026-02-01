@@ -38,8 +38,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
 
   return (
     <>
-      {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-6 left-6 right-6 bg-[#0A0A0A]/95 backdrop-blur-3xl border border-white/5 grid grid-cols-5 h-[76px] z-[60] px-2 rounded-[28px] shadow-2xl items-center ring-1 ring-white/5">
+      {/* Mobile Bottom Navigation - Docked to bottom to prevent bleed-through */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#080808] border-t border-white/10 grid grid-cols-5 h-[84px] z-[60] px-2 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] items-center safe-bottom">
         {navItems.map((item) => {
           const isActive = currentView === item.id;
           
@@ -48,23 +48,23 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
               <div key={item.id} className="relative flex justify-center items-center h-full">
                 <button
                   onClick={() => setView(item.id)}
-                  className="absolute bottom-1 flex flex-col items-center outline-none group -translate-y-3"
+                  className="absolute bottom-6 flex flex-col items-center outline-none group"
                 >
                   <div className="relative flex items-center justify-center">
                     {/* Concentric Aura Ring */}
-                    <div className="absolute w-[76px] h-[76px] bg-gradient-to-br from-[#8B5CF6]/20 to-[#2DD4BF]/20 rounded-full blur-[2px] z-0 opacity-60 group-hover:scale-110 transition-transform duration-300"></div>
+                    <div className="absolute w-[80px] h-[80px] bg-gradient-to-br from-[#8B5CF6]/25 to-[#2DD4BF]/25 rounded-full blur-[4px] z-0 opacity-80 group-hover:scale-110 transition-transform duration-300"></div>
                     
                     {/* Main Circle - Vibrant Gradient */}
-                    <div className="w-[60px] h-[60px] bg-gradient-to-br from-[#8B5CF6] via-[#3B82F6] to-[#2DD4BF] rounded-full flex items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative z-10 border border-white/10 active:scale-95 transition-all">
+                    <div className="w-[64px] h-[64px] bg-gradient-to-br from-[#8B5CF6] via-[#3B82F6] to-[#2DD4BF] rounded-full flex items-center justify-center shadow-[0_8px_32px_rgba(0,0,0,0.6)] relative z-10 border border-white/20 active:scale-95 transition-all">
                       {/* Play Triangle */}
-                      <svg className="w-6 h-6 text-white fill-current translate-x-[2px]" viewBox="0 0 24 24">
+                      <svg className="w-7 h-7 text-white fill-current translate-x-[2px]" viewBox="0 0 24 24">
                           <path d="M8 5v14l11-7z" />
                       </svg>
                     </div>
                   </div>
                   
                   {/* PLAY Text */}
-                  <span className={`text-[11px] font-[1000] tracking-[0.25em] mt-[14px] uppercase transition-colors select-none ${isActive ? 'text-[#00FFA3]' : 'text-zinc-600 group-hover:text-zinc-400'}`}>
+                  <span className={`text-[10px] font-[1000] tracking-[0.25em] mt-3 uppercase transition-colors select-none ${isActive ? 'text-[#00FFA3]' : 'text-zinc-500 group-hover:text-zinc-300'}`}>
                     {item.label}
                   </span>
                 </button>
