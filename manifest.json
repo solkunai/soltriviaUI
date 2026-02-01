@@ -1,0 +1,22 @@
+
+{
+  "name": "Solana Trivia Protocol",
+  "short_name": "SolTrivia",
+  "description": "High-fidelity crypto trivia on Solana.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#00FFA3",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3233/3233483.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3233/3233483.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
