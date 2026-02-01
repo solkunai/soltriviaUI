@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Question } from '../types';
 
@@ -56,7 +55,6 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
 
     let pointsForThisQuestion = 0;
     if (correct) {
-      // Calculate speed bonus: max bonus at 0s, 0 bonus at 10s
       const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / SPEED_BONUS_DECAY_SEC)));
       pointsForThisQuestion = BASE_POINTS + speedBonus;
       
@@ -65,7 +63,6 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
       setLastGainedPoints(pointsForThisQuestion);
     }
 
-    // Auto proceed after delay
     setTimeout(() => {
       if (currentIdx < QUESTIONS.length - 1) {
         setCurrentIdx(prev => prev + 1);
@@ -81,23 +78,17 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
   };
 
   const question = QUESTIONS[currentIdx];
-  const progress = ((currentIdx + 1) / QUESTIONS.length) * 100;
 
   return (
     <div className="min-h-full flex flex-col bg-[#050505] p-4 sm:p-8 md:p-12 relative overflow-hidden">
-      {/* Background Decor */}
       <div className="absolute inset-0 pointer-events-none opacity-5 overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[300px] md:text-[500px] font-black italic select-none text-white/10 leading-none">
-          {currentIdx + 1}
-        </div>
         <div className="scan-line"></div>
       </div>
 
-      {/* Top Protocol Bar */}
       <div className="relative z-10 flex justify-between items-center mb-8 md:mb-16">
         <div className="flex flex-col">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[#00FFA3] text-[9px] font-black tracking-[0.4em] uppercase">Operation</span>
+            <span className="text-[#00FFA3] text-[9px] font-black tracking-[0.4em] uppercase italic">TRIVIA</span>
             <div className="w-1.5 h-1.5 rounded-full bg-[#00FFA3] animate-pulse"></div>
           </div>
           <h3 className="text-xl md:text-3xl font-[1000] italic text-white uppercase tracking-tighter">ARENA_NODE_B1</h3>
@@ -105,36 +96,26 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
         
         <div className="flex gap-4 md:gap-12 items-center">
             <div className="text-right">
-                <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest block mb-1">Total_Time</span>
+                <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest block mb-1 italic">Total_Time</span>
                 <span className="text-white text-xl md:text-3xl font-[1000] italic tabular-nums leading-none">
                   {Math.floor(sessionTimer / 60)}:{(sessionTimer % 60).toString().padStart(2, '0')}
                 </span>
             </div>
             <button 
               onClick={onQuit}
-              className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-[#FF3131]/20 hover:border-[#FF3131]/40 text-zinc-400 hover:text-white font-black uppercase text-[10px] tracking-widest transition-all rounded-sm"
+              className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-[#FF3131]/20 hover:border-[#FF3131]/40 text-zinc-400 hover:text-white font-black uppercase text-[10px] tracking-widest transition-all rounded-sm italic"
             >
               ABORT
             </button>
         </div>
       </div>
 
-      {/* Main Gameplay Container */}
       <div className="relative z-10 flex-1 flex flex-col justify-center items-center">
         <div className="w-full max-w-4xl mx-auto">
-          
-          {/* Question Meta Info */}
           <div className="flex justify-between items-end mb-4 px-2">
             <span className="text-[#00FFA3] text-xs font-black italic uppercase tracking-[0.2em]">Block {currentIdx + 1} / 10</span>
-            <div className="flex items-center gap-4">
-               {lastGainedPoints && (
-                 <span className="text-[#00FFA3] text-xs font-black italic animate-bounce">+{lastGainedPoints} PTS</span>
-               )}
-               <span className="text-zinc-600 text-[10px] font-black uppercase italic">Neural_Velocity: Active</span>
-            </div>
           </div>
 
-          {/* Question Card */}
           <div className="bg-[#0A0A0A] border border-white/5 p-6 sm:p-10 md:p-16 rounded-sm shadow-2xl relative overflow-hidden group mb-6 md:mb-10">
             <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#00FFA3]/30"></div>
             <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-[#00FFA3]/30"></div>
@@ -146,7 +127,6 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
             </h2>
           </div>
 
-          {/* Options Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 px-1">
             {question.options.map((option, idx) => {
               let stateClass = "border-white/5 hover:border-[#00FFA3]/20 text-zinc-400 hover:text-white bg-white/[0.02]";
@@ -167,6 +147,14 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
                     {String.fromCharCode(65 + idx)}
                   </div>
                   <span className="text-base md:text-lg font-black italic uppercase tracking-tight flex-1 leading-tight">{option}</span>
+                  
+                  {selectedOption === idx && isCorrect && lastGainedPoints && (
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                       <span className="text-[#00FFA3] text-[10px] md:text-xs font-[1000] italic animate-bounce block">
+                          +{lastGainedPoints} XP
+                       </span>
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -174,10 +162,9 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
         </div>
       </div>
 
-      {/* Footer Interface */}
       <div className="relative z-10 mt-12 flex flex-col md:flex-row gap-6 md:gap-0 justify-between items-center pt-8 border-t border-white/5">
         <div className="flex flex-col items-center md:items-start">
-          <span className="text-[9px] text-zinc-600 font-black uppercase tracking-[0.4em] mb-2">Protocol_Progress</span>
+          <span className="text-[9px] text-zinc-600 font-black uppercase tracking-[0.4em] mb-2 italic">GAME PROGRESS</span>
           <div className="flex gap-2">
              {[...Array(QUESTIONS.length)].map((_, i) => (
                <div 
@@ -190,14 +177,14 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
         
         <div className="flex items-center gap-6">
            <div className="text-right">
-              <span className="text-zinc-700 text-[8px] font-black uppercase block tracking-widest">Protocol_XP</span>
+              <span className="text-zinc-700 text-[8px] font-black uppercase block tracking-widest italic">TRIVIA XP</span>
               <span className="text-[#00FFA3] font-[1000] italic text-2xl leading-none tabular-nums">
                 {totalPoints.toLocaleString()} <span className="text-[10px] opacity-50 tracking-normal">XP</span>
               </span>
            </div>
            <div className="h-8 w-[1px] bg-white/10 hidden sm:block"></div>
            <div className="text-right hidden sm:block">
-              <span className="text-zinc-700 text-[8px] font-black uppercase block tracking-widest">Accuracy</span>
+              <span className="text-zinc-700 text-[8px] font-black uppercase block tracking-widest italic">Accuracy</span>
               <span className="text-white font-[1000] italic text-2xl leading-none tabular-nums">
                 {score}/{QUESTIONS.length}
               </span>
