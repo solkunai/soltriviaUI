@@ -1,9 +1,9 @@
 
 export enum View {
   HOME = 'HOME',
-  QUESTS = 'QUESTS',
   RANKS = 'RANKS',
-  LOGS = 'LOGS',
+  PLAY = 'PLAY',
+  QUESTS = 'QUESTS',
   PROFILE = 'PROFILE'
 }
 

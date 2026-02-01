@@ -3,116 +3,148 @@ import React from 'react';
 
 const LeaderboardView: React.FC = () => {
   const topPlayers = [
-    { rank: '#5', username: 'NEODEV_X', level: '64', winnings: '10.00', avatar: 'https://picsum.photos/id/64/200/200?grayscale' },
-    { rank: '#3', username: 'HODL_QUEEN', level: '72', winnings: '285.15', avatar: 'https://picsum.photos/id/72/200/200?grayscale' },
-    { rank: '#1', username: 'SOLANA_KING', level: 'GRANDMASTER', winnings: '1,240.50', avatar: 'https://picsum.photos/id/111/400/400?grayscale', isFirst: true },
-    { rank: '#2', username: 'CRYPTOWIZ_01', level: '88', winnings: '450.20', avatar: 'https://picsum.photos/id/88/200/200?grayscale' },
-    { rank: '#4', username: 'SAMURAI_SOL', level: '68', winnings: '12.50', avatar: 'https://picsum.photos/id/168/200/200?grayscale' },
+    { rank: '#1', username: 'SOLANA_KING', level: 'GRANDMASTER', winnings: '1,240.50', avatar: 'https://picsum.photos/id/111/400/400?grayscale', isFirst: true, style: 'podium-gold' },
+    { rank: '#2', username: 'CRYPTOWIZ_01', level: 'DIAMOND TIER', winnings: '450.20', avatar: 'https://picsum.photos/id/88/200/200?grayscale', style: 'podium-silver' },
+    { rank: '#3', username: 'HODL_QUEEN', level: 'PLATINUM TIER', winnings: '285.15', avatar: 'https://picsum.photos/id/72/200/200?grayscale', style: 'podium-bronze' },
+    { rank: '#4', username: 'SAMURAI_SOL', level: 'ELITE WARRIOR', winnings: '150.00', avatar: 'https://picsum.photos/id/168/200/200?grayscale', style: 'podium-elite' },
+    { rank: '#5', username: 'NEODEV_X', level: 'MASTER CODER', winnings: '120.40', avatar: 'https://picsum.photos/id/64/200/200?grayscale', style: 'podium-elite' },
   ];
 
+  const runnersUp = [
+    { rank: '#6', username: 'GASFEES_HIGH', score: '21,900', reward: '+8.45 SOL', avatar: 'https://picsum.photos/id/20/40/40?grayscale' },
+    { rank: '#1,204', username: 'YOU (SAGE)', score: '1,450', reward: '--', avatar: 'https://picsum.photos/id/21/40/40?grayscale', isHighlighted: true },
+    { rank: '#7', username: 'RUGPULL_SURVIVOR', score: '19,420', reward: '--', avatar: 'https://picsum.photos/id/22/40/40?grayscale' },
+  ];
+
+  const desktopPodium = [topPlayers[3], topPlayers[1], topPlayers[0], topPlayers[2], topPlayers[4]];
+
   return (
-    <div className="p-12 max-w-7xl mx-auto">
-      <div className="flex justify-between items-start mb-12">
-        <div>
-          <h4 className="text-[#00FFA3] text-sm tracking-[0.4em] font-bold uppercase">Hall of Fame</h4>
-          <h2 className="text-7xl font-[900] italic uppercase tracking-tighter">Leaderboard</h2>
+    <div className="p-5 md:p-12 lg:p-20 max-w-[1500px] mx-auto pb-48 relative">
+      {/* Brainy Mascot - Winning Pose */}
+      <div className="absolute left-[2%] top-[5%] w-[300px] pointer-events-none z-0 hidden xl:block opacity-60 floating">
+        <img 
+          src="brainy-winning.png" 
+          alt="Brainy Winner" 
+          className="w-full h-auto drop-shadow-[0_0_50px_rgba(255,215,0,0.3)]"
+          onError={(e) => (e.currentTarget.style.display = 'none')} 
+        />
+      </div>
+
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 md:mb-24 gap-6 md:gap-8 relative z-10">
+        <div className="w-full md:w-auto">
+          <h4 className="text-[#00FFA3] text-[9px] md:text-sm tracking-[0.4em] font-black uppercase mb-2 animate-pulse">
+            Protocol Apex Global Ranking
+          </h4>
+          <h2 className="text-5xl md:text-9xl font-[1000] italic uppercase tracking-tighter text-white leading-[0.8]">
+            TOP<br/><span className="sol-gradient-text">RANKINGS</span>
+          </h2>
         </div>
-        <div className="flex gap-4">
-          <div className="bg-[#0A0A0A] border border-white/5 p-4 rounded-sm min-w-[150px]">
-            <span className="text-zinc-600 text-[9px] uppercase font-bold block mb-1">Season Ends In</span>
-            <span className="text-[#FFD700] text-xl font-mono font-bold">14:22:05:08</span>
-          </div>
-          <div className="bg-[#0A0A0A] border border-white/5 p-4 rounded-sm min-w-[150px]">
-            <span className="text-zinc-600 text-[9px] uppercase font-bold block mb-1">Global Players</span>
-            <span className="text-white text-xl font-bold">142,850</span>
-          </div>
+        <div className="bg-[#0A0A0A] border border-white/10 p-4 md:p-6 rounded-sm text-left md:text-right backdrop-blur-md w-full md:min-w-[280px]">
+            <span className="text-zinc-600 text-[8px] md:text-[10px] uppercase font-black block mb-1 tracking-widest">Seasonal Yield Pool</span>
+            <span className="text-[#FFD700] text-2xl md:text-4xl font-black italic tabular-nums">12,500 <span className="text-xs md:text-sm">SOL</span></span>
         </div>
       </div>
 
-      {/* Top Players Row */}
-      <div className="flex items-end justify-center gap-4 mb-20">
-        {topPlayers.map((player, idx) => (
-          <div key={idx} className={`relative group ${player.isFirst ? 'scale-110 z-10' : 'scale-90 opacity-60'}`}>
-            <div className={`absolute -top-4 -left-4 px-3 py-1 font-black text-xl z-20 ${player.isFirst ? 'bg-[#FFD700] text-black' : idx === 3 ? 'bg-[#94A3B8] text-black' : 'bg-blue-600 text-white'}`}>
-              {player.rank}
-            </div>
-            <div className={`bg-[#0A0A0A] border-2 ${player.isFirst ? 'border-[#FFD700] p-6' : 'border-zinc-800 p-4'} flex flex-col items-center w-64`}>
-              <div className={`relative overflow-hidden mb-4 ${player.isFirst ? 'w-40 h-40' : 'w-24 h-24'}`}>
-                <img src={player.avatar} alt={player.username} className="w-full h-full object-cover grayscale brightness-75 group-hover:grayscale-0 group-hover:brightness-100 transition-all duration-300" />
-                <div className="absolute inset-0 border border-white/10"></div>
+      {/* MOBILE PODIUM: Hierarchical One-View Layout */}
+      <div className="md:hidden flex flex-col gap-3 mb-16 relative z-10">
+         <MobilePodiumCard player={topPlayers[0]} isProminent />
+         <div className="grid grid-cols-2 gap-3">
+            <MobilePodiumCard player={topPlayers[1]} />
+            <MobilePodiumCard player={topPlayers[2]} />
+            <MobilePodiumCard player={topPlayers[3]} />
+            <MobilePodiumCard player={topPlayers[4]} />
+         </div>
+      </div>
+
+      {/* DESKTOP PODIUM */}
+      <div className="hidden md:flex flex-row items-end justify-center gap-4 lg:gap-8 mb-32 relative z-10 px-4">
+        {desktopPodium.map((player, idx) => {
+          const isWinner = player.rank === '#1';
+          const isSecondThird = player.rank === '#2' || player.rank === '#3';
+          const heightClass = isWinner ? 'h-[420px] lg:h-[480px]' : isSecondThird ? 'h-[320px] lg:h-[380px]' : 'h-[250px] lg:h-[310px]';
+          const scaleClass = isWinner ? 'z-30 scale-110' : isSecondThird ? 'z-20 scale-95' : 'z-10 scale-90';
+          
+          return (
+            <div key={idx} className={`relative flex flex-col items-center flex-shrink-0 w-56 lg:w-64 transition-all duration-700 ${scaleClass}`}>
+              <div className={`absolute -top-4 px-4 py-1.5 font-black text-xl italic z-40 skew-x-[-10deg] ${isWinner ? 'bg-[#FFD700] text-black shadow-[0_0_20px_rgba(255,215,0,0.6)]' : 'bg-white text-black'}`}>
+                {player.rank}
               </div>
-              <h3 className={`font-black uppercase tracking-tight text-center ${player.isFirst ? 'text-4xl sol-gradient-text' : 'text-xl'}`}>
-                {player.username}
-              </h3>
-              <p className="text-[#FFD700] italic text-[10px] font-bold mb-6 tracking-widest">{player.level}</p>
+
+              <div className="mb-6 relative">
+                 <div className={`w-28 lg:w-32 h-28 lg:h-32 rounded-full border-4 ${isWinner ? 'border-[#FFD700]' : 'border-white/10'} overflow-hidden bg-[#111]`}>
+                    <img src={player.avatar} alt={player.username} className="w-full h-full object-cover grayscale" />
+                 </div>
+              </div>
               
-              <div className="w-full bg-[#050505] p-3 border border-white/5 text-center">
-                <span className="text-zinc-600 text-[8px] font-bold uppercase block">Winnings</span>
-                <span className="text-[#00FFA3] font-black text-lg">{player.winnings} <span className="text-[10px] opacity-70">SOL</span></span>
+              <div className={`rounded-sm flex flex-col items-center w-full transition-all duration-500 overflow-hidden relative ${player.style} ${heightClass} justify-start pt-8 pb-8 px-4`}>
+                <h3 className={`font-black uppercase tracking-tighter text-center mb-1 leading-tight break-words w-full ${isWinner ? 'text-xl md:text-2xl sol-gradient-text' : 'text-sm md:text-lg text-zinc-300'}`}>
+                  {player.username}
+                </h3>
+                <p className="text-zinc-600 italic text-[9px] font-black mb-auto tracking-[0.2em] uppercase">{player.level}</p>
+                <div className={`w-full border border-white/5 p-3 rounded-sm text-center backdrop-blur-md ${isWinner ? 'bg-[#FFD700]/5' : 'bg-black/40'}`}>
+                  <span className="text-zinc-700 text-[8px] font-black uppercase block mb-1">Yield</span>
+                  <span className={`font-black text-base lg:text-lg tabular-nums ${isWinner ? 'text-[#FFD700]' : 'text-[#00FFA3]'}`}>{player.winnings} <span className="text-[10px] opacity-70">SOL</span></span>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Table Section */}
-      <div className="bg-[#0A0A0A] border border-white/5">
-        <div className="p-6 border-b border-white/5 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-[#FFD700]" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z" /></svg>
-            <h3 className="text-xs font-bold uppercase tracking-[0.2em]">Global Rankings (6 - 1,000)</h3>
-          </div>
-          <div className="flex bg-[#050505] p-1 gap-1">
-            <button className="px-6 py-2 text-[10px] font-bold text-zinc-500 uppercase">Daily</button>
-            <button className="px-6 py-2 text-[10px] font-bold bg-[#00FFA3] text-black uppercase">All-Time</button>
-          </div>
+      {/* Main Table */}
+      <div className="bg-[#0A0A0A] border border-white/10 overflow-hidden shadow-2xl relative z-10">
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-left min-w-[700px] border-collapse">
+            <thead className="text-[8px] md:text-[10px] uppercase text-zinc-600 font-black tracking-widest border-b border-white/10">
+              <tr>
+                <th className="px-6 md:px-14 py-6 md:py-8">Rank</th>
+                <th className="px-6 md:px-14 py-6 md:py-8">User</th>
+                <th className="px-6 md:px-14 py-6 md:py-8 text-right">Score</th>
+                <th className="px-6 md:px-14 py-6 md:py-8 text-right">Reward</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {runnersUp.map((player, idx) => (
+                <tr key={idx} className={`group transition-all duration-300 hover:bg-white/[0.04] ${player.isHighlighted ? 'bg-[#00FFA3]/5 border-y border-[#00FFA3]/20' : ''}`}>
+                  <td className="px-6 md:px-14 py-6 md:py-10 font-[1000] italic text-2xl md:text-4xl text-zinc-700">{player.rank}</td>
+                  <td className="px-6 md:px-14 py-6 md:py-10">
+                    <div className="flex items-center gap-4 md:gap-8">
+                      <img src={player.avatar} className="w-10 h-10 md:w-14 md:h-14 grayscale group-hover:grayscale-0 transition-all border border-white/10 p-0.5 bg-[#111]" alt={player.username} />
+                      <span className={`font-black text-lg md:text-2xl uppercase ${player.isHighlighted ? 'text-[#FFD700]' : 'text-zinc-400 group-hover:text-white'}`}>{player.username}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 md:px-14 py-6 md:py-10 text-right font-black italic text-xl md:text-3xl tabular-nums text-zinc-600">{player.score}</td>
+                  <td className={`px-6 md:px-14 py-6 md:py-10 text-right font-[1000] italic text-xl md:text-3xl tabular-nums ${player.reward === '--' ? 'text-zinc-800' : 'text-[#00FFA3]'}`}>{player.reward}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <table className="w-full text-left">
-          <thead className="text-[9px] uppercase text-zinc-600 font-bold tracking-widest border-b border-white/5">
-            <tr>
-              <th className="px-8 py-4">Rank</th>
-              <th className="px-8 py-4">Username</th>
-              <th className="px-8 py-4 text-right">Score</th>
-              <th className="px-8 py-4 text-right">Reward</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            <RankingRow rank="#6" username="GASFEES_HIGH" avatar="https://picsum.photos/id/20/40/40?grayscale" score="21,900" reward="+8.45 SOL" rewardColor="text-[#00FFA3]" />
-            <RankingRow rank="#1,204" username="YOU (CURRENT)" avatar="https://picsum.photos/id/21/40/40?grayscale" score="1,450" reward="+0.00 SOL" isHighlighted={true} />
-            <RankingRow rank="#7" username="RUGPULL_SURVIVOR" avatar="https://picsum.photos/id/22/40/40?grayscale" score="19,420" reward="--" />
-          </tbody>
-        </table>
-      </div>
-
-      {/* Sticky Bottom Actions */}
-      <div className="fixed bottom-10 right-10 flex items-center gap-4 z-50">
-          <div className="bg-[#0A0A0A] border border-white/10 p-4 relative group cursor-pointer animate-pulse">
-              <div className="text-[10px] text-zinc-500 font-bold uppercase mb-1">Your Prize Claim</div>
-              <div className="text-[#00FFA3] font-bold italic">READY TO WITHDRAW</div>
-              <div className="absolute -top-12 left-0 w-full bg-black border border-white/20 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="text-[8px] text-white whitespace-nowrap">Connect wallet to withdraw SOL</span>
-              </div>
-          </div>
-          <button className="bg-[#00FFA3] hover:bg-[#00e592] transition-colors py-6 px-12 italic font-black text-2xl text-black">
-            CLAIM REWARDS
-          </button>
       </div>
     </div>
   );
 };
 
-const RankingRow: React.FC<{ rank: string, username: string, avatar: string, score: string, reward: string, rewardColor?: string, isHighlighted?: boolean }> = ({ rank, username, avatar, score, reward, rewardColor = "text-zinc-500", isHighlighted = false }) => (
-  <tr className={`${isHighlighted ? 'bg-[#00FFA3]/5 border-y-2 border-[#FFD700]/30' : ''} hover:bg-white/5 transition-colors`}>
-    <td className="px-8 py-6 font-black italic text-xl">{rank}</td>
-    <td className="px-8 py-6">
-      <div className="flex items-center gap-3">
-        <img src={avatar} className="w-8 h-8 grayscale" alt={username} />
-        <span className={`font-bold ${isHighlighted ? 'text-[#FFD700]' : ''}`}>{username}</span>
-      </div>
-    </td>
-    <td className="px-8 py-6 text-right font-black italic text-lg">{score}</td>
-    <td className={`px-8 py-6 text-right font-black ${rewardColor} italic text-lg`}>{reward}</td>
-  </tr>
+const MobilePodiumCard: React.FC<{ player: any, isProminent?: boolean }> = ({ player, isProminent }) => (
+    <div className={`relative overflow-hidden border border-white/10 rounded-sm p-3 flex items-center gap-3 ${player.style} ${isProminent ? 'py-5' : ''}`}>
+        <div className="relative flex-shrink-0 z-10">
+            <div className={`w-12 h-12 ${isProminent ? 'w-16 h-16' : ''} rounded-full border-2 ${player.isFirst ? 'border-[#FFD700]' : 'border-white/10'} overflow-hidden bg-black/50`}>
+                <img src={player.avatar} alt={player.username} className="w-full h-full object-cover grayscale" />
+            </div>
+            <div className={`absolute -top-1.5 -right-1.5 px-2 py-0.5 font-black text-[9px] italic ${player.isFirst ? 'bg-[#FFD700] text-black' : 'bg-white text-black'}`}>
+                {player.rank}
+            </div>
+        </div>
+        <div className="flex-1 min-w-0 z-10">
+            <h3 className={`font-black uppercase tracking-tighter truncate ${isProminent ? 'text-xl sol-gradient-text' : 'text-xs text-white'}`}>
+                {player.username}
+            </h3>
+            <div className="mt-0.5 flex items-baseline gap-1">
+                <span className={`font-black italic ${isProminent ? 'text-lg text-[#00FFA3]' : 'text-sm text-[#00FFA3]'}`}>{player.winnings}</span>
+                <span className="text-[7px] font-black text-zinc-600">SOL</span>
+            </div>
+        </div>
+    </div>
 );
 
 export default LeaderboardView;
