@@ -40,7 +40,7 @@ const HomeView: React.FC<HomeViewProps> = ({ onEnterTrivia, onOpenGuide, onOpenB
                 TRIVIA
               </h1>
               <p className="text-zinc-500 font-black uppercase tracking-[0.4em] text-xs mt-6 max-w-sm">
-                The high-stakes intelligence protocol on Solana.
+                THE HIGH-STAKES INTELLIGENCE TRIVIA ON SOLANA
               </p>
             </div>
 
