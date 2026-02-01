@@ -35,8 +35,8 @@ const LeaderboardView: React.FC = () => {
           <h4 className="text-[#00FFA3] text-[9px] md:text-sm tracking-[0.4em] font-black uppercase mb-2 animate-pulse">
             Protocol Apex Global Ranking
           </h4>
-          <h2 className="text-5xl md:text-9xl font-[1000] italic uppercase tracking-tighter text-white leading-[0.8]">
-            TOP<br/><span className="sol-gradient-text">RANKINGS</span>
+          <h2 className="text-5xl md:text-7xl lg:text-8xl font-[1000] italic uppercase tracking-tighter text-white leading-[0.8] pr-8">
+            TOP<br/><span className="sol-gradient-text pr-4 inline-block">RANKINGS</span>
           </h2>
         </div>
         <div className="bg-[#0A0A0A] border border-white/10 p-4 md:p-6 rounded-sm text-left md:text-right backdrop-blur-md w-full md:min-w-[280px]">
