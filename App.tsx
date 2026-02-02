@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View } from './types';
+import { useWallet, useConnection } from './src/contexts/WalletContext';
+import { Transaction, SystemProgram, PublicKey } from '@solana/web3.js';
 import Sidebar from './components/Sidebar';
 import HomeView from './components/HomeView';
 import LeaderboardView from './components/LeaderboardView';
@@ -11,18 +13,131 @@ import BuyLivesModal from './components/BuyLivesModal';
 import EditProfileModal from './components/EditProfileModal';
 import QuizView from './components/QuizView';
 import ResultsView from './components/ResultsView';
+import WalletRequiredModal from './components/WalletRequiredModal';
+import AdminRoute from './components/AdminRoute';
+import { getPlayerLives, startGame, registerPlayerProfile } from './src/utils/api';
+import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS } from './src/utils/constants';
+import { getRecentBlockhashWithRetry } from './src/utils/rpc';
+import { supabase } from './src/utils/supabase';
 
 const App: React.FC = () => {
+  const { connected, publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
   const [currentView, setCurrentView] = useState<View>(View.HOME);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isBuyLivesOpen, setIsBuyLivesOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [showWalletRequired, setShowWalletRequired] = useState(false);
   
   // App state for lives
   const [lives, setLives] = useState(1);
   
   // Quiz results state
   const [lastGameResults, setLastGameResults] = useState<{ score: number, points: number, time: number } | null>(null);
+  
+  // Current game session ID
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+
+  // Pages that require wallet connection (HOME and ADMIN do NOT require wallet)
+  const walletRequiredViews = [View.PLAY, View.QUESTS, View.PROFILE, View.LEADERBOARD, View.QUIZ, View.RESULTS];
+
+  // Fetch lives from Supabase when wallet connects and periodically refresh
+  useEffect(() => {
+    if (!connected || !publicKey) {
+      setLives(0);
+      return;
+    }
+
+    const fetchLivesAndRegister = async () => {
+      try {
+        const walletAddress = publicKey.toBase58();
+        
+        // Register/update player profile in Supabase
+        try {
+          await registerPlayerProfile(walletAddress);
+        } catch (profileError) {
+          // Silent failure - profile registration is not critical
+          console.debug('Profile registration skipped:', profileError);
+        }
+
+        // Fetch player lives
+        const data = await getPlayerLives(walletAddress);
+        setLives(data.lives_count || 0);
+      } catch (err) {
+        console.error('Failed to fetch lives:', err);
+        setLives(0);
+      }
+    };
+
+    // Fetch immediately
+    fetchLivesAndRegister();
+
+    // Refresh every 30 seconds to keep in sync
+    const interval = setInterval(fetchLivesAndRegister, 30000);
+
+    return () => clearInterval(interval);
+  }, [connected, publicKey]);
+
+  // Check wallet connection when navigating
+  const handleViewChange = (view: View) => {
+    // HOME and ADMIN are always accessible
+    if (view === View.HOME || view === View.ADMIN) {
+      setCurrentView(view);
+      return;
+    }
+
+    // Check if wallet is required for this view
+    if (walletRequiredViews.includes(view) && !connected) {
+      setShowWalletRequired(true);
+      return;
+    }
+
+    setCurrentView(view);
+  };
+
+  // Redirect to HOME if wallet disconnects while on a protected page
+  useEffect(() => {
+    if (!connected && walletRequiredViews.includes(currentView)) {
+      setCurrentView(View.HOME);
+    }
+  }, [connected, currentView]);
+
+  // Close wallet required modal when wallet connects
+  useEffect(() => {
+    if (connected && showWalletRequired) {
+      setShowWalletRequired(false);
+    }
+  }, [connected, showWalletRequired]);
+
+  // Admin access: Check URL on mount for /adminlogin
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path === '/adminlogin' || path === '/admin') {
+      setCurrentView(View.ADMIN);
+      // Update URL without page reload
+      window.history.replaceState({}, '', '/adminlogin');
+    }
+  }, []);
+
+  // Admin access: Ctrl+Shift+A keyboard shortcut
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+        e.preventDefault();
+        setCurrentView(View.ADMIN);
+        window.history.replaceState({}, '', '/adminlogin');
+      }
+    };
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, []);
+
+  // Update URL when navigating away from admin
+  useEffect(() => {
+    if (currentView !== View.ADMIN && window.location.pathname === '/adminlogin') {
+      window.history.replaceState({}, '', '/');
+    }
+  }, [currentView]);
 
   // Mock global state for profile
   const [profile, setProfile] = useState({
@@ -39,12 +154,94 @@ const App: React.FC = () => {
     setCurrentView(View.RESULTS);
   };
 
-  const handleStartQuiz = () => {
-    if (lives > 0) {
-      setLives(prev => prev - 1);
-      setCurrentView(View.QUIZ);
-    } else {
+  const handleStartQuiz = async () => {
+    if (!connected || !publicKey) {
+      setShowWalletRequired(true);
+      return;
+    }
+    
+    // Check lives before starting
+    if (lives <= 0) {
       setIsBuyLivesOpen(true);
+      return;
+    }
+
+    try {
+      // Create entry fee transaction with two transfers:
+      // 1. 0.02 SOL to PRIZE_POOL_WALLET (entry fee)
+      // 2. 0.0025 SOL to REVENUE_WALLET (transaction fee)
+      const transaction = new Transaction().add(
+        // Entry fee to prize pool
+        SystemProgram.transfer({
+          fromPubkey: publicKey,
+          toPubkey: new PublicKey(PRIZE_POOL_WALLET),
+          lamports: ENTRY_FEE_LAMPORTS,
+        }),
+        // Transaction fee to revenue wallet
+        SystemProgram.transfer({
+          fromPubkey: publicKey,
+          toPubkey: new PublicKey(REVENUE_WALLET),
+          lamports: TXN_FEE_LAMPORTS,
+        })
+      );
+
+      // Get recent blockhash
+      try {
+        const { blockhash } = await getRecentBlockhashWithRetry(connection);
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = publicKey;
+      } catch (blockhashError) {
+        console.warn('Could not get blockhash, wallet will handle it:', blockhashError);
+      }
+
+      // Send transaction - this will trigger wallet to sign
+      const signature = await sendTransaction(transaction, connection, {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      // Wait for confirmation
+      const confirmationPromise = connection.confirmTransaction(signature, 'confirmed');
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
+      );
+      
+      await Promise.race([confirmationPromise, timeoutPromise]);
+
+      // Call backend to start game session
+      const gameResult = await startGame(publicKey.toBase58(), signature);
+
+      // Store session ID for quiz
+      setCurrentSessionId(gameResult.sessionId);
+
+      // Optimistically update UI
+      setLives(prev => Math.max(0, prev - 1));
+      setCurrentView(View.QUIZ);
+    } catch (err: any) {
+      console.error('Failed to start quiz:', err);
+      
+      // Show error to user
+      if (err.message?.includes('User rejected')) {
+        // User cancelled, don't show error
+        return;
+      }
+      
+      // For other errors, you might want to show an error modal
+      alert(err.message || 'Failed to start quiz. Please try again.');
+    }
+  };
+
+  const handleBuyLivesSuccess = async () => {
+    // Refresh lives after purchase from backend
+    if (connected && publicKey) {
+      try {
+        const data = await getPlayerLives(publicKey.toBase58());
+        setLives(data.lives_count || 0);
+      } catch (err) {
+        console.error('Failed to refresh lives:', err);
+        // Still update optimistically - user just purchased 3 lives
+        setLives(prev => prev + 3);
+      }
     }
   };
 
@@ -54,23 +251,37 @@ const App: React.FC = () => {
         return (
           <HomeView 
             lives={lives}
-            onEnterTrivia={() => setCurrentView(View.PLAY)} 
+            onEnterTrivia={() => {
+              if (!connected) {
+                setShowWalletRequired(true);
+              } else {
+                setCurrentView(View.PLAY);
+              }
+            }} 
             onOpenGuide={() => setIsGuideOpen(true)}
-            onOpenBuyLives={() => setIsBuyLivesOpen(true)}
+            onOpenBuyLives={() => {
+              if (!connected) {
+                setShowWalletRequired(true);
+              } else {
+                setIsBuyLivesOpen(true);
+              }
+            }}
           />
         );
       case View.LEADERBOARD:
-        return <LeaderboardView onOpenGuide={() => setIsGuideOpen(true)} />;
+        return connected ? <LeaderboardView onOpenGuide={() => setIsGuideOpen(true)} /> : null;
       case View.PLAY:
-        return <PlayView lives={lives} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => setIsBuyLivesOpen(true)} />;
+        return connected ? <PlayView lives={lives} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => setIsBuyLivesOpen(true)} /> : null;
       case View.QUESTS:
-        return <QuestsView onGoToProfile={() => setCurrentView(View.PROFILE)} onOpenGuide={() => setIsGuideOpen(true)} />;
+        return connected ? <QuestsView onGoToProfile={() => setCurrentView(View.PROFILE)} onOpenGuide={() => setIsGuideOpen(true)} /> : null;
       case View.PROFILE:
-        return <ProfileView username={profile.username} avatar={profile.avatar} onEdit={() => setIsEditProfileOpen(true)} onOpenGuide={() => setIsGuideOpen(true)} />;
+        return connected ? <ProfileView username={profile.username} avatar={profile.avatar} onEdit={() => setIsEditProfileOpen(true)} onOpenGuide={() => setIsGuideOpen(true)} /> : null;
       case View.QUIZ:
-        return <QuizView onFinish={handleQuizFinish} onQuit={() => setCurrentView(View.PLAY)} />;
+        return connected ? <QuizView sessionId={currentSessionId} onFinish={handleQuizFinish} onQuit={() => setCurrentView(View.PLAY)} /> : null;
+      case View.ADMIN:
+        return <AdminRoute />;
       case View.RESULTS:
-        return lastGameResults ? (
+        return connected && lastGameResults ? (
           <ResultsView 
             results={lastGameResults} 
             lives={lives}
@@ -79,8 +290,29 @@ const App: React.FC = () => {
             onBuyLives={() => setIsBuyLivesOpen(true)}
           />
         ) : null;
+      case View.ADMIN:
+        return <AdminRoute />;
       default:
-        return <HomeView lives={lives} onEnterTrivia={() => setCurrentView(View.PLAY)} onOpenGuide={() => setIsGuideOpen(true)} onOpenBuyLives={() => setIsBuyLivesOpen(true)} />;
+        return (
+          <HomeView 
+            lives={lives} 
+            onEnterTrivia={() => {
+              if (!connected) {
+                setShowWalletRequired(true);
+              } else {
+                setCurrentView(View.PLAY);
+              }
+            }} 
+            onOpenGuide={() => setIsGuideOpen(true)} 
+            onOpenBuyLives={() => {
+              if (!connected) {
+                setShowWalletRequired(true);
+              } else {
+                setIsBuyLivesOpen(true);
+              }
+            }} 
+          />
+        );
     }
   };
 
@@ -93,7 +325,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#050505] overflow-hidden text-white selection:bg-[#00FFA3] selection:text-black">
-      {!hideSidebar && <Sidebar currentView={currentView} setView={setCurrentView} />}
+      {!hideSidebar && <Sidebar currentView={currentView} setView={handleViewChange} />}
 
       <main className="flex-1 overflow-y-auto relative h-full scroll-smooth">
         {renderContent()}
@@ -121,13 +353,17 @@ const App: React.FC = () => {
       )}
 
       <GuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
-      <BuyLivesModal isOpen={isBuyLivesOpen} onClose={() => setIsBuyLivesOpen(false)} onBuySuccess={() => setLives(prev => prev + 3)} />
+      <BuyLivesModal isOpen={isBuyLivesOpen} onClose={() => setIsBuyLivesOpen(false)} onBuySuccess={handleBuyLivesSuccess} />
       <EditProfileModal 
         isOpen={isEditProfileOpen} 
         onClose={() => setIsEditProfileOpen(false)} 
         currentUsername={profile.username}
         currentAvatar={profile.avatar}
         onSave={handleUpdateProfile}
+      />
+      <WalletRequiredModal 
+        isOpen={showWalletRequired} 
+        onClose={() => setShowWalletRequired(false)} 
       />
     </div>
   );

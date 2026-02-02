@@ -1,29 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Question } from '../types';
+import { HapticFeedback } from '../src/utils/haptics';
+import { playCorrectSound, playWrongSound } from '../src/utils/sounds';
+import { getQuestions, submitAnswer } from '../src/utils/api';
 
 interface QuizViewProps {
+  sessionId: string | null;
   onFinish: (score: number, points: number, totalTime: number) => void;
   onQuit: () => void;
 }
-
-const QUESTIONS: Question[] = [
-  { id: 1, text: "What consensus mechanism does Solana use alongside Proof of Stake?", options: ["Proof of Work", "Proof of History", "Proof of Authority", "Proof of Burn"], correctAnswer: 1 },
-  { id: 2, text: "Who is the co-founder and CEO of Solana Labs?", options: ["Vitalik Buterin", "Anatoly Yakovenko", "Charles Hoskinson", "Sam Bankman-Fried"], correctAnswer: 1 },
-  { id: 3, text: "What is the smallest unit of SOL called?", options: ["Wei", "Satoshi", "Lamport", "Gwei"], correctAnswer: 2 },
-  { id: 4, text: "What does TVL stand for in DeFi?", options: ["Total Value Locked", "Token Vault Limit", "Transfer Volume Ledger", "Trade Verification Layer"], correctAnswer: 0 },
-  { id: 5, text: "Which protocol is the largest DEX on Solana?", options: ["Uniswap", "PancakeSwap", "Jupiter", "SushiSwap"], correctAnswer: 2 },
-  { id: 6, text: "What is impermanent loss?", options: ["A gas fee spike", "Loss from providing liquidity when prices diverge", "A failed transaction cost", "An NFT depreciation"], correctAnswer: 1 },
-  { id: 7, text: "What is the maximum supply of Bitcoin?", options: ["100 million", "21 million", "18 million", "Unlimited"], correctAnswer: 1 },
-  { id: 8, text: "Who created Bitcoin?", options: ["Vitalik Buterin", "Satoshi Nakamoto", "Charlie Lee", "Nick Szabo"], correctAnswer: 1 },
-  { id: 9, text: "What animal is the Dogecoin mascot?", options: ["Cat", "Shiba Inu", "Frog", "Penguin"], correctAnswer: 1 },
-  { id: 10, text: "Which memecoin launched on Solana became the largest by market cap in 2024?", options: ["BONK", "WIF", "MYRO", "SAMO"], correctAnswer: 1 },
-];
 
 const BASE_POINTS = 500;
 const MAX_SPEED_BONUS = 500;
 const SPEED_BONUS_DECAY_SEC = 10;
 
-const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
+const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [score, setScore] = useState(0);
   const [totalPoints, setTotalPoints] = useState(0);
@@ -35,28 +29,106 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
   
   const timerRef = useRef<number | null>(null);
 
+  // Fetch questions from Supabase when component mounts
   useEffect(() => {
-    timerRef.current = window.setInterval(() => {
-      setSessionTimer(prev => prev + 1);
-    }, 1000);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
+    const fetchQuestions = async () => {
+      if (!sessionId) {
+        setError('No session ID provided');
+        setLoading(false);
+        return;
+      }
 
-  const handleOptionSelect = (optionIdx: number) => {
-    if (selectedOption !== null) return;
+      try {
+        setLoading(true);
+        const response = await getQuestions(sessionId);
+        
+        // Transform API response to Question format
+        const transformedQuestions: Question[] = response.questions.map((q: any, idx: number) => ({
+          id: parseInt(q.id) || idx + 1,
+          text: q.text || q.question || '',
+          options: Array.isArray(q.options) ? q.options : (Array.isArray(q.answers) ? q.answers : []),
+          correctAnswer: q.correct_index !== undefined ? q.correct_index : (q.correctAnswer !== undefined ? q.correctAnswer : 0),
+        }));
+
+        if (transformedQuestions.length === 0) {
+          setError('No questions available');
+          return;
+        }
+
+        setQuestions(transformedQuestions);
+        setError(null);
+      } catch (err: any) {
+        console.error('Failed to fetch questions:', err);
+        setError(err.message || 'Failed to load questions');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchQuestions();
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (questions.length > 0) {
+      timerRef.current = window.setInterval(() => {
+        setSessionTimer(prev => prev + 1);
+      }, 1000);
+      return () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+      };
+    }
+  }, [questions]);
+
+  const handleOptionSelect = async (optionIdx: number) => {
+    if (selectedOption !== null || !sessionId || questions.length === 0) return;
     
     const timeTaken = (Date.now() - questionStartTime) / 1000;
     setSelectedOption(optionIdx);
     
-    const correct = optionIdx === QUESTIONS[currentIdx].correctAnswer;
+    const currentQuestion = questions[currentIdx];
+    
+    // Submit answer to backend for validation
+    let correct = false;
+    let pointsEarned = 0;
+    try {
+      if (sessionId && currentQuestion.id) {
+        const answerResponse = await submitAnswer({
+          session_id: sessionId,
+          question_id: currentQuestion.id.toString(),
+          question_index: currentIdx,
+          selected_index: optionIdx,
+          time_taken_ms: Math.floor(timeTaken * 1000),
+        });
+        correct = answerResponse.is_correct;
+        pointsEarned = answerResponse.points_earned || 0;
+      } else {
+        // Fallback to client-side check if no session
+        correct = optionIdx === currentQuestion.correctAnswer;
+      }
+    } catch (err) {
+      console.error('Failed to submit answer:', err);
+      // Fallback to client-side check if API fails
+      correct = optionIdx === currentQuestion.correctAnswer;
+    }
+    
     setIsCorrect(correct);
 
-    let pointsForThisQuestion = 0;
+    // Haptic feedback and sound effects
     if (correct) {
-      const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / SPEED_BONUS_DECAY_SEC)));
-      pointsForThisQuestion = BASE_POINTS + speedBonus;
+      HapticFeedback.success();
+      playCorrectSound();
+    } else {
+      HapticFeedback.error();
+      playWrongSound();
+    }
+
+    let pointsForThisQuestion = pointsEarned || 0;
+    if (correct) {
+      // Use points from backend if available, otherwise calculate
+      if (pointsEarned === 0) {
+        const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / SPEED_BONUS_DECAY_SEC)));
+        pointsForThisQuestion = BASE_POINTS + speedBonus;
+      }
       
       setScore(prev => prev + 1);
       setTotalPoints(prev => prev + pointsForThisQuestion);
@@ -64,7 +136,7 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
     }
 
     setTimeout(() => {
-      if (currentIdx < QUESTIONS.length - 1) {
+      if (currentIdx < questions.length - 1) {
         setCurrentIdx(prev => prev + 1);
         setSelectedOption(null);
         setIsCorrect(null);
@@ -77,7 +149,35 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
     }, 1200);
   };
 
-  const question = QUESTIONS[currentIdx];
+  // Show loading or error state
+  if (loading) {
+    return (
+      <div className="min-h-full flex items-center justify-center bg-[#050505]">
+        <div className="text-center">
+          <p className="text-white text-xl font-black uppercase mb-4">Loading Questions...</p>
+          <div className="w-16 h-16 border-4 border-[#14F195] border-t-transparent rounded-full animate-spin mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || questions.length === 0) {
+    return (
+      <div className="min-h-full flex items-center justify-center bg-[#050505]">
+        <div className="text-center">
+          <p className="text-red-400 text-xl font-black uppercase mb-4">{error || 'No questions available'}</p>
+          <button
+            onClick={onQuit}
+            className="px-6 py-3 bg-[#14F195] text-black font-[1000] italic uppercase rounded-lg"
+          >
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const question = questions[currentIdx];
 
   return (
     <div className="min-h-full flex flex-col bg-[#050505] p-4 sm:p-8 md:p-12 relative overflow-hidden">
@@ -130,10 +230,19 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 px-1">
             {question.options.map((option, idx) => {
               let stateClass = "border-white/5 hover:border-[#00FFA3]/20 text-zinc-400 hover:text-white bg-white/[0.02]";
+              let animationClass = "";
+              
               if (selectedOption === idx) {
-                stateClass = isCorrect ? "border-[#00FFA3] bg-[#00FFA3]/10 text-[#00FFA3] shadow-[0_0_20px_rgba(0,255,163,0.1)]" : "border-[#FF3131] bg-[#FF3131]/10 text-[#FF3131]";
+                if (isCorrect) {
+                  stateClass = "border-[#00FFA3] bg-[#00FFA3]/10 text-[#00FFA3] shadow-[0_0_20px_rgba(0,255,163,0.1)]";
+                  animationClass = "answer-correct";
+                } else {
+                  stateClass = "border-[#FF3131] bg-[#FF3131]/10 text-[#FF3131]";
+                  animationClass = "answer-wrong";
+                }
               } else if (selectedOption !== null && idx === question.correctAnswer) {
                 stateClass = "border-[#00FFA3] bg-[#00FFA3]/5 text-[#00FFA3]/60";
+                animationClass = "answer-correct";
               }
 
               return (
@@ -141,7 +250,7 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
                   key={idx}
                   disabled={selectedOption !== null}
                   onClick={() => handleOptionSelect(idx)}
-                  className={`relative p-5 md:p-7 text-left border transition-all duration-300 group flex items-center gap-5 md:gap-8 active:scale-[0.99] ${stateClass}`}
+                  className={`relative p-5 md:p-7 text-left border transition-all duration-300 group flex items-center gap-5 md:gap-8 active:scale-[0.99] ${stateClass} ${animationClass}`}
                 >
                   <div className={`w-8 h-8 md:w-12 md:h-12 border flex items-center justify-center font-[1000] italic text-sm md:text-xl transition-all duration-300 flex-shrink-0 ${selectedOption === idx ? 'bg-current text-black border-transparent' : 'border-current opacity-20 group-hover:opacity-100'}`}>
                     {String.fromCharCode(65 + idx)}
@@ -150,7 +259,7 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
                   
                   {selectedOption === idx && isCorrect && lastGainedPoints && (
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                       <span className="text-[#00FFA3] text-[10px] md:text-xs font-[1000] italic animate-bounce block">
+                       <span className="text-[#00FFA3] text-[10px] md:text-xs font-[1000] italic points-popup block">
                           +{lastGainedPoints} XP
                        </span>
                     </div>
@@ -166,7 +275,7 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
         <div className="flex flex-col items-center md:items-start">
           <span className="text-[9px] text-zinc-600 font-black uppercase tracking-[0.4em] mb-2 italic">GAME PROGRESS</span>
           <div className="flex gap-2">
-             {[...Array(QUESTIONS.length)].map((_, i) => (
+             {[...Array(questions.length)].map((_, i) => (
                <div 
                  key={i} 
                  className={`w-4 h-1 transition-all duration-500 ${i < currentIdx ? 'bg-[#00FFA3] opacity-100' : i === currentIdx ? 'bg-[#00FFA3] animate-pulse' : 'bg-white/5'}`}
@@ -186,7 +295,7 @@ const QuizView: React.FC<QuizViewProps> = ({ onFinish, onQuit }) => {
            <div className="text-right hidden sm:block">
               <span className="text-zinc-700 text-[8px] font-black uppercase block tracking-widest italic">Accuracy</span>
               <span className="text-white font-[1000] italic text-2xl leading-none tabular-nums">
-                {score}/{QUESTIONS.length}
+                {score}/{questions.length}
               </span>
            </div>
         </div>

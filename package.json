@@ -9,12 +9,24 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@solana/wallet-adapter-base": "^0.9.23",
+    "@solana/wallet-adapter-react": "^0.15.35",
+    "@solana/wallet-adapter-react-ui": "^0.9.35",
+    "@solana/wallet-adapter-wallets": "^0.19.32",
+    "@solana/web3.js": "^1.95.8",
+    "@supabase/supabase-js": "^2.47.10",
+    "@tailwindcss/postcss": "^4.1.18",
+    "autoprefixer": "^10.4.24",
+    "bs58": "^6.0.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
+    "buffer": "^6.0.3",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

@@ -6,7 +6,8 @@ export enum View {
   QUESTS = 'QUESTS',
   PROFILE = 'PROFILE',
   QUIZ = 'QUIZ',
-  RESULTS = 'RESULTS'
+  RESULTS = 'RESULTS',
+  ADMIN = 'ADMIN'
 }
 
 export interface Player {

@@ -1,4 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useWallet } from '../src/contexts/WalletContext';
+import { supabase } from '../src/utils/supabase';
+import AvatarUpload from './AvatarUpload';
 
 interface ProfileViewProps {
   username: string;
@@ -7,7 +10,110 @@ interface ProfileViewProps {
   onOpenGuide?: () => void;
 }
 
+interface PlayerStats {
+  total_games_played: number;
+  total_wins: number;
+  total_points: number;
+  highest_score: number;
+  current_streak: number;
+  best_streak: number;
+  total_sol_won: number;
+}
+
+interface GameHistory {
+  round_id: string;
+  rank: number;
+  time_taken_seconds: number;
+  correct_answers: number;
+  total_questions: number;
+  payout_sol: number;
+  finished_at: string;
+}
+
 const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onOpenGuide }) => {
+  const { publicKey } = useWallet();
+  const [stats, setStats] = useState<PlayerStats | null>(null);
+  const [history, setHistory] = useState<GameHistory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAvatarUpload, setShowAvatarUpload] = useState(false);
+  const [currentAvatar, setCurrentAvatar] = useState(avatar);
+
+  useEffect(() => {
+    const fetchProfileData = async () => {
+      if (!publicKey) {
+        setLoading(false);
+        return;
+      }
+
+      const walletAddress = publicKey.toBase58();
+      
+      try {
+        // Fetch player profile/stats
+        const { data: profileData } = await supabase
+          .from('player_profiles')
+          .select('*')
+          .eq('wallet_address', walletAddress)
+          .single();
+
+        if (profileData) {
+          setStats({
+            total_games_played: profileData.total_games_played || 0,
+            total_wins: profileData.total_wins || 0,
+            total_points: profileData.total_points || 0,
+            highest_score: profileData.highest_score || 0,
+            current_streak: profileData.current_streak || 0,
+            best_streak: profileData.best_streak || 0,
+            total_sol_won: 0, // Calculate from game history
+          });
+        } else {
+          // Default stats if profile doesn't exist
+          setStats({
+            total_games_played: 0,
+            total_wins: 0,
+            total_points: 0,
+            highest_score: 0,
+            current_streak: 0,
+            best_streak: 0,
+            total_sol_won: 0,
+          });
+        }
+
+        // Fetch game history (last 10 games)
+        const { data: gamesData } = await supabase
+          .from('game_sessions')
+          .select('*')
+          .eq('wallet_address', walletAddress)
+          .not('finished_at', 'is', null)
+          .order('finished_at', { ascending: false })
+          .limit(10);
+
+        if (gamesData) {
+          // Transform game data to history format
+          const transformedHistory: GameHistory[] = gamesData.map((game: any) => ({
+            round_id: game.round_id || 'N/A',
+            rank: 0, // TODO: Calculate rank from leaderboard
+            time_taken_seconds: game.time_taken_seconds || 0,
+            correct_answers: game.correct_answers || 0,
+            total_questions: 10, // Fixed for now
+            payout_sol: 0, // TODO: Get from payouts table
+            finished_at: game.finished_at,
+          }));
+          setHistory(transformedHistory);
+        }
+      } catch (error) {
+        console.error('Error fetching profile data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfileData();
+  }, [publicKey]);
+
+  const handleAvatarUploadSuccess = (url: string) => {
+    setCurrentAvatar(url);
+    setShowAvatarUpload(false);
+  };
   return (
     <div className="min-h-full bg-[#050505] overflow-x-hidden safe-top relative flex flex-col">
       {/* Sticky Profile Header */}
@@ -27,10 +133,15 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
           <div className="relative flex-shrink-0">
               <div className="w-24 h-24 md:w-52 md:h-52 p-1 bg-gradient-to-br from-[#14F195] via-[#3b82f6] to-[#9945FF] rounded-[24px] md:rounded-[32px] shadow-2xl">
                   <div className="w-full h-full bg-zinc-900 rounded-[21px] md:rounded-[28px] overflow-hidden">
-                      <img src={avatar} alt="Avatar" className="w-full h-full object-cover grayscale" />
+                      <img src={currentAvatar || avatar} alt="Avatar" className="w-full h-full object-cover grayscale" />
                   </div>
               </div>
-              <div className="absolute -bottom-2 -right-2 bg-black border border-white/20 text-[#14F195] font-[1000] text-[10px] md:text-sm px-3 md:px-5 py-1 md:py-2 italic rounded-xl md:rounded-2xl shadow-2xl">LVL 42</div>
+              <button
+                onClick={() => setShowAvatarUpload(true)}
+                className="absolute -bottom-2 -right-2 bg-[#14F195] hover:bg-[#14F195]/90 border border-[#14F195] text-black font-[1000] text-[10px] md:text-xs px-3 md:px-4 py-2 md:py-2 italic rounded-xl md:rounded-2xl shadow-2xl transition-all active:scale-95"
+              >
+                📷 Upload
+              </button>
           </div>
 
           <div className="flex-1 flex flex-col items-center md:items-start text-center md:text-left">
@@ -50,12 +161,18 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
         </div>
 
         {/* Global Stats Grid - Optimized for Mobile */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-8 mb-8 md:mb-20 relative z-10">
-            <ProfileStatCard label="TOTAL WON" value="124.50" unit="SOL" highlight />
-            <ProfileStatCard label="TRIVIAS" value="152" />
-            <ProfileStatCard label="STREAK" value="12" suffix="🔥" />
-            <ProfileStatCard label="POINTS" value="2,408" />
-        </div>
+        {loading ? (
+          <div className="flex justify-center items-center py-20">
+            <div className="w-16 h-16 border-4 border-[#14F195] border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-8 mb-8 md:mb-20 relative z-10">
+            <ProfileStatCard label="TOTAL WON" value={stats?.total_sol_won.toFixed(2) || "0.00"} unit="SOL" highlight />
+            <ProfileStatCard label="TRIVIAS" value={stats?.total_games_played.toString() || "0"} />
+            <ProfileStatCard label="STREAK" value={stats?.current_streak.toString() || "0"} suffix="🔥" />
+            <ProfileStatCard label="POINTS" value={stats?.total_points.toLocaleString() || "0"} />
+          </div>
+        )}
 
         {/* Trivia History Table - Optimized for Mobile */}
         <div className="bg-[#0A0A0A] border border-white/5 relative z-10 shadow-2xl rounded-[24px] md:rounded-[40px] overflow-hidden">
@@ -74,24 +191,48 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.03]">
-                    {[
-                      { id: '224', rank: '#04', time: '44s', correct: '10/10', payout: '+1.2K TR' },
-                      { id: '223', rank: '#12', time: '51s', correct: '8/10', payout: '+840 TR' },
-                      { id: '222', rank: '#02', time: '39s', correct: '10/10', payout: '+5.2 SOL' }
-                    ].map((row, i) => (
-                      <tr key={i} className="hover:bg-white/[0.01] transition-colors group">
-                          <td className="px-6 py-5 md:px-10 md:py-8 font-[1000] uppercase text-[#14F195] text-sm md:text-lg italic tracking-tight">#{row.id}</td>
-                          <td className="px-6 py-5 md:px-10 md:py-8 text-center font-[1000] italic text-white text-base md:text-xl tabular-nums">{row.rank}</td>
-                          <td className="px-6 py-5 md:px-10 md:py-8 text-center font-[1000] italic text-zinc-400 text-sm md:text-xl tabular-nums">{row.time}</td>
-                          <td className="px-6 py-5 md:px-10 md:py-8 text-center font-[1000] italic text-white text-sm md:text-xl tabular-nums">{row.correct}</td>
-                          <td className="px-6 py-5 md:px-10 md:py-8 text-right font-[1000] italic text-[#14F195] text-lg md:text-3xl tabular-nums drop-shadow-[0_0_10px_rgba(20,241,149,0.3)]">{row.payout}</td>
+                    {history.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-10 text-center text-zinc-500 italic">
+                          No game history yet. Play your first trivia to see stats!
+                        </td>
                       </tr>
-                    ))}
+                    ) : (
+                      history.map((row, i) => (
+                        <tr key={i} className="hover:bg-white/[0.01] transition-colors group">
+                          <td className="px-6 py-5 md:px-10 md:py-8 font-[1000] uppercase text-[#14F195] text-sm md:text-lg italic tracking-tight">
+                            #{row.round_id.slice(0, 6)}
+                          </td>
+                          <td className="px-6 py-5 md:px-10 md:py-8 text-center font-[1000] italic text-white text-base md:text-xl tabular-nums">
+                            #{row.rank || '-'}
+                          </td>
+                          <td className="px-6 py-5 md:px-10 md:py-8 text-center font-[1000] italic text-zinc-400 text-sm md:text-xl tabular-nums">
+                            {row.time_taken_seconds}s
+                          </td>
+                          <td className="px-6 py-5 md:px-10 md:py-8 text-center font-[1000] italic text-white text-sm md:text-xl tabular-nums">
+                            {row.correct_answers}/{row.total_questions}
+                          </td>
+                          <td className="px-6 py-5 md:px-10 md:py-8 text-right font-[1000] italic text-[#14F195] text-lg md:text-3xl tabular-nums drop-shadow-[0_0_10px_rgba(20,241,149,0.3)]">
+                            {row.payout_sol > 0 ? `+${row.payout_sol.toFixed(2)} SOL` : `+${row.correct_answers * 100} XP`}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                 </tbody>
             </table>
           </div>
         </div>
       </div>
+
+      {/* Avatar Upload Modal */}
+      {showAvatarUpload && publicKey && (
+        <AvatarUpload
+          walletAddress={publicKey.toBase58()}
+          currentAvatar={currentAvatar || avatar}
+          onUploadSuccess={handleAvatarUploadSuccess}
+          onClose={() => setShowAvatarUpload(false)}
+        />
+      )}
     </div>
   );
 };

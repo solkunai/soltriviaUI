@@ -4,11 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#050505">
     <title>Solana Trivia Protocol</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         body {
@@ -71,17 +71,9 @@
         .podium-bronze-full { background: linear-gradient(180deg, rgba(205, 127, 50, 0.1) 0%, #0a0a0a 100%); border-left: 1px solid rgba(205, 127, 50, 0.25); border-right: 1px solid rgba(205, 127, 50, 0.25); border-top: 1px solid rgba(205, 127, 50, 0.1); }
         .podium-elite-full { background: linear-gradient(180deg, rgba(0, 255, 163, 0.05) 0%, #0a0a0a 100%); border-left: 1px solid rgba(0, 255, 163, 0.15); border-right: 1px solid rgba(0, 255, 163, 0.15); border-top: 1px solid rgba(0, 255, 163, 0.05); }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.4",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/"
-  }
-}
-</script>
 </head>
 <body>
     <div id="root"></div>
+    <script type="module" src="/main.tsx"></script>
 </body>
 </html>
