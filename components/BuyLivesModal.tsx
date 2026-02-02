@@ -1,4 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useWallet, useConnection } from '../src/contexts/WalletContext';
+import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { purchaseLives } from '../src/utils/api';
+import { REVENUE_WALLET, LIVES_PRICE_LAMPORTS } from '../src/utils/constants';
+import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
 
 interface BuyLivesModalProps {
   isOpen: boolean;
@@ -7,11 +12,91 @@ interface BuyLivesModalProps {
 }
 
 const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuccess }) => {
+  const { publicKey, sendTransaction, connected } = useWallet();
+  const { connection } = useConnection();
+  const [purchasing, setPurchasing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   if (!isOpen) return null;
 
-  const handlePurchase = () => {
-    if (onBuySuccess) onBuySuccess();
-    onClose();
+  const handlePurchase = async () => {
+    if (!connected || !publicKey) {
+      setError('Please connect your wallet first');
+      return;
+    }
+
+    setPurchasing(true);
+    setError(null);
+
+    try {
+      // Create the transaction
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: publicKey,
+          toPubkey: new PublicKey(REVENUE_WALLET),
+          lamports: LIVES_PRICE_LAMPORTS,
+        })
+      );
+
+      // Try to get blockhash, but if it fails, let sendTransaction handle it
+      // The wallet adapter will automatically get blockhash if not set
+      try {
+        const { blockhash } = await getRecentBlockhashWithRetry(connection);
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = publicKey;
+      } catch (blockhashError) {
+        // If blockhash fails, let sendTransaction handle it automatically
+        // The wallet adapter will fetch it using the wallet's RPC
+        console.warn('Could not get blockhash, wallet will handle it:', blockhashError);
+      }
+
+      // Send transaction - this will trigger wallet to sign
+      // The wallet adapter handles getting blockhash if not set
+      const signature = await sendTransaction(transaction, connection, {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      // Wait for confirmation with timeout
+      const confirmationPromise = connection.confirmTransaction(signature, 'confirmed');
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
+      );
+      
+      await Promise.race([confirmationPromise, timeoutPromise]);
+
+      // Call the backend API to record the purchase
+      const result = await purchaseLives(publicKey.toBase58(), signature);
+
+      if (result.success) {
+        // Refresh lives after successful purchase
+        // onBuySuccess callback will refresh lives from backend
+        if (onBuySuccess) {
+          await onBuySuccess();
+        }
+        onClose();
+      } else {
+        setError(result.error || 'Purchase recorded but verification failed. Please refresh.');
+      }
+    } catch (err: any) {
+      console.error('Purchase error:', err);
+      
+      // Provide user-friendly error messages
+      let errorMessage = 'Failed to purchase lives. Please try again.';
+      if (err.message?.includes('User rejected')) {
+        errorMessage = 'Transaction was cancelled.';
+      } else if (err.message?.includes('insufficient funds')) {
+        errorMessage = 'Insufficient SOL balance. You need at least 0.03 SOL.';
+      } else if (err.message?.includes('blockhash') || err.message?.includes('403')) {
+        errorMessage = 'Network error. Please try again or check your connection.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setPurchasing(false);
+    }
   };
 
   return (
@@ -48,7 +133,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
               <p className="text-zinc-300 text-[11px] font-black uppercase tracking-widest mb-4 italic">
                 Unlock multi-entry access. Unused lives roll over and can be used for any future trivia round.
               </p>
-              <div className="bg-black/40 border border-white/5 p-4 rounded-xl mb-6">
+              <div className="bg-black/40 border border-white/5 p-4 rounded-xl mb-4">
                 <div className="flex justify-between items-center mb-2">
                     <span className="text-zinc-300 text-[10px] font-black uppercase italic">Service</span>
                     <span className="text-white font-black text-sm italic tracking-tighter">3 ROLLING LIVES</span>
@@ -58,13 +143,25 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
                     <span className="text-[#00FFA3] font-black text-sm italic tracking-tighter">0.03 SOL</span>
                 </div>
               </div>
+              <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg mb-6">
+                <p className="text-amber-400 text-[9px] font-black uppercase tracking-wider text-center italic leading-tight">
+                  Note: Lives purchase does NOT include entry fee. You'll still need to pay 0.02 SOL entry fee + 0.0025 SOL transaction fee to play.
+                </p>
+              </div>
           </div>
+
+          {error && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <p className="text-red-400 text-xs font-black uppercase text-center">{error}</p>
+            </div>
+          )}
 
           <button 
             onClick={handlePurchase}
-            className="w-full py-5 bg-[#FF3131] text-white font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_0_30px_rgba(255,49,49,0.4)] active:scale-95 transition-all rounded-sm"
+            disabled={purchasing || !connected}
+            className="w-full py-5 bg-[#FF3131] disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_0_30px_rgba(255,49,49,0.4)] active:scale-95 transition-all rounded-sm disabled:cursor-not-allowed"
           >
-            PURCHASE LIVES
+            {purchasing ? 'PROCESSING...' : 'PURCHASE LIVES'}
           </button>
           
           <p className="text-[8px] text-zinc-600 text-center font-black uppercase tracking-[0.2em] mt-4 italic">

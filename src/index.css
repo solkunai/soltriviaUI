@@ -1,0 +1,232 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: #050505;
+  color: #ffffff;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sol-gradient-text {
+  background: linear-gradient(135deg, #a855f7 0%, #3b82f6 50%, #10b981 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.scan-line {
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 163, 0.2), transparent);
+  animation: scan 4s linear infinite;
+}
+
+@keyframes scan-horizontal {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.scan-line-horizontal {
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  animation: scan-horizontal 2s linear infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.floating { 
+  animation: float 6s ease-in-out infinite; 
+}
+
+.safe-bottom { 
+  padding-bottom: env(safe-area-inset-bottom); 
+}
+
+.safe-top { 
+  padding-top: env(safe-area-inset-top); 
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #050505;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #222;
+  border-radius: 4px;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.podium-gold { 
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 215, 0, 0.02) 100%); 
+  border: 1px solid rgba(255, 215, 0, 0.3); 
+}
+
+.podium-silver { 
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.15) 0%, rgba(148, 163, 184, 0.02) 100%); 
+  border: 1px solid rgba(148, 163, 184, 0.3); 
+}
+
+.podium-bronze { 
+  background: linear-gradient(180deg, rgba(205, 127, 50, 0.15) 0%, rgba(205, 127, 50, 0.02) 100%); 
+  border: 1px solid rgba(205, 127, 50, 0.3); 
+}
+
+.podium-elite { 
+  background: linear-gradient(180deg, rgba(0, 255, 163, 0.1) 0%, rgba(0, 255, 163, 0.01) 100%); 
+  border: 1px solid rgba(0, 255, 163, 0.15); 
+}
+
+/* Wallet Adapter Button Custom Styles */
+.wallet-adapter-button {
+  background: linear-gradient(to right, #9945FF, #3b82f6, #14F195) !important;
+  color: #000 !important;
+  font-weight: 900 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.1em !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 0.75rem !important;
+  padding: 0.5rem 1rem !important;
+  font-size: 0.75rem !important;
+  transition: all 0.2s !important;
+  box-shadow: 0 10px 15px -3px rgba(153, 69, 255, 0.2) !important;
+}
+
+.wallet-adapter-button:hover {
+  opacity: 0.9 !important;
+  transform: scale(0.95) !important;
+}
+
+.wallet-adapter-button:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+@media (min-width: 768px) {
+  .wallet-adapter-button {
+    padding: 0.75rem 1.5rem !important;
+    font-size: 0.875rem !important;
+    border-radius: 0.875rem !important;
+  }
+}
+
+/* Wallet Modal Styles */
+.wallet-adapter-modal {
+  background: #0a0a0a !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.wallet-adapter-modal-title {
+  color: #fff !important;
+  font-weight: 900 !important;
+  text-transform: uppercase !important;
+}
+
+.wallet-adapter-modal-list {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.wallet-adapter-modal-list-item {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.75rem !important;
+  margin-bottom: 0.5rem !important;
+  transition: all 0.2s !important;
+}
+
+.wallet-adapter-modal-list-item:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: #14F195 !important;
+}
+
+.wallet-adapter-modal-list-item button {
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+
+/* Quiz Answer Animations */
+@keyframes correctPulse {
+  0%, 100% { 
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 255, 163, 0.4);
+  }
+  50% { 
+    transform: scale(1.02);
+    box-shadow: 0 0 30px 10px rgba(0, 255, 163, 0.3);
+  }
+}
+
+@keyframes wrongShake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-8px); }
+  20%, 40%, 60%, 80% { transform: translateX(8px); }
+}
+
+@keyframes correctGlow {
+  0%, 100% { 
+    box-shadow: 0 0 20px rgba(0, 255, 163, 0.1);
+  }
+  50% { 
+    box-shadow: 0 0 40px rgba(0, 255, 163, 0.4), 0 0 60px rgba(0, 255, 163, 0.2);
+  }
+}
+
+@keyframes wrongGlow {
+  0%, 100% { 
+    box-shadow: 0 0 20px rgba(255, 49, 49, 0.1);
+  }
+  50% { 
+    box-shadow: 0 0 40px rgba(255, 49, 49, 0.4), 0 0 60px rgba(255, 49, 49, 0.2);
+  }
+}
+
+@keyframes pointsPop {
+  0% { 
+    transform: translateY(0) scale(0.8);
+    opacity: 0;
+  }
+  50% {
+    transform: translateY(-20px) scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-40px) scale(1);
+    opacity: 0;
+  }
+}
+
+.answer-correct {
+  animation: correctPulse 0.6s ease-out, correctGlow 1s ease-in-out;
+}
+
+.answer-wrong {
+  animation: wrongShake 0.5s ease-in-out, wrongGlow 0.8s ease-in-out;
+}
+
+.points-popup {
+  animation: pointsPop 1s ease-out forwards;
+}

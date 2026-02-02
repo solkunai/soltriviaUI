@@ -65,8 +65,8 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, onStartQuiz, onOpenBuyLives 
             </button>
         </div>
         
-        <p className="text-[9px] text-zinc-400 text-center font-black uppercase tracking-widest mt-2 px-6 opacity-60 italic">
-          * Standard entry is limited to 1 per session. <span className="text-[#FF3131]">Extra lives</span> allow multiple entries and roll over across rounds.
+        <p className="text-[9px] text-zinc-400 text-center font-black uppercase tracking-widest mt-2 px-6 opacity-60 italic leading-tight">
+          * Entry fee: 0.02 SOL + 0.0025 SOL txn fee. <span className="text-[#FF3131]">Extra lives</span> (0.03 SOL) allow multiple entries and roll over across rounds.
         </p>
       </div>
     </div>

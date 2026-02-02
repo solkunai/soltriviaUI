@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import WalletConnectButton from './WalletConnectButton';
+import { useWallet, useConnection } from '../src/contexts/WalletContext';
+import { getBalanceSafely } from '../src/utils/balance';
 
 interface HomeViewProps {
   lives: number;
@@ -8,8 +11,28 @@ interface HomeViewProps {
 }
 
 const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives }) => {
+  const { publicKey, connected } = useWallet();
+  const { connection } = useConnection();
+  const [balance, setBalance] = useState<number | null>(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
   const [prizePool, setPrizePool] = useState(25402.15);
   const [playersEntered, setPlayersEntered] = useState(12482);
+
+  // Fetch wallet balance when connected
+  useEffect(() => {
+    if (connected && publicKey && connection) {
+      setLoadingBalance(true);
+      getBalanceSafely(connection, publicKey)
+        .then((bal) => {
+          setBalance(bal);
+        })
+        .finally(() => {
+          setLoadingBalance(false);
+        });
+    } else {
+      setBalance(null);
+    }
+  }, [connected, publicKey, connection]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -29,7 +52,15 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
             <div>
               <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest block mb-0.5 italic">YOUR BALANCE</span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-xl font-[1000] italic text-white leading-none">12.42</span>
+                {connected && balance !== null ? (
+                  <span className="text-xl font-[1000] italic text-white leading-none tabular-nums">
+                    {balance.toFixed(2)}
+                  </span>
+                ) : connected && loadingBalance ? (
+                  <span className="text-xl font-[1000] italic text-white/50 leading-none">...</span>
+                ) : (
+                  <span className="text-xl font-[1000] italic text-white/30 leading-none">0.00</span>
+                )}
                 <span className="text-[#14F195] text-[9px] font-[1000] italic uppercase">SOL</span>
               </div>
             </div>
@@ -54,24 +85,16 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
           {/* How to Play */}
           <button 
             onClick={onOpenGuide}
-            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-[#14F195] hover:bg-[#14F195]/90 h-9 md:h-10 px-3 md:px-6 rounded-full transition-all group shadow-[0_0_15px_rgba(20,241,149,0.15)] active:scale-95"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 md:gap-1.5 bg-[#14F195] hover:bg-[#14F195]/90 h-11 md:h-10 px-4 md:px-6 rounded-full transition-all group shadow-[0_0_15px_rgba(20,241,149,0.15)] active:scale-95 min-h-[44px] md:min-h-0"
           >
-            <span className="text-[8px] md:text-[10px] font-black uppercase tracking-wider text-black">HOW TO PLAY</span>
+            <span className="text-[10px] md:text-[10px] font-black uppercase tracking-wider text-black whitespace-nowrap">HOW TO PLAY</span>
             <div className="flex w-4 h-4 md:w-5 md:h-5 rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] items-center justify-center text-white font-black text-[9px] md:text-[10px] italic shadow-sm">?</div>
           </button>
 
           {/* Connect Wallet */}
-          <button 
-            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-[#14F195] hover:bg-[#14F195]/90 h-9 md:h-10 px-3 md:px-6 rounded-full transition-all group shadow-[0_0_15px_rgba(20,241,149,0.15)] active:scale-95"
-          >
-            <svg className="w-3.5 h-3.5 md:w-4 md:h-4 text-black shrink-0" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M21 18H3V6h18v12zm-2-2V8H5v8h14zM16 11h2v2h-2v-2z" />
-            </svg>
-            <span className="text-[8px] md:text-[10px] font-black uppercase tracking-wider text-black">
-              <span className="hidden sm:inline">Connect Wallet</span>
-              <span className="sm:hidden">Connect</span>
-            </span>
-          </button>
+          <div className="flex-1 md:flex-none">
+            <WalletConnectButton />
+          </div>
         </div>
       </div>
 
@@ -143,7 +166,15 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               <div>
                 <span className="text-zinc-300 text-[10px] font-black uppercase tracking-widest block mb-1 italic">Balance</span>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-[28px] font-[1000] italic text-white">12.42</span>
+                  {connected && balance !== null ? (
+                    <span className="text-[28px] font-[1000] italic text-white tabular-nums">
+                      {balance.toFixed(2)}
+                    </span>
+                  ) : connected && loadingBalance ? (
+                    <span className="text-[28px] font-[1000] italic text-white/50">...</span>
+                  ) : (
+                    <span className="text-[28px] font-[1000] italic text-white/30">0.00</span>
+                  )}
                   <span className="text-[#14F195] text-xs font-[1000] italic uppercase">SOL</span>
                 </div>
               </div>
@@ -165,3 +196,11 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default HomeView;
