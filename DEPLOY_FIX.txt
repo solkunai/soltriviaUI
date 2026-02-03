@@ -1,0 +1,65 @@
+✅ BUG FIXED - READY TO DEPLOY
+===============================
+
+PROBLEM FOUND:
+- You have TWO different database schemas (schema.sql vs SUPABASE_SETUP.sql)  
+- schema.sql uses: score, correct_count
+- SUPABASE_SETUP.sql uses: total_points, correct_answers
+- Edge Function was querying BOTH sets of columns
+- When columns don't exist → Query fails → "Session not found" error
+
+THE FIX:
+- Changed submit-answer to use SELECT * (gets all columns)
+- Auto-detects which columns exist
+- Updates whichever columns are present
+- Works with BOTH schemas now!
+
+STEPS TO DEPLOY:
+================
+
+1. Go to Supabase Dashboard Edge Functions:
+   https://app.supabase.com/project/uekqrkjiunezsytzyjmx/functions
+
+2. Find "submit-answer" function
+
+3. Copy/paste the NEW code from:
+   soltriviaUI/supabase/functions/submit-answer/index.ts
+
+4. Click "Deploy"
+
+5. Test your game - should work now!
+
+
+WHAT WAS CHANGED:
+================
+
+OLD (BROKEN):
+- Tried to SELECT specific columns: score, correct_count, total_points, correct_answers
+- Failed if columns didn't exist
+
+NEW (FIXED):  
+- SELECT * (gets all columns that exist)
+- Auto-detects which schema you're using
+- Updates the correct columns dynamically
+
+
+VERIFICATION:
+============
+
+After deploying, test by:
+1. Start a game (pay entry fee)
+2. Answer a question
+3. Should submit successfully (no more "Session not found" error)
+4. Score should update
+5. Move to next question
+
+
+IF STILL BROKEN:
+===============
+
+Run DEBUG_SESSION.sql to check:
+- Which columns exist in game_sessions table
+- If sessions are being created
+- What the actual schema is
+
+Then we can fix the Edge Function to match your exact schema.

@@ -6,7 +6,9 @@ import { PRIZE_POOL_WALLET, REVENUE_WALLET, SUPABASE_FUNCTIONS_URL } from '../sr
 import { getAuthHeaders } from '../src/utils/api';
 import { getSolanaRpcEndpoint } from '../src/utils/rpc';
 
-type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests';
+const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
+
+type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'answer_debug';
 
 interface Question {
   id?: string;
@@ -145,6 +147,7 @@ const AdminDashboardEnhanced: React.FC = () => {
           { id: 'users', label: '👥 Users', icon: '👥' },
           { id: 'rounds', label: '🎮 Rounds', icon: '🎮' },
           { id: 'lives', label: '❤️ Lives', icon: '❤️' },
+          { id: 'answer_debug', label: '🔬 Answer debug', icon: '🔬' },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -169,10 +172,37 @@ const AdminDashboardEnhanced: React.FC = () => {
         {activeTab === 'users' && <UsersView />}
         {activeTab === 'rounds' && <RoundsView />}
         {activeTab === 'lives' && <LivesView />}
+        {activeTab === 'answer_debug' && <AnswerDebugView functionsUrl={SUPABASE_FUNCTIONS_URL} />}
       </div>
     </div>
   );
 };
+
+// Stub tabs (coming soon) — fix missing component errors
+const RankingsView: React.FC = () => (
+  <div className="py-12 text-center text-zinc-400">
+    <h2 className="text-xl font-black text-white mb-2">Rankings</h2>
+    <p>Coming soon. View leaderboard and player rankings here.</p>
+  </div>
+);
+const UsersView: React.FC = () => (
+  <div className="py-12 text-center text-zinc-400">
+    <h2 className="text-xl font-black text-white mb-2">Users</h2>
+    <p>Coming soon. Manage players and profiles here.</p>
+  </div>
+);
+const RoundsView: React.FC = () => (
+  <div className="py-12 text-center text-zinc-400">
+    <h2 className="text-xl font-black text-white mb-2">Rounds</h2>
+    <p>Coming soon. View daily rounds and pots here.</p>
+  </div>
+);
+const LivesView: React.FC = () => (
+  <div className="py-12 text-center text-zinc-400">
+    <h2 className="text-xl font-black text-white mb-2">Lives</h2>
+    <p>Coming soon. View lives purchases and usage here.</p>
+  </div>
+);
 
 // Stats Overview Tab
 const StatsView: React.FC<{ stats: any; loading: boolean }> = ({ stats, loading }) => {
@@ -565,6 +595,130 @@ const QuestsManagementView: React.FC = () => {
   );
 };
 
+// Answer debug tab: pick a question from the list, click an option — see if DB correct_index matches (no session ID needed)
+interface AnswerDebugViewProps {
+  functionsUrl: string;
+}
+
+const AnswerDebugView: React.FC<AnswerDebugViewProps> = ({ functionsUrl }) => {
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [lastClick, setLastClick] = useState<{ selectedIndex: number; correctIndex: number; match: boolean } | null>(null);
+
+  const loadQuestions = async () => {
+    setLoading(true);
+    setError('');
+    setQuestions([]);
+    setSelectedId('');
+    setLastClick(null);
+    try {
+      const res = await fetch(`${functionsUrl}/manage-questions`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ action: 'list', payload: { limit: 100 } }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Failed to load');
+      const list = (json.data || []) as Question[];
+      setQuestions(list);
+      if (list.length > 0) setSelectedId(String((list[0] as Question).id ?? ''));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load questions');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const question = questions.find((q) => String(q.id) === selectedId);
+  const options = question
+    ? Array.isArray(question.options)
+      ? question.options
+      : typeof question.options === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(question.options);
+            } catch {
+              return [];
+            }
+          })()
+        : []
+    : [];
+
+  const handleOptionClick = (selectedIndex: number) => {
+    if (!question) return;
+    const correctIndex = Number(question.correct_index);
+    const match = selectedIndex === correctIndex;
+    setLastClick({ selectedIndex, correctIndex, match });
+  };
+
+  return (
+    <div>
+      <h2 className="text-2xl font-black mb-4">Answer debug</h2>
+      <p className="text-zinc-500 text-sm mb-6">
+        Load your questions, pick one, then click an option (A/B/C/D). The panel shows what the DB has as <code className="bg-white/10 px-1 rounded">correct_index</code> and whether your click would count as correct. No game or session needed.
+      </p>
+      <button
+        onClick={loadQuestions}
+        disabled={loading}
+        className="mb-6 px-6 py-2 bg-[#14F195] text-black font-black uppercase text-sm rounded-lg disabled:opacity-50"
+      >
+        {loading ? 'Loading…' : 'Load questions'}
+      </button>
+      {error && <div className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">{error}</div>}
+      {questions.length > 0 && (
+        <div className="mb-6">
+          <label className="block text-xs font-black uppercase text-zinc-500 mb-2">Pick a question</label>
+          <select
+            value={selectedId}
+            onChange={(e) => { setSelectedId(e.target.value); setLastClick(null); }}
+            className="w-full max-w-xl px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
+          >
+            {questions.map((q) => (
+              <option key={q.id} value={String(q.id)}>
+                {(q.text || '').slice(0, 80)}{(q.text?.length ?? 0) > 80 ? '…' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {question && options.length > 0 && (
+        <div className="mb-8">
+          <div className="p-4 bg-white/5 rounded-xl border border-white/10 mb-4">
+            <p className="text-white font-medium mb-2">{question.text}</p>
+            <p className="text-zinc-500 text-xs mb-3">In DB: correct_index = {Number(question.correct_index)} ({OPTION_LABELS[Number(question.correct_index)] ?? '?'}) — click an option:</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {options.map((opt, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleOptionClick(idx)}
+                  className="p-4 text-left border border-white/10 rounded-lg hover:border-[#14F195]/50 hover:bg-white/5 flex items-center gap-3"
+                >
+                  <span className="w-8 h-8 flex items-center justify-center border border-white/20 rounded font-black text-sm">{OPTION_LABELS[idx] ?? idx}</span>
+                  <span>{opt}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {lastClick != null && (
+            <div className="p-4 rounded-xl border border-white/20 bg-white/5">
+              <p className="text-zinc-400 text-sm">
+                You clicked index <strong className="text-white">{lastClick.selectedIndex}</strong> ({OPTION_LABELS[lastClick.selectedIndex]}).
+                DB <code className="bg-white/10 px-1 rounded">correct_index</code> = <strong className="text-white">{lastClick.correctIndex}</strong> ({OPTION_LABELS[lastClick.correctIndex]}).
+                Would mark as correct: <strong className={lastClick.match ? 'text-[#14F195]' : 'text-red-400'}>{lastClick.match ? 'YES' : 'NO'}</strong>
+                {!lastClick.match && (
+                  <span className="block mt-2 text-amber-400/90 text-xs">Fix this question in the Questions tab: set correct_index to the index of the right answer (0=A, 1=B, 2=C, 3=D).</span>
+                )}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Questions Management Tab (uses manage-questions Edge Function so admin can bypass RLS; no extra auth — dashboard is already behind login)
 interface QuestionsViewProps {
   functionsUrl: string;
@@ -577,6 +731,7 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
   const [success, setSuccess] = useState('');
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [questionSearch, setQuestionSearch] = useState('');
 
   const [formData, setFormData] = useState<Question>({
     category: 'solana',
@@ -600,15 +755,13 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
     return json;
   };
 
-  useEffect(() => {
-    fetchQuestions();
-  }, [functionsUrl]);
-
-  const fetchQuestions = async () => {
+  const fetchQuestions = async (search?: string) => {
     setLoading(true);
     setError('');
     try {
-      const json = await callManageQuestions('list', { limit: 100 });
+      const payload: Record<string, unknown> = { limit: 500 };
+      if (search && search.trim()) payload.search = search.trim();
+      const json = await callManageQuestions('list', payload);
       const data = (json.data || []) as Question[];
       setQuestions(data);
     } catch (err: any) {
@@ -617,6 +770,16 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchQuestions();
+  }, [functionsUrl]);
+
+  // Debounced server-side search when user types in the search box
+  useEffect(() => {
+    const t = setTimeout(() => fetchQuestions(questionSearch.trim()), 300);
+    return () => clearTimeout(t);
+  }, [questionSearch]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -700,27 +863,47 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
     }
   };
 
+  const questionsTitle = questionSearch.trim()
+    ? 'Questions Search — ' + questions.length + ' results'
+    : 'Questions Management (' + questions.length + ')';
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-black">Questions Management ({questions.length})</h2>
-        <button
-          onClick={() => {
-            setShowForm(!showForm);
-            setEditingQuestion(null);
-            setFormData({
-              category: 'solana',
-              text: '',
-              options: ['', '', '', ''],
-              correct_index: 0,
-              difficulty: 1,
-              active: true,
-            });
-          }}
-          className="px-6 py-3 bg-[#14F195] text-black font-black uppercase text-sm rounded-lg hover:bg-[#14F195]/90"
-        >
-          {showForm ? 'Cancel' : '+ Add Question'}
-        </button>
+      <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+        <h2 className="text-2xl font-black">
+          {questionsTitle}
+        </h2>
+        <div className="flex items-center gap-3">
+          <label className="sr-only" htmlFor="questions-search">Search questions</label>
+          <input
+            id="questions-search"
+            type="search"
+            placeholder="Search by question text or category..."
+            value={questionSearch}
+            onChange={(e) => {
+              setQuestionSearch(e.target.value);
+              if (!e.target.value.trim()) fetchQuestions();
+            }}
+            className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-zinc-500 w-72 max-w-full text-sm focus:border-[#14F195]/50 focus:ring-1 focus:ring-[#14F195]/30"
+          />
+          <button
+            onClick={() => {
+              setShowForm(!showForm);
+              setEditingQuestion(null);
+              setFormData({
+                category: 'solana',
+                text: '',
+                options: ['', '', '', ''],
+                correct_index: 0,
+                difficulty: 1,
+                active: true,
+              });
+            }}
+            className="px-6 py-3 bg-[#14F195] text-black font-black uppercase text-sm rounded-lg hover:bg-[#14F195]/90"
+          >
+            {showForm ? 'Cancel' : '+ Add Question'}
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -852,21 +1035,20 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
         <div className="text-center py-10">Loading questions...</div>
       ) : (
         <div className="space-y-3">
+          {questions.length === 0 && (
+            <p className="text-zinc-500 text-center py-6">
+              {questions.length === 0 ? 'No questions yet.' : 'No questions match your search.'}
+            </p>
+          )}
           {questions.map((q) => {
-            const options = Array.isArray(q.options) ? q.options : JSON.parse(q.options as any);
+            const options = Array.isArray(q.options) ? q.options : (typeof q.options === 'string' ? JSON.parse(q.options) : []);
+            const rowClass = q.active ? 'p-4 border rounded-lg bg-black/20 border-white/10' : 'p-4 border rounded-lg bg-zinc-900/20 border-zinc-700/30';
             return (
-              <div
-                key={q.id}
-                className={`p-4 border rounded-lg ${
-                  q.active ? 'bg-black/20 border-white/10' : 'bg-zinc-900/20 border-zinc-700/30'
-                }`}
-              >
+              <div key={q.id} className={rowClass}>
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <span
-                      className={`text-xs px-2 py-1 rounded ${
-                        q.active ? 'bg-green-500/20 text-green-400' : 'bg-zinc-500/20 text-zinc-400'
-                      }`}
+                      className={q.active ? 'text-xs px-2 py-1 rounded bg-green-500/20 text-green-400' : 'text-xs px-2 py-1 rounded bg-zinc-500/20 text-zinc-400'}
                     >
                       {q.active ? 'Active' : 'Inactive'}
                     </span>
@@ -875,6 +1057,9 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
                     </span>
                     <span className="ml-2 text-xs px-2 py-1 rounded bg-purple-500/20 text-purple-400">
                       Difficulty {q.difficulty}
+                    </span>
+                    <span className="ml-2 text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 font-black">
+                      ✓ {OPTION_LABELS[q.correct_index] || '?'}
                     </span>
                   </div>
                   <div className="flex gap-2">
@@ -903,11 +1088,7 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
                   {options.map((opt: string, idx: number) => (
                     <div
                       key={idx}
-                      className={`p-2 rounded ${
-                        idx === q.correct_index
-                          ? 'bg-green-500/20 text-green-400 font-bold'
-                          : 'bg-white/5 text-zinc-400'
-                      }`}
+                      className={idx === q.correct_index ? 'p-2 rounded bg-green-500/20 text-green-400 font-bold' : 'p-2 rounded bg-white/5 text-zinc-400'}
                     >
                       {String.fromCharCode(65 + idx)}. {opt}
                     </div>
@@ -918,370 +1099,6 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
           })}
         </div>
       )}
-    </div>
-  );
-};
-
-// Users Management Tab
-const UsersView: React.FC = () => {
-  const [users, setUsers] = useState<PlayerStats[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
-    try {
-      const { data: profiles } = await supabase
-        .from('player_profiles')
-        .select('*')
-        .order('total_points', { ascending: false })
-        .limit(50);
-
-      const { data: lives } = await supabase
-        .from('player_lives')
-        .select('wallet_address, lives_count');
-
-      const livesMap = new Map(lives?.map((l) => [l.wallet_address, l.lives_count]) || []);
-
-      const usersData: PlayerStats[] = profiles?.map((p) => ({
-        wallet_address: p.wallet_address,
-        username: p.username || 'Anonymous',
-        total_games_played: p.total_games_played || 0,
-        total_points: p.total_points || 0,
-        current_streak: p.current_streak || 0,
-        lives_count: livesMap.get(p.wallet_address) || 0,
-      })) || [];
-
-      setUsers(usersData);
-    } catch (error) {
-      console.error('Error fetching users:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) return <div className="text-center py-10">Loading users...</div>;
-
-  return (
-    <div>
-      <h2 className="text-2xl font-black mb-6">Players ({users.length})</h2>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-black/40 text-xs font-black text-zinc-500 uppercase">
-            <tr>
-              <th className="px-4 py-3 text-left">Wallet</th>
-              <th className="px-4 py-3 text-left">Username</th>
-              <th className="px-4 py-3 text-center">Games</th>
-              <th className="px-4 py-3 text-center">Points</th>
-              <th className="px-4 py-3 text-center">Streak</th>
-              <th className="px-4 py-3 text-center">Lives</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {users.map((user) => (
-              <tr key={user.wallet_address} className="hover:bg-white/5">
-                <td className="px-4 py-3 font-mono text-xs text-[#14F195]">
-                  {user.wallet_address.slice(0, 8)}...{user.wallet_address.slice(-6)}
-                </td>
-                <td className="px-4 py-3">{user.username}</td>
-                <td className="px-4 py-3 text-center">{user.total_games_played}</td>
-                <td className="px-4 py-3 text-center font-bold">{user.total_points.toLocaleString()}</td>
-                <td className="px-4 py-3 text-center">{user.current_streak} 🔥</td>
-                <td className="px-4 py-3 text-center text-red-400">❤️ {user.lives_count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-// Rounds Management Tab
-const RoundsView: React.FC = () => {
-  const [rounds, setRounds] = useState<RoundData[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchRounds();
-  }, []);
-
-  const fetchRounds = async () => {
-    try {
-      const { data } = await supabase
-        .from('daily_rounds')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      setRounds(data || []);
-    } catch (error) {
-      console.error('Error fetching rounds:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) return <div className="text-center py-10">Loading rounds...</div>;
-
-  return (
-    <div>
-      <h2 className="text-2xl font-black mb-6">Game Rounds ({rounds.length})</h2>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-black/40 text-xs font-black text-zinc-500 uppercase">
-            <tr>
-              <th className="px-4 py-3 text-left">Date</th>
-              <th className="px-4 py-3 text-center">Round</th>
-              <th className="px-4 py-3 text-center">Players</th>
-              <th className="px-4 py-3 text-center">Pot</th>
-              <th className="px-4 py-3 text-center">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {rounds.map((round) => (
-              <tr key={round.id} className="hover:bg-white/5">
-                <td className="px-4 py-3">{round.date}</td>
-                <td className="px-4 py-3 text-center">Round {round.round_number + 1}</td>
-                <td className="px-4 py-3 text-center">{round.player_count}</td>
-                <td className="px-4 py-3 text-center font-bold text-[#14F195]">
-                  {(round.pot_lamports / 1_000_000_000).toFixed(3)} SOL
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-black ${
-                      round.status === 'active'
-                        ? 'bg-green-500/20 text-green-400'
-                        : 'bg-zinc-500/20 text-zinc-400'
-                    }`}
-                  >
-                    {round.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-// Lives Management Tab
-const LivesView: React.FC = () => {
-  const [purchases, setPurchases] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchPurchases();
-  }, []);
-
-  const fetchPurchases = async () => {
-    try {
-      const { data } = await supabase
-        .from('lives_purchases')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      setPurchases(data || []);
-    } catch (error) {
-      console.error('Error fetching purchases:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) return <div className="text-center py-10">Loading purchases...</div>;
-
-  return (
-    <div>
-      <h2 className="text-2xl font-black mb-6">Lives Purchases ({purchases.length})</h2>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-black/40 text-xs font-black text-zinc-500 uppercase">
-            <tr>
-              <th className="px-4 py-3 text-left">Date</th>
-              <th className="px-4 py-3 text-left">Wallet</th>
-              <th className="px-4 py-3 text-center">Lives</th>
-              <th className="px-4 py-3 text-center">Amount</th>
-              <th className="px-4 py-3 text-left">TX</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {purchases.map((purchase) => (
-              <tr key={purchase.id} className="hover:bg-white/5">
-                <td className="px-4 py-3 text-sm">
-                  {new Date(purchase.created_at).toLocaleString()}
-                </td>
-                <td className="px-4 py-3 font-mono text-xs text-[#14F195]">
-                  {purchase.wallet_address.slice(0, 8)}...{purchase.wallet_address.slice(-6)}
-                </td>
-                <td className="px-4 py-3 text-center">❤️ {purchase.lives_purchased}</td>
-                <td className="px-4 py-3 text-center font-bold">
-                  {(purchase.amount_lamports / 1_000_000_000).toFixed(3)} SOL
-                </td>
-                <td className="px-4 py-3 font-mono text-xs">
-                  <a
-                    href={`https://solscan.io/tx/${purchase.tx_signature}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:underline"
-                  >
-                    {purchase.tx_signature.slice(0, 8)}...
-                  </a>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-// Rankings Management Tab
-const RankingsView: React.FC = () => {
-  const [rankings, setRankings] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [copiedWallet, setCopiedWallet] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetchRankings();
-  }, []);
-
-  const fetchRankings = async () => {
-    try {
-      const { data } = await supabase
-        .from('player_profiles')
-        .select('wallet_address, username, total_points, total_wins, total_games_played, highest_score, current_streak')
-        .order('total_points', { ascending: false })
-        .limit(100);
-
-      setRankings(data || []);
-    } catch (error) {
-      console.error('Error fetching rankings:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const copyWalletAddress = async (wallet: string) => {
-    try {
-      await navigator.clipboard.writeText(wallet);
-      setCopiedWallet(wallet);
-      setTimeout(() => setCopiedWallet(null), 2000);
-    } catch (error) {
-      console.error('Failed to copy:', error);
-    }
-  };
-
-  if (loading) {
-    return <div className="text-center py-8">Loading rankings...</div>;
-  }
-
-  return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-black">🏆 Player Rankings ({rankings.length})</h2>
-        <button
-          onClick={fetchRankings}
-          className="px-4 py-2 bg-[#14F195] text-black font-bold rounded-lg hover:bg-[#14F195]/80 transition-colors"
-        >
-          🔄 Refresh
-        </button>
-      </div>
-      
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-white/5 border-b border-white/10">
-            <tr>
-              <th className="px-4 py-3 text-center">#</th>
-              <th className="px-4 py-3 text-left">Player</th>
-              <th className="px-4 py-3 text-left">Wallet Address</th>
-              <th className="px-4 py-3 text-center">Total Points</th>
-              <th className="px-4 py-3 text-center">Wins</th>
-              <th className="px-4 py-3 text-center">Games</th>
-              <th className="px-4 py-3 text-center">High Score</th>
-              <th className="px-4 py-3 text-center">Streak</th>
-              <th className="px-4 py-3 text-center">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {rankings.map((player, index) => (
-              <tr key={player.wallet_address} className="hover:bg-white/5">
-                <td className="px-4 py-3 text-center font-black text-xl">
-                  {index === 0 && <span className="text-yellow-400">🥇</span>}
-                  {index === 1 && <span className="text-gray-300">🥈</span>}
-                  {index === 2 && <span className="text-orange-400">🥉</span>}
-                  {index > 2 && <span className="text-zinc-500">{index + 1}</span>}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="font-bold text-white">
-                    {player.username || 'Anonymous'}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs text-[#14F195]">
-                      {player.wallet_address.slice(0, 8)}...{player.wallet_address.slice(-6)}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span className="font-black text-lg text-[#14F195]">
-                    {player.total_points.toLocaleString()}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span className="font-bold text-yellow-400">
-                    🏆 {player.total_wins}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-center text-zinc-400">
-                  {player.total_games_played}
-                </td>
-                <td className="px-4 py-3 text-center text-purple-400 font-bold">
-                  {player.highest_score}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span className={`font-bold ${player.current_streak > 0 ? 'text-orange-400' : 'text-zinc-500'}`}>
-                    🔥 {player.current_streak}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <button
-                    onClick={() => copyWalletAddress(player.wallet_address)}
-                    className={`px-3 py-1 rounded-lg font-bold transition-colors ${
-                      copiedWallet === player.wallet_address
-                        ? 'bg-green-500 text-white'
-                        : 'bg-white/10 hover:bg-white/20 text-white'
-                    }`}
-                    title="Copy wallet address for rewards"
-                  >
-                    {copiedWallet === player.wallet_address ? '✓ Copied!' : '📋 Copy'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {rankings.length === 0 && (
-        <div className="text-center py-12 text-zinc-500">
-          No player rankings yet. Players will appear here once they start playing!
-        </div>
-      )}
-
-      <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-        <p className="text-sm text-blue-300">
-          💡 <strong>Tip:</strong> Use the "Copy" button to quickly copy wallet addresses for sending rewards manually.
-          Rankings are sorted by total points across all games.
-        </p>
-      </div>
     </div>
   );
 };

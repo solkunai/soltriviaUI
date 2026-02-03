@@ -1,0 +1,87 @@
+READY TO DEPLOY - CORRECT ANSWERS SYSTEM
+=========================================
+
+WHAT WAS DONE
+-------------
+✓ Created separate table for correct answers (question_correct_answers)
+✓ Answers stored as letters (A, B, C, D) instead of indices (0, 1, 2, 3)
+✓ Updated submit-answer Edge Function to read from new table
+✓ Updated Admin Dashboard to show letter badges
+✓ NO TRIGGERS (previous version had infinite loop bug - fixed!)
+
+
+HOW TO DEPLOY
+-------------
+1. Run SIMPLE_MIGRATION.sql in Supabase SQL Editor
+2. Run test-correct-answers-migration.sql to verify
+3. Deploy submit-answer Edge Function:
+   cd soltriviaUI
+   supabase functions deploy submit-answer
+4. Test game - play a round, answer questions
+
+
+FILES TO USE
+------------
+✓ SIMPLE_MIGRATION.sql - Main migration (NO TRIGGERS!)
+✓ test-correct-answers-migration.sql - Verification
+✓ pre-migration-check.sql - Optional pre-check
+✓ DEPLOY_STEPS.txt - Detailed instructions
+
+
+HOW IT WORKS NOW
+----------------
+questions table:
+- id, text, options, correct_index (0-3)
+- correct_index KEPT for backward compatibility
+
+question_correct_answers table (NEW):
+- question_id, correct_answer ('A', 'B', 'C', 'D')
+
+Game flow:
+User answers → submit-answer Edge Function →
+Queries question_correct_answers → Gets letter (e.g. 'B') →
+Converts to index (1) → Compares with user's selection →
+Returns correct/incorrect + shows green
+
+
+WHAT WAS FIXED
+--------------
+OLD (BROKEN):
+- Had bidirectional triggers
+- Trigger 1: questions → updates question_correct_answers
+- Trigger 2: question_correct_answers → updates questions
+- Result: INFINITE LOOP (stack overflow)
+
+NEW (WORKS):
+- No triggers at all
+- Just a simple table with correct answers
+- Edge Function reads from it
+- Clean and simple!
+
+
+IF YOU SEE ERRORS
+-----------------
+If you see "stack depth limit exceeded":
+→ You ran the old broken migration
+→ Clean it up (see DEPLOY_STEPS.txt)
+→ Then run SIMPLE_MIGRATION.sql
+
+
+TESTING
+-------
+After deployment:
+1. Go to Admin Dashboard → Answer debug tab
+2. Load questions
+3. Click different options (A, B, C, D)
+4. Verify it correctly identifies right/wrong
+
+Or:
+1. Start a game
+2. Answer questions
+3. Verify correct answers show GREEN
+4. Verify points awarded correctly
+
+
+ALL DONE!
+---------
+Everything is ready. Just run the migration!

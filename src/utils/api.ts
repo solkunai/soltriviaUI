@@ -164,8 +164,9 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<SubmitAn
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to submit answer');
+    const error = await response.json().catch(() => ({}));
+    const msg = error?.details ? `${error.error || 'Failed to submit answer'}: ${error.details}` : (error?.error || 'Failed to submit answer');
+    throw new Error(msg);
   }
 
   return response.json();
