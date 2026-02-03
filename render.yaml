@@ -1,10 +1,56 @@
 services:
-  # Static Site Service (Recommended - Free tier available)
-  - type: static
-    name: sol-trivia-ui
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
+  # Web Service (Currently Active - Supports keep-alive)
+  # Note: Using Web Service instead of Static Site to support server.js and health endpoint
+      # Supabase Configuration
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_SUPABASE_FUNCTIONS_URL
+        sync: false
+      
+      # Solana Network
+      - key: VITE_SOLANA_NETWORK
+        value: mainnet-beta
+      
+      # Wallet Addresses
+      - key: VITE_PRIZE_POOL_WALLET
+        sync: false
+      - key: VITE_REVENUE_WALLET
+        sync: false
+      
+      # Pricing (in lamports)
+      - key: VITE_ENTRY_FEE_LAMPORTS
+        value: "20000000"  # 0.02 SOL
+      - key: VITE_TXN_FEE_LAMPORTS
+        value: "2500000"   # 0.0025 SOL
+      - key: VITE_LIVES_PRICE_LAMPORTS
+        value: "30000000"  # 0.03 SOL
+      
+      # RPC Endpoints (Optional but recommended)
+      - key: VITE_HELIUS_API_KEY
+        sync: false
+      - key: VITE_ALCHEMY_API_KEY
+        sync: false
+      
+      # Admin Credentials (Optional - for admin dashboard)
+      - key: VITE_ADMIN_USERNAME
+        sync: false
+      - key: VITE_ADMIN_PASSWORD
+        sync: false
+
+  # Web Service (For server.js deployment)
+  - type: web
+    name: sol-trivia-web
+    runtime: node
+    buildCommand: export NODE_ENV=production && npm install && npm run build
+    startCommand: npm start
     envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      
       # Supabase Configuration
       - key: VITE_SUPABASE_URL
         sync: false

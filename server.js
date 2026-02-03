@@ -10,6 +10,16 @@ const __dirname = dirname(__filename);
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Health check endpoint for keep-alive pings
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    message: 'Sol Trivia service is running'
+  });
+});
+
 // Serve static files from dist directory
 app.use(express.static(join(__dirname, 'dist')));
 

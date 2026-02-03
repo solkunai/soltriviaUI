@@ -2,6 +2,35 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// Custom plugin to remove console logs in production
+const removeConsolePlugin = () => {
+  return {
+    name: 'remove-console',
+    transform(code: string, id: string) {
+      if (process.env.NODE_ENV === 'production') {
+        // Remove all console statements
+        return {
+          code: code
+            .replace(/console\.log\([^)]*\);?/g, '')
+            .replace(/console\.error\([^)]*\);?/g, '')
+            .replace(/console\.warn\([^)]*\);?/g, '')
+            .replace(/console\.info\([^)]*\);?/g, '')
+            .replace(/console\.debug\([^)]*\);?/g, '')
+            .replace(/console\.trace\([^)]*\);?/g, '')
+            .replace(/console\.table\([^)]*\);?/g, '')
+            .replace(/console\.group\([^)]*\);?/g, '')
+            .replace(/console\.groupEnd\([^)]*\);?/g, '')
+            .replace(/console\.dir\([^)]*\);?/g, '')
+            .replace(/console\.time\([^)]*\);?/g, '')
+            .replace(/console\.timeEnd\([^)]*\);?/g, ''),
+          map: null,
+        };
+      }
+      return null;
+    },
+  };
+};
+
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     const isProduction = mode === 'production';
@@ -11,7 +40,10 @@ export default defineConfig(({ mode }) => {
         port: 3000,
         host: '0.0.0.0',
       },
-      plugins: [react()],
+      plugins: [
+        react(),
+        ...(isProduction ? [removeConsolePlugin()] : []),
+      ],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
@@ -44,13 +76,17 @@ export default defineConfig(({ mode }) => {
       },
       publicDir: 'public',
       build: {
-        minify: 'terser',
-        terserOptions: {
+        minify: isProduction ? 'terser' : 'esbuild',
+        terserOptions: isProduction ? {
           compress: {
             // Remove ALL console methods (log, error, warn, info, debug, trace, etc.)
             drop_console: true,
             // Remove debugger statements
             drop_debugger: true,
+            // More aggressive dead code elimination
+            dead_code: true,
+            // Remove unused code
+            unused: true,
             // Additional pure functions to remove (redundant with drop_console, but explicit)
             pure_funcs: [
               'console.log',
@@ -62,13 +98,34 @@ export default defineConfig(({ mode }) => {
               'console.table',
               'console.group',
               'console.groupEnd',
+              'console.dir',
+              'console.dirxml',
+              'console.assert',
+              'console.count',
+              'console.countReset',
+              'console.time',
+              'console.timeEnd',
+              'console.timeLog',
             ],
+            // Remove all console statements globally
+            global_defs: {
+              'console.log': 'void 0',
+              'console.info': 'void 0',
+              'console.debug': 'void 0',
+              'console.warn': 'void 0',
+              'console.error': 'void 0',
+              'console.trace': 'void 0',
+            },
           },
           format: {
             // Remove all comments in production
             comments: false,
           },
-        },
+          mangle: {
+            // Mangle all properties for smaller bundle
+            properties: false, // Keep false to avoid breaking code
+          },
+        } : {},
         // Suppress build warnings and fix module resolution
         rollupOptions: {
           onwarn(warning, warn) {
