@@ -70,13 +70,11 @@ export default defineConfig(({ mode, command }) => {
           },
         },
         include: [
-          'buffer',
           'valtio',
         ],
         // Exclude problematic packages from optimization
-        exclude: ['derive-valtio'],
-        // Force optimization for buffer
-        force: true,
+        // buffer is loaded from CDN, so exclude it
+        exclude: ['derive-valtio', 'buffer'],
       },
       publicDir: 'public',
       build: {
@@ -132,7 +130,6 @@ export default defineConfig(({ mode, command }) => {
         } : {},
         // Suppress build warnings and fix module resolution
         rollupOptions: {
-          external: [],
           onwarn(warning, warn) {
             // Suppress specific warnings if needed
             if (warning.code === 'UNUSED_EXTERNAL_IMPORT') return;
