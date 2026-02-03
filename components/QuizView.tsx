@@ -43,11 +43,13 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
         const response = await getQuestions(sessionId);
         
         // Transform API response to Question format
+        // NOTE: correct_index is NOT sent from API for security (prevents cheating)
+        // Answer validation happens server-side only
         const transformedQuestions: Question[] = response.questions.map((q: any, idx: number) => ({
           id: parseInt(q.id) || idx + 1,
           text: q.text || q.question || '',
           options: Array.isArray(q.options) ? q.options : (Array.isArray(q.answers) ? q.answers : []),
-          correctAnswer: q.correct_index !== undefined ? q.correct_index : (q.correctAnswer !== undefined ? q.correctAnswer : 0),
+          correctAnswer: -1, // Never exposed to client - validated server-side only
         }));
 
         if (transformedQuestions.length === 0) {
@@ -87,28 +89,33 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
     
     const currentQuestion = questions[currentIdx];
     
-    // Submit answer to backend for validation
+    // Submit answer to backend for validation (ONLY source of truth)
     let correct = false;
     let pointsEarned = 0;
+    let actualCorrectIndex = -1;
+    
     try {
-      if (sessionId && currentQuestion.id) {
-        const answerResponse = await submitAnswer({
-          session_id: sessionId,
-          question_id: currentQuestion.id.toString(),
-          question_index: currentIdx,
-          selected_index: optionIdx,
-          time_taken_ms: Math.floor(timeTaken * 1000),
-        });
-        correct = answerResponse.is_correct;
-        pointsEarned = answerResponse.points_earned || 0;
-      } else {
-        // Fallback to client-side check if no session
-        correct = optionIdx === currentQuestion.correctAnswer;
+      if (!sessionId || !currentQuestion.id) {
+        throw new Error('Missing session or question ID');
       }
+      
+      const answerResponse = await submitAnswer({
+        session_id: sessionId,
+        question_id: currentQuestion.id.toString(),
+        question_index: currentIdx,
+        selected_index: optionIdx,
+        time_taken_ms: Math.floor(timeTaken * 1000),
+      });
+      
+      correct = answerResponse.correct; // Backend returns 'correct', not 'is_correct'
+      pointsEarned = answerResponse.pointsEarned || 0; // Backend returns camelCase
+      actualCorrectIndex = answerResponse.correctIndex !== undefined ? answerResponse.correctIndex : -1; // Backend returns camelCase
+      
     } catch (err) {
       console.error('Failed to submit answer:', err);
-      // Fallback to client-side check if API fails
-      correct = optionIdx === currentQuestion.correctAnswer;
+      setError('Failed to submit answer. Please try again.');
+      setLoading(false);
+      return;
     }
     
     setIsCorrect(correct);
@@ -120,6 +127,13 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
     } else {
       HapticFeedback.error();
       playWrongSound();
+    }
+
+    // Store the correct answer for display (when user gets it wrong)
+    if (!correct && actualCorrectIndex >= 0) {
+      const updatedQuestions = [...questions];
+      updatedQuestions[currentIdx].correctAnswer = actualCorrectIndex;
+      setQuestions(updatedQuestions);
     }
 
     let pointsForThisQuestion = pointsEarned || 0;

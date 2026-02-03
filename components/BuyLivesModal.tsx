@@ -16,6 +16,8 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
   const { connection } = useConnection();
   const [purchasing, setPurchasing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [purchasedLives, setPurchasedLives] = useState(0);
 
   if (!isOpen) return null;
 
@@ -81,12 +83,20 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
       const result = await purchaseLives(publicKey.toBase58(), signature);
 
       if (result.success) {
+        // Show success modal
+        setPurchasedLives(result.livesPurchased || 3);
+        setShowSuccess(true);
+        
         // Refresh lives after successful purchase
-        // onBuySuccess callback will refresh lives from backend
         if (onBuySuccess) {
           await onBuySuccess();
         }
-        onClose();
+        
+        // Auto-close success modal and main modal after 3 seconds
+        setTimeout(() => {
+          setShowSuccess(false);
+          onClose();
+        }, 3000);
       } else {
         setError(result.error || 'Purchase recorded but verification failed. Please refresh.');
       }
@@ -186,6 +196,26 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
            <img src="brainy-worried.png" alt="" className="w-full h-full grayscale" />
         </div>
       </div>
+
+      {/* Success Overlay */}
+      {showSuccess && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-gradient-to-br from-[#00FFA3] to-[#14F195] p-8 rounded-2xl shadow-2xl max-w-sm mx-4 text-center animate-pulse-once">
+            <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <svg className="w-12 h-12 text-[#00FFA3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h3 className="text-3xl font-[1000] italic uppercase text-black mb-2">SUCCESS!</h3>
+            <p className="text-black font-bold text-lg mb-4">
+              +{purchasedLives} Lives Purchased Successfully!
+            </p>
+            <p className="text-black/80 font-black text-sm italic uppercase tracking-wider">
+              Time to Play! 🚀
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

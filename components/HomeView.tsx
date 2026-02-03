@@ -15,8 +15,8 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
   const { connection } = useConnection();
   const [balance, setBalance] = useState<number | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
-  const [prizePool, setPrizePool] = useState(25402.15);
-  const [playersEntered, setPlayersEntered] = useState(12482);
+  const [prizePool, setPrizePool] = useState(0);
+  const [playersEntered, setPlayersEntered] = useState(0);
 
   // Fetch wallet balance when connected
   useEffect(() => {
@@ -34,11 +34,41 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
     }
   }, [connected, publicKey, connection]);
 
+  // Fetch real-time stats from Supabase
   useEffect(() => {
-    const interval = setInterval(() => {
-      setPrizePool(prev => prev + (Math.random() > 0.5 ? 0.05 : 0));
-      setPlayersEntered(prev => prev + (Math.random() > 0.8 ? 1 : 0));
-    }, 4000);
+    const fetchStats = async () => {
+      try {
+        // Fetch current round stats
+        const today = new Date().toISOString().split('T')[0];
+        const currentHour = new Date().getUTCHours();
+        const roundNumber = Math.floor(currentHour / 6);
+        
+        const { data: round } = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/daily_rounds?select=pot_lamports,player_count&date=eq.${today}&round_number=eq.${roundNumber}&limit=1`,
+          {
+            headers: {
+              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            }
+          }
+        ).then(res => res.json());
+
+        if (round && round.length > 0) {
+          // Convert lamports to SOL
+          const solAmount = (round[0].pot_lamports || 0) / 1_000_000_000;
+          setPrizePool(solAmount);
+          setPlayersEntered(round[0].player_count || 0);
+        }
+      } catch (err) {
+        console.error('Failed to fetch stats:', err);
+      }
+    };
+
+    // Fetch immediately
+    fetchStats();
+    
+    // Poll every 10 seconds for real-time updates
+    const interval = setInterval(fetchStats, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -144,7 +174,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                    <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic leading-none block mb-1">TRIVIA POOL</span>
                    <div className="flex items-baseline gap-1">
                       <span className="text-[#00FFA3] text-lg font-black italic tabular-nums leading-none">
-                        {prizePool.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        {prizePool.toFixed(2)}
                       </span>
                       <span className="text-[#00FFA3] text-[8px] font-black italic">SOL</span>
                    </div>

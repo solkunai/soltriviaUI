@@ -14,7 +14,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, onRestart, on
   const hasLives = lives > 0;
 
   const handleShare = () => {
-    const text = `I just scored ${results.points} XP on Solana Trivia Protocol! 🧠⚡\nAccuracy: ${results.score}/10\nTime: ${results.time}s\n\nThink you're smarter? Join the arena on Solana!`;
+    const text = `I just scored ${results.points}XP on Solana Trivia Protocol! 🧠⚡\n\nAccuracy: ${results.score}/10\nTime: ${results.time}s\n\nThink you're smarter? Join the arena on Solana!\nhttps://soltriviaui.onrender.com`;
     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
