@@ -5,11 +5,9 @@ import './src/index.css';
 import App from './App';
 import { WalletProvider } from './src/contexts/WalletContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
-import { Buffer } from 'buffer/';
 
-// Polyfill Buffer for Solana web3.js
-(window as any).Buffer = Buffer;
-(globalThis as any).Buffer = Buffer;
+// Buffer is loaded from CDN in index.html before this script runs
+// This avoids bundling the problematic 'buffer' package with Vite/Rollup
 
 console.log('🚀 MAIN: Starting app initialization...');
 
