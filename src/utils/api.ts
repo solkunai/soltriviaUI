@@ -9,8 +9,8 @@ const getSupabaseAnonKey = (): string => {
   return import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 };
 
-// Helper to create authenticated fetch headers
-const getAuthHeaders = (): Record<string, string> => {
+// Helper to create authenticated fetch headers (required for Supabase Edge Functions; export for admin dashboard)
+export const getAuthHeaders = (): Record<string, string> => {
   const anonKey = getSupabaseAnonKey();
   return {
     'Content-Type': 'application/json',

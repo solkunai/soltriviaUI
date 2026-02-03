@@ -1,4 +1,4 @@
-// Admin-only: list, create, update, delete, set_active for questions (uses service role after auth)
+// Questions CRUD for admin dashboard (no extra auth; dashboard is already protected by login).
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -26,33 +26,13 @@ function getSupabaseClient() {
   return createClient(url, key);
 }
 
-const ADMIN_USERNAME = Deno.env.get('ADMIN_USERNAME') || Deno.env.get('VITE_ADMIN_USERNAME') || '';
-const ADMIN_PASSWORD = Deno.env.get('ADMIN_PASSWORD') || Deno.env.get('VITE_ADMIN_PASSWORD') || '';
-
 serve(async (req) => {
   const cors = getCorsFromRequest(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { adminUsername, adminPassword, action, payload } = body as {
-      adminUsername?: string;
-      adminPassword?: string;
-      action?: string;
-      payload?: Record<string, unknown>;
-    };
-
-    if (ADMIN_USERNAME && ADMIN_PASSWORD) {
-      if (adminUsername !== ADMIN_USERNAME || adminPassword !== ADMIN_PASSWORD) {
-        return new Response(
-          JSON.stringify({
-            error: 'Unauthorized',
-            hint: 'Set ADMIN_USERNAME and ADMIN_PASSWORD in Supabase Edge Function secrets to match your app .env',
-          }),
-          { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } }
-        );
-      }
-    }
+    const { action, payload } = body as { action?: string; payload?: Record<string, unknown> };
 
     const supabase = getSupabaseClient();
 

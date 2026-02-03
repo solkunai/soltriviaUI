@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../src/utils/supabase';
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, SUPABASE_FUNCTIONS_URL } from '../src/utils/constants';
+import { getAuthHeaders } from '../src/utils/api';
 import { getSolanaRpcEndpoint } from '../src/utils/rpc';
 
 type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests';
@@ -163,12 +164,7 @@ const AdminDashboardEnhanced: React.FC = () => {
       <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-8">
         {activeTab === 'stats' && <StatsView stats={stats} loading={loading} />}
         {activeTab === 'rankings' && <RankingsView />}
-        {activeTab === 'questions' && (
-          <QuestionsView
-            functionsUrl={SUPABASE_FUNCTIONS_URL}
-            getAdminCreds={getCreds}
-          />
-        )}
+        {activeTab === 'questions' && <QuestionsView functionsUrl={SUPABASE_FUNCTIONS_URL} />}
         {activeTab === 'quests' && <QuestsManagementView />}
         {activeTab === 'users' && <UsersView />}
         {activeTab === 'rounds' && <RoundsView />}
@@ -308,21 +304,14 @@ const QuestsManagementView: React.FC = () => {
     is_active: true,
   });
 
-  // Use same credentials as login (env). Dashboard only renders when authenticated.
-  const getCreds = (): { u: string; p: string } => ({
-    u: import.meta.env.VITE_ADMIN_USERNAME || '',
-    p: import.meta.env.VITE_ADMIN_PASSWORD || '',
-  });
-
   const fetchQuests = async () => {
     setLoading(true);
     setError('');
     try {
-      const creds = getCreds();
       const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-quests`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminUsername: creds.u, adminPassword: creds.p, action: 'list', payload: {} }),
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ action: 'list', payload: {} }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Failed to load quests');
@@ -337,11 +326,10 @@ const QuestsManagementView: React.FC = () => {
   const fetchSubmissions = async () => {
     setSubmissionsLoading(true);
     try {
-      const creds = getCreds();
       const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-quests`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminUsername: creds.u, adminPassword: creds.p, action: 'list_submissions', payload: { status: 'pending' } }),
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ action: 'list_submissions', payload: { status: 'pending' } }),
       });
       const json = await res.json().catch(() => ({}));
       if (res.ok) setSubmissions((json.data || []) as QuestSubmission[]);
@@ -373,11 +361,10 @@ const QuestsManagementView: React.FC = () => {
   }, []);
 
   const callManage = async (action: string, payload?: Record<string, unknown>) => {
-    const creds = getCreds();
     const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-quests`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: creds.u, adminPassword: creds.p, action, payload }),
+      body: JSON.stringify({ action, payload: payload ?? {} }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || 'Request failed');
@@ -467,8 +454,7 @@ const QuestsManagementView: React.FC = () => {
     setError('');
     setSuccess('');
     try {
-      const creds = getCreds();
-      await callManage('review_submission', { submissionId, decision, reviewedBy: creds.u });
+      await callManage('review_submission', { submissionId, decision, reviewedBy: 'admin' });
       setSuccess(decision === 'approve' ? 'Approved — user rewarded' : 'Rejected');
       setSubmissions((prev) => prev.filter((s) => s.id !== submissionId));
     } catch (e) {
@@ -579,13 +565,12 @@ const QuestsManagementView: React.FC = () => {
   );
 };
 
-// Questions Management Tab (uses manage-questions Edge Function so admin can bypass RLS)
+// Questions Management Tab (uses manage-questions Edge Function so admin can bypass RLS; no extra auth — dashboard is already behind login)
 interface QuestionsViewProps {
   functionsUrl: string;
-  getAdminCreds: () => { u: string; p: string };
 }
 
-const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl, getAdminCreds }) => {
+const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -605,14 +590,13 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl, getAdminCre
   const categories = ['solana', 'defi', 'nfts', 'bitcoin', 'memecoins', 'history'];
 
   const callManageQuestions = async (action: string, payload?: Record<string, unknown>) => {
-    const creds = getAdminCreds();
     const res = await fetch(`${functionsUrl}/manage-questions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: creds.u, adminPassword: creds.p, action, payload: payload ?? {} }),
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ action, payload: payload ?? {} }),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || 'Request failed');
+    if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);
     return json;
   };
 

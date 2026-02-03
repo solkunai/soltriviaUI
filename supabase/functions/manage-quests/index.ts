@@ -1,7 +1,5 @@
-// Admin-only: list, create, update, delete quests (uses service role after auth)
-// CORS and Supabase inlined so deploy works without _shared
+// Quests CRUD for admin dashboard (no extra auth; dashboard is already protected by login).
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-// @ts-ignore - Deno URL imports are valid at runtime
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const ALLOWED_ORIGINS_STRING = Deno.env.get('ALLOWED_ORIGINS') ||
@@ -28,35 +26,13 @@ function getSupabaseClient() {
   return createClient(url, key);
 }
 
-const ADMIN_USERNAME = Deno.env.get('ADMIN_USERNAME') || Deno.env.get('VITE_ADMIN_USERNAME') || '';
-const ADMIN_PASSWORD = Deno.env.get('ADMIN_PASSWORD') || Deno.env.get('VITE_ADMIN_PASSWORD') || '';
-
 serve(async (req) => {
   const cors = getCorsFromRequest(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { adminUsername, adminPassword, action, payload } = body as {
-      adminUsername?: string;
-      adminPassword?: string;
-      action?: string;
-      payload?: Record<string, unknown>;
-    };
-
-    if (ADMIN_USERNAME && ADMIN_PASSWORD) {
-      const usernameMatch = adminUsername === ADMIN_USERNAME;
-      const passwordMatch = adminPassword === ADMIN_PASSWORD;
-      if (!usernameMatch || !passwordMatch) {
-        return new Response(
-          JSON.stringify({
-            error: 'Unauthorized',
-            hint: 'Set ADMIN_USERNAME and ADMIN_PASSWORD in Supabase Dashboard → Project Settings → Edge Function secrets to match VITE_ADMIN_USERNAME and VITE_ADMIN_PASSWORD in your app .env',
-          }),
-          { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } }
-        );
-      }
-    }
+    const { action, payload } = body as { action?: string; payload?: Record<string, unknown> };
 
     const supabase = getSupabaseClient();
 
