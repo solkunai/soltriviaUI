@@ -3,7 +3,7 @@
 // NEVER exposes the correct answer - that's revealed only after submission
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { corsHeaders } from '../_shared/cors.ts';
+import { getCorsHeadersFromRequest } from '../_shared/cors.ts';
 import { getSupabaseClient } from '../_shared/supabase.ts';
 
 interface FetchQuestionRequest {
@@ -17,6 +17,8 @@ function generateToken(): string {
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeadersFromRequest(req);
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });

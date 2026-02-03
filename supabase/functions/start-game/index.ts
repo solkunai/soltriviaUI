@@ -3,7 +3,7 @@
 // Validates entry fee transaction before allowing play
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { corsHeaders } from '../_shared/cors.ts';
+import { getCorsHeadersFromRequest } from '../_shared/cors.ts';
 import { getSupabaseClient } from '../_shared/supabase.ts';
 import { Connection, PublicKey } from 'https://esm.sh/@solana/web3.js@1.95.2';
 import { decode as decodeBase64 } from 'https://deno.land/std@0.177.0/encoding/base64.ts';
@@ -52,6 +52,8 @@ function convertSignatureToBase58(signature: string): string {
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeadersFromRequest(req);
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });

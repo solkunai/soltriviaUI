@@ -20,7 +20,11 @@ export default defineConfig(({ mode }) => {
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
-        }
+        },
+        // Fix for valtio/vanilla subpath export resolution
+        dedupe: ['valtio'],
+        // Ensure proper resolution of package exports
+        conditions: ['import', 'module', 'browser', 'default'],
       },
       optimizeDeps: {
         esbuildOptions: {
@@ -28,8 +32,14 @@ export default defineConfig(({ mode }) => {
             global: 'globalThis',
           },
         },
-        include: ['buffer'],
+        include: [
+          'buffer',
+          'valtio',
+        ],
+        // Exclude problematic packages from optimization
+        exclude: ['derive-valtio'],
       },
+      publicDir: 'public',
       build: {
         minify: 'terser',
         terserOptions: {
@@ -56,13 +66,28 @@ export default defineConfig(({ mode }) => {
             comments: false,
           },
         },
-        // Suppress build warnings
+        // Suppress build warnings and fix module resolution
         rollupOptions: {
           onwarn(warning, warn) {
             // Suppress specific warnings if needed
             if (warning.code === 'UNUSED_EXTERNAL_IMPORT') return;
+            // Suppress valtio resolution warnings (handled by optimizeDeps)
+            if (warning.message?.includes('valtio')) return;
+            // Suppress resolution errors for valtio/vanilla (handled via resolve conditions)
+            if (warning.code === 'UNRESOLVED_IMPORT' && warning.source?.includes('valtio')) {
+              return;
+            }
             warn(warning);
           },
+          // Ensure valtio is properly resolved
+          output: {
+            manualChunks: undefined,
+          },
+        },
+        // CommonJS options for better compatibility
+        commonjsOptions: {
+          include: [/node_modules/],
+          transformMixedEsModules: true,
         },
       },
       esbuild: {

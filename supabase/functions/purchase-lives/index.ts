@@ -3,7 +3,7 @@
 
 // @ts-ignore - Deno URL imports are valid at runtime
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { corsHeaders } from '../_shared/cors.ts';
+import { getCorsHeadersFromRequest } from '../_shared/cors.ts';
 import { getSupabaseClient } from '../_shared/supabase.ts';
 // @ts-ignore - Deno URL imports are valid at runtime
 import { Connection, PublicKey } from 'https://esm.sh/@solana/web3.js@1.95.2';
@@ -46,6 +46,8 @@ function convertSignatureToBase58(signature: string): string {
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeadersFromRequest(req);
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });

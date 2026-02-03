@@ -3,12 +3,14 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/cors.ts';
+import { getCorsHeadersFromRequest } from '../_shared/cors.ts';
 import { isValidWalletAddress, isValidTxSignature, sanitizeString } from '../_shared/validation.ts';
 
 const ENTRY_FEE_LAMPORTS = 10_000_000; // 0.01 SOL
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeadersFromRequest(req);
+  
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

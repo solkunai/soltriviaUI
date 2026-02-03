@@ -4,7 +4,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/cors.ts';
+import { getCorsHeadersFromRequest } from '../_shared/cors.ts';
 
 // Payout percentages (must sum to 0.95 for players, 0.05 for treasury)
 const PAYOUT_SPLITS = [0.75, 0.05, 0.05, 0.05, 0.05]; // 1st: 75%, 2nd-5th: 5% each
@@ -13,6 +13,8 @@ const MIN_PLAYERS = 5;
 const TREASURY_WALLET = '4u1UTyMBX8ghSQBagZHCzArt32XMFSw4CUXbdgo2Cv74';
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeadersFromRequest(req);
+  
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
