@@ -1,5 +1,11 @@
 /// <reference types="vite/client" />
 
+declare module '@vitejs/plugin-react' {
+  import type { Plugin } from 'vite';
+  const react: () => Plugin;
+  export default react;
+}
+
 interface ImportMetaEnv {
   readonly VITE_HELIUS_API_KEY?: string;
   readonly VITE_ALCHEMY_API_KEY?: string;
