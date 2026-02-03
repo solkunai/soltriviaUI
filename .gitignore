@@ -19,6 +19,7 @@ dist-ssr
 
 # Documentation (if you want to keep docs in git, remove the line below)
 *.md
+*.txt
 
 # Editor directories and files
 .vscode/*

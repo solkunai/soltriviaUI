@@ -323,13 +323,38 @@ serve(async (req) => {
         // Continue to create new session below
       } else {
         // PRODUCTION MODE: Check for extra lives
-        const { data: playerLives } = await supabase
+        let { data: playerLives, error: livesCheckError } = await supabase
           .from('player_lives')
           .select('lives_count, total_used')
           .eq('wallet_address', walletAddress)
           .single();
 
+        // If no lives record exists, create one with 3 free lives
+        if (livesCheckError && livesCheckError.code === 'PGRST116') {
+          console.log('New player (replay attempt), giving 3 free lives:', walletAddress);
+          const { data: newLives, error: createError } = await supabase
+            .from('player_lives')
+            .insert({
+              wallet_address: walletAddress,
+              lives_count: 3,
+              total_used: 0,
+            })
+            .select('lives_count, total_used')
+            .single();
+
+          if (createError) {
+            console.error('Error creating player lives:', createError);
+            return new Response(
+              JSON.stringify({ error: 'Failed to initialize lives' }),
+              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          playerLives = newLives;
+        }
+
         const livesCount = playerLives?.lives_count || 0;
+        console.log('Replay attempt - lives check:', { walletAddress, livesCount, totalUsed: playerLives?.total_used });
 
         if (livesCount <= 0) {
           // No lives available - return error with info
@@ -345,6 +370,7 @@ serve(async (req) => {
         }
 
         // Deduct one life
+        console.log('Deducting 1 life for replay:', { before: livesCount, after: livesCount - 1 });
         const { error: deductError } = await supabase
           .from('player_lives')
           .update({
@@ -355,6 +381,7 @@ serve(async (req) => {
           .eq('wallet_address', walletAddress);
 
         if (deductError) {
+          console.error('Error deducting life:', deductError);
           return new Response(
             JSON.stringify({ error: 'Failed to use extra life' }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -406,14 +433,36 @@ serve(async (req) => {
       }
     }
 
-    // Deduct 1 life from player (check if they have lives)
-    const { data: playerLives, error: livesError } = await supabase
+    // Check if player has lives record, create with 3 free lives if not
+    let { data: playerLives, error: livesError } = await supabase
       .from('player_lives')
       .select('lives_count, total_used')
       .eq('wallet_address', walletAddress)
       .single();
 
-    if (livesError && livesError.code !== 'PGRST116') {
+    // If player has no lives record (PGRST116 = no rows found), give them 3 free lives
+    if (livesError && livesError.code === 'PGRST116') {
+      console.log('New player detected, giving 3 free lives:', walletAddress);
+      const { data: newLives, error: createError } = await supabase
+        .from('player_lives')
+        .insert({
+          wallet_address: walletAddress,
+          lives_count: 3,
+          total_used: 0,
+        })
+        .select('lives_count, total_used')
+        .single();
+
+      if (createError) {
+        console.error('Error creating player lives:', createError);
+        return new Response(
+          JSON.stringify({ error: 'Failed to initialize lives' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      playerLives = newLives;
+    } else if (livesError) {
       console.error('Error checking player lives:', livesError);
       return new Response(
         JSON.stringify({ error: 'Failed to check lives' }),
@@ -423,14 +472,21 @@ serve(async (req) => {
 
     // Verify player has at least 1 life
     const currentLivesCount = playerLives?.lives_count || 0;
+    console.log('Player lives check:', { walletAddress, currentLivesCount, totalUsed: playerLives?.total_used });
+    
     if (currentLivesCount < 1) {
       return new Response(
-        JSON.stringify({ error: 'Insufficient lives. Please purchase lives to continue.' }),
+        JSON.stringify({ 
+          error: 'Insufficient lives. Please purchase lives to continue.',
+          livesCount: 0,
+          canBuyLives: true,
+        }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     // Deduct 1 life
+    console.log('Deducting 1 life for first play:', { before: currentLivesCount, after: currentLivesCount - 1, wallet: walletAddress });
     const { error: deductError } = await supabase
       .from('player_lives')
       .update({
@@ -447,6 +503,8 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    console.log('✅ Life deducted successfully. Remaining:', currentLivesCount - 1);
 
     // Create new game session; question_order randomizes questions per user
     const questionOrder = shuffle(Array.isArray(round.question_ids) ? [...round.question_ids] : []);
