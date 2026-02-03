@@ -353,6 +353,21 @@ serve(async (req) => {
 
     console.log('✅ Lives updated successfully:', updatedLives);
 
+    // Quest: Healing Master (total lives purchased)
+    try {
+      const { data: quest } = await supabase.from('quests').select('id').eq('slug', 'healing_master').single();
+      if (quest?.id) {
+        await supabase.from('user_quest_progress').upsert({
+          wallet_address: walletAddress,
+          quest_id: quest.id,
+          progress: updatedLives.total_purchased || 0,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'wallet_address,quest_id' });
+      }
+    } catch (questErr) {
+      console.error('Quest progress (healing_master) update failed:', questErr);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,

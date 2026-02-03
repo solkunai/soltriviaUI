@@ -18,7 +18,7 @@ import WalletRequiredModal from './components/WalletRequiredModal';
 import AdminRoute from './components/AdminRoute';
 import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
-import { getPlayerLives, startGame, registerPlayerProfile } from './src/utils/api';
+import { getPlayerLives, startGame, registerPlayerProfile, updateQuestProgress } from './src/utils/api';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS } from './src/utils/constants';
 import { getRecentBlockhashWithRetry } from './src/utils/rpc';
 import { supabase } from './src/utils/supabase';
@@ -216,7 +216,12 @@ const App: React.FC = () => {
 
       if (error) {
         console.error('Failed to update profile:', error);
-        // You might want to show a toast notification here
+      } else {
+        try {
+          await updateQuestProgress(walletAddress, 'identity_sync', 1);
+        } catch {
+          // ignore quest update failure
+        }
       }
     } catch (err) {
       console.error('Failed to update profile:', err);

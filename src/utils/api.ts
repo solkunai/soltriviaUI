@@ -96,6 +96,29 @@ export interface PurchaseLivesResponse {
   totalUsed: number;
 }
 
+export interface Quest {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  category: string;
+  reward_tp: number;
+  reward_label: string | null;
+  requirement_type: string;
+  requirement_config: { max?: number };
+  sort_order: number;
+  quest_type: string;
+}
+
+export interface UserQuestProgress {
+  wallet_address: string;
+  quest_id: string;
+  progress: number;
+  completed_at: string | null;
+  claimed_at: string | null;
+  quest?: Quest;
+}
+
 // Start game (after payment)
 export async function startGame(
   walletAddress: string,
@@ -312,4 +335,70 @@ export async function registerPlayerProfile(
     console.error('Failed to register player profile:', error);
     return { success: false };
   }
+}
+
+// Quests: fetch definitions and user progress
+export async function fetchQuests(): Promise<Quest[]> {
+  const { data, error } = await supabase
+    .from('quests')
+    .select('*')
+    .eq('is_active', true)
+    .order('category')
+    .order('sort_order');
+  if (error) throw new Error(error.message);
+  return (data || []) as Quest[];
+}
+
+export async function fetchUserQuestProgress(walletAddress: string): Promise<UserQuestProgress[]> {
+  const { data, error } = await supabase
+    .from('user_quest_progress')
+    .select(`
+      wallet_address,
+      quest_id,
+      progress,
+      completed_at,
+      claimed_at,
+      quest:quests(*)
+    `)
+    .eq('wallet_address', walletAddress);
+  if (error) throw new Error(error.message);
+  return (data || []) as UserQuestProgress[];
+}
+
+export async function updateQuestProgress(walletAddress: string, questSlug: string, progress: number): Promise<void> {
+  const url = `${FUNCTIONS_URL}/update-quest-progress`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ wallet_address: walletAddress, quest_slug: questSlug, progress }),
+  });
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.error || 'Failed to update quest progress');
+  }
+}
+
+export function subscribeUserQuestProgress(
+  walletAddress: string,
+  onData: (rows: UserQuestProgress[]) => void
+): { unsubscribe: () => void } {
+  const channelName = `quest-progress-${walletAddress}`;
+  supabase
+    .channel(channelName)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'user_quest_progress',
+        filter: `wallet_address=eq.${walletAddress}`,
+      },
+      () => {
+        fetchUserQuestProgress(walletAddress).then(onData).catch(() => {});
+      }
+    )
+    .subscribe();
+  return {
+    unsubscribe: () => supabase.removeChannel(channelName),
+  };
 }

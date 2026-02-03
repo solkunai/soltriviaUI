@@ -174,6 +174,37 @@ serve(async (req) => {
 
     const rank = rankError ? null : updatedSession?.rank;
 
+    // Quest progress: trivia_nerd (10/10 in one game), daily_quizzer (games today), trivia_genius (4 perfect in a day)
+    try {
+      const wallet = session.wallet_address;
+      const { data: round } = await supabase.from('daily_rounds').select('date').eq('id', session.round_id).single();
+      const roundDate = round?.date;
+      if (wallet && roundDate) {
+        const { data: questRows } = await supabase.from('quests').select('id, slug').in('slug', ['trivia_nerd', 'daily_quizzer', 'trivia_genius']);
+        const bySlug: Record<string, string> = {};
+        (questRows || []).forEach((q: { id: string; slug: string }) => { bySlug[q.slug] = q.id; });
+
+        if (correct_count >= 10 && bySlug.trivia_nerd) {
+          await supabase.from('user_quest_progress').upsert({ wallet_address: wallet, quest_id: bySlug.trivia_nerd, progress: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'wallet_address,quest_id' });
+        }
+
+        const { data: roundsToday } = await supabase.from('daily_rounds').select('id').eq('date', roundDate);
+        const roundIdsToday = (roundsToday || []).map((r: { id: string }) => r.id);
+        const { data: sessionsToday } = await supabase.from('game_sessions').select('round_id, correct_count').eq('wallet_address', wallet).not('finished_at', 'is', null).in('round_id', roundIdsToday);
+        const countToday = (sessionsToday || []).length;
+        const perfectToday = (sessionsToday || []).filter((s: any) => s.correct_count >= 10).length;
+
+        if (bySlug.daily_quizzer) {
+          await supabase.from('user_quest_progress').upsert({ wallet_address: wallet, quest_id: bySlug.daily_quizzer, progress: Math.min(countToday, 4), updated_at: new Date().toISOString() }, { onConflict: 'wallet_address,quest_id' });
+        }
+        if (perfectToday >= 4 && bySlug.trivia_genius) {
+          await supabase.from('user_quest_progress').upsert({ wallet_address: wallet, quest_id: bySlug.trivia_genius, progress: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'wallet_address,quest_id' });
+        }
+      }
+    } catch (questErr) {
+      console.error('Quest progress update failed:', questErr);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,

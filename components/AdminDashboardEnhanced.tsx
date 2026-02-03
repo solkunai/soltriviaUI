@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../src/utils/supabase';
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import { PRIZE_POOL_WALLET, REVENUE_WALLET } from '../src/utils/constants';
+import { PRIZE_POOL_WALLET, REVENUE_WALLET, SUPABASE_FUNCTIONS_URL } from '../src/utils/constants';
 import { getSolanaRpcEndpoint } from '../src/utils/rpc';
 
-type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings';
+type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests';
 
 interface Question {
   id?: string;
@@ -134,6 +134,7 @@ const AdminDashboardEnhanced: React.FC = () => {
           { id: 'stats', label: '📊 Stats', icon: '📊' },
           { id: 'rankings', label: '🏆 Rankings', icon: '🏆' },
           { id: 'questions', label: '❓ Questions', icon: '❓' },
+          { id: 'quests', label: '📋 Quests', icon: '📋' },
           { id: 'users', label: '👥 Users', icon: '👥' },
           { id: 'rounds', label: '🎮 Rounds', icon: '🎮' },
           { id: 'lives', label: '❤️ Lives', icon: '❤️' },
@@ -157,6 +158,7 @@ const AdminDashboardEnhanced: React.FC = () => {
         {activeTab === 'stats' && <StatsView stats={stats} loading={loading} />}
         {activeTab === 'rankings' && <RankingsView />}
         {activeTab === 'questions' && <QuestionsView />}
+        {activeTab === 'quests' && <QuestsManagementView />}
         {activeTab === 'users' && <UsersView />}
         {activeTab === 'rounds' && <RoundsView />}
         {activeTab === 'lives' && <LivesView />}
@@ -241,6 +243,135 @@ const StatCard: React.FC<{ label: string; value: string | number; color: string 
     <div className={`bg-gradient-to-br ${colorClasses[color as keyof typeof colorClasses]} border p-6 rounded-xl`}>
       <p className="text-zinc-400 text-xs uppercase font-black mb-2">{label}</p>
       <p className="text-3xl font-[1000] italic">{value}</p>
+    </div>
+  );
+};
+
+interface AdminQuest {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  category: string;
+  reward_tp: number;
+  reward_label: string | null;
+  requirement_type: string;
+  requirement_config: { max?: number };
+  sort_order: number;
+  quest_type: string;
+  is_active: boolean;
+}
+
+const QuestsManagementView: React.FC = () => {
+  const [quests, setQuests] = useState<AdminQuest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const getCreds = (): { u: string; p: string } | null => {
+    try {
+      const raw = sessionStorage.getItem('admin_creds');
+      if (!raw) return null;
+      return JSON.parse(raw) as { u: string; p: string };
+    } catch {
+      return null;
+    }
+  };
+
+  const fetchQuests = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data, err } = await supabase.from('quests').select('*').order('category').order('sort_order');
+      if (err) throw err;
+      setQuests((data || []) as AdminQuest[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load quests');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchQuests();
+  }, []);
+
+  const callManage = async (action: string, payload?: Record<string, unknown>) => {
+    const creds = getCreds();
+    const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-quests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: creds?.u, adminPassword: creds?.p, action, payload }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Request failed');
+    return json;
+  };
+
+  const handleUpdate = async (quest: AdminQuest) => {
+    setError('');
+    setSuccess('');
+    try {
+      await callManage('update', {
+        id: quest.id,
+        title: quest.title,
+        description: quest.description,
+        category: quest.category,
+        reward_tp: quest.reward_tp,
+        reward_label: quest.reward_label,
+        requirement_type: quest.requirement_type,
+        requirement_config: quest.requirement_config,
+        sort_order: quest.sort_order,
+        quest_type: quest.quest_type,
+        is_active: quest.is_active,
+      });
+      setSuccess('Quest updated');
+      fetchQuests();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Update failed');
+    }
+  };
+
+  if (loading) return <div className="text-center py-20">Loading quests...</div>;
+
+  return (
+    <div>
+      <h2 className="text-2xl font-black mb-6">Quests Management ({quests.length})</h2>
+      {error && <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm">{error}</div>}
+      {success && <div className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-lg text-green-400 text-sm">{success}</div>}
+      <p className="text-zinc-500 text-sm mb-6">Quest list is loaded from Supabase. Edit and save to update. Identity Sync is in Priority Mission; Trivia Nerd / Trivia Genius / Healing Master use TP.</p>
+      <div className="space-y-4">
+        {quests.map((q) => (
+          <div key={q.id} className="bg-white/5 border border-white/10 p-4 rounded-xl flex flex-wrap items-center gap-4">
+            <div className="flex-1 min-w-[200px]">
+              <div className="font-black text-[#14F195]">{q.title}</div>
+              <div className="text-zinc-500 text-xs">{q.description}</div>
+              <div className="text-zinc-600 text-[10px] mt-1">{q.category} · {q.reward_label || `${q.reward_tp} TP`}</div>
+            </div>
+            <input
+              className="bg-black/40 border border-white/10 px-3 py-1 rounded text-sm w-24"
+              type="number"
+              value={q.sort_order}
+              onChange={(e) => setQuests((prev) => prev.map((x) => x.id === q.id ? { ...x, sort_order: parseInt(e.target.value, 10) || 0 } : x))}
+            />
+            <select
+              className="bg-black/40 border border-white/10 px-3 py-1 rounded text-sm"
+              value={q.category}
+              onChange={(e) => setQuests((prev) => prev.map((x) => x.id === q.id ? { ...x, category: e.target.value } : x))}
+            >
+              <option value="Priority Mission">Priority Mission</option>
+              <option value="Social Operations">Social Operations</option>
+              <option value="Active Operations">Active Operations</option>
+            </select>
+            <button
+              onClick={() => handleUpdate(quests.find((x) => x.id === q.id)!)}
+              className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded"
+            >
+              Save
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
