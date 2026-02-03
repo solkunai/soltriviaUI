@@ -2,39 +2,6 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Custom plugin to remove console logs in production (src only)
-const removeConsolePlugin = (isProduction: boolean) => {
-  return {
-    name: 'remove-console',
-    transform(code: string, id: string) {
-      // Only run on project src; never transform node_modules or other paths (cross-platform)
-      const isInSrc = id.includes(`${path.sep}src${path.sep}`) || id.includes('/src/');
-      if (!isInSrc || id.includes('node_modules')) return null;
-      // Remove console logs in production builds
-      if (isProduction) {
-        // Remove all console statements
-        return {
-          code: code
-            .replace(/console\.log\([^)]*\);?/g, '')
-            .replace(/console\.error\([^)]*\);?/g, '')
-            .replace(/console\.warn\([^)]*\);?/g, '')
-            .replace(/console\.info\([^)]*\);?/g, '')
-            .replace(/console\.debug\([^)]*\);?/g, '')
-            .replace(/console\.trace\([^)]*\);?/g, '')
-            .replace(/console\.table\([^)]*\);?/g, '')
-            .replace(/console\.group\([^)]*\);?/g, '')
-            .replace(/console\.groupEnd\([^)]*\);?/g, '')
-            .replace(/console\.dir\([^)]*\);?/g, '')
-            .replace(/console\.time\([^)]*\);?/g, '')
-            .replace(/console\.timeEnd\([^)]*\);?/g, ''),
-          map: null,
-        };
-      }
-      return null;
-    },
-  };
-};
-
 export default defineConfig(({ mode, command }) => {
     const env = loadEnv(mode, '.', '');
     // Check if building for production (either mode='production' or command='build')
@@ -45,10 +12,7 @@ export default defineConfig(({ mode, command }) => {
         port: 3000,
         host: '0.0.0.0',
       },
-      plugins: [
-        react(),
-        ...(isProduction ? [removeConsolePlugin(isProduction)] : []),
-      ],
+      plugins: [react()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
@@ -95,9 +59,8 @@ export default defineConfig(({ mode, command }) => {
         minify: isProduction ? 'terser' : 'esbuild',
         terserOptions: isProduction ? {
           compress: {
-            // Remove console.* call expressions from our bundle only (safe).
-            // Do NOT use global_defs/pure_funcs to replace console with void 0 —
-            // that turns console.warn(...) into (void 0)(...) and breaks extensions (e.g. MetaMask).
+            // Strip all console.* in production (Render deploy: npm run build uses this).
+            // Safe: removes call expressions from final bundle only; no source transform.
             drop_console: true,
             drop_debugger: true,
             dead_code: true,
