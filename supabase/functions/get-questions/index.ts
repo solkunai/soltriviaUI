@@ -90,17 +90,23 @@ serve(async (req) => {
       );
     }
 
-    // Verify session exists and hasn't finished
+    // Verify session exists, get question order (must match submit-answer order)
     const { data: session, error: sessionError } = await supabase
       .from('game_sessions')
-      .select('id, round_id, finished_at')
+      .select(`
+        id,
+        round_id,
+        finished_at,
+        question_order,
+        round:daily_rounds(id, question_ids)
+      `)
       .eq('id', session_id)
       .single();
 
     if (sessionError || !session) {
       console.error('Session lookup error:', sessionError);
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           error: 'Session not found',
           details: sessionError?.message || 'Session does not exist',
           sessionId: session_id,
@@ -116,40 +122,43 @@ serve(async (req) => {
       );
     }
 
-    // Get all active questions
-    const { data: allQuestions, error: questionsError } = await supabase
-      .from('questions')
-      .select('id, category, text, options, difficulty')
-      .eq('active', true);
+    const round = session.round;
+    const questionIds = (Array.isArray(session.question_order) && session.question_order.length > 0)
+      ? session.question_order
+      : (round?.question_ids ?? []);
 
-    if (questionsError) {
-      console.error('Failed to fetch questions:', questionsError);
-      throw questionsError;
-    }
-
-    if (!allQuestions || allQuestions.length < QUESTIONS_PER_ROUND) {
+    if (!questionIds.length) {
       return new Response(
-        JSON.stringify({ error: `Not enough active questions. Found ${allQuestions?.length || 0}, need ${QUESTIONS_PER_ROUND}` }),
+        JSON.stringify({ error: 'No questions assigned to this session' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Shuffle and select random questions
-    const shuffled = allQuestions.sort(() => Math.random() - 0.5);
-    const questions = shuffled.slice(0, QUESTIONS_PER_ROUND);
+    // Fetch questions in session order (same order submit-answer uses)
+    const { data: questionsRows, error: questionsError } = await supabase
+      .from('questions')
+      .select('id, category, text, options, difficulty')
+      .in('id', questionIds);
 
-    // Generate a token for each question (used to validate answers)
-    const questionsWithTokens = questions?.map((q, index) => ({
+    if (questionsError || !questionsRows?.length) {
+      console.error('Failed to fetch questions:', questionsError);
+      return new Response(
+        JSON.stringify({ error: 'Failed to load questions for this round' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const byId = new Map(questionsRows.map((q) => [q.id, q]));
+    const questions = questionIds.map((id) => byId.get(id)).filter(Boolean);
+
+    const questionsWithTokens = questions.map((q, index) => ({
       index,
       id: q.id,
       category: q.category,
       text: q.text,
-      options: q.options,
-      difficulty: q.difficulty,
-      // Don't include correct_index!
-    })) || [];
-
-    // Store the question order in a session-questions mapping (or just use question_id in answers table)
+      options: q.options ?? [],
+      difficulty: q.difficulty ?? '',
+    }));
 
     return new Response(
       JSON.stringify({

@@ -69,10 +69,15 @@ function getSupabaseClient() {
   return createClient(supabaseUrl, serviceRoleKey);
 }
 
-interface SubmitAnswerRequest {
-  sessionId: string;
-  token: string;
-  selectedIndex: number;
+// Client can send camelCase (fetch-next-question flow) or snake_case (get-questions flow); token optional when question_index is sent
+interface SubmitAnswerBody {
+  sessionId?: string;
+  session_id?: string;
+  token?: string;
+  selectedIndex?: number;
+  selected_index?: number;
+  question_index?: number;
+  time_taken_ms?: number;
 }
 
 // Maximum allowed time to answer (16 seconds to allow for network latency)
@@ -100,24 +105,32 @@ serve(async (req) => {
 
   try {
     const supabase = getSupabaseClient();
-    const { sessionId, token, selectedIndex }: SubmitAnswerRequest = await req.json();
+    const body: SubmitAnswerBody = await req.json();
+    const sessionId = body.sessionId ?? body.session_id;
+    const token = body.token;
+    const selectedIndex = body.selectedIndex ?? body.selected_index;
+    const questionIndexFromClient = body.question_index;
 
-    // Validate input
-    if (!sessionId || !token || selectedIndex === undefined) {
+    if (!sessionId) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields' }),
+        JSON.stringify({ error: 'Missing session id (sessionId or session_id)' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
+    if (selectedIndex === undefined || selectedIndex === null) {
+      return new Response(
+        JSON.stringify({ error: 'Missing selected index (selectedIndex or selected_index)' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     if (selectedIndex < 0 || selectedIndex > 3) {
       return new Response(
-        JSON.stringify({ error: 'Invalid selectedIndex' }),
+        JSON.stringify({ error: 'Invalid selectedIndex (must be 0–3)' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Get session with round data
+    // Get session with round data; session.question_order (when set) overrides round order per user
     const { data: session, error: sessionError } = await supabase
       .from('game_sessions')
       .select(`
@@ -129,6 +142,7 @@ serve(async (req) => {
         correct_count,
         finished_at,
         wallet_address,
+        question_order,
         round:daily_rounds(id, question_ids)
       `)
       .eq('id', sessionId)
@@ -148,23 +162,43 @@ serve(async (req) => {
       );
     }
 
-    // ANTI-CHEAT: Validate token
-    if (session.current_question_token !== token) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid token', code: 'INVALID_TOKEN' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const useTokenFlow = token != null && token !== '';
+    if (useTokenFlow) {
+      if (session.current_question_token !== token) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid token', code: 'INVALID_TOKEN' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    } else {
+      // get-questions flow: require question_index to match current_question_index
+      if (questionIndexFromClient === undefined || questionIndexFromClient === null) {
+        return new Response(
+          JSON.stringify({ error: 'Missing question_index (required when not using token)' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      if (questionIndexFromClient !== session.current_question_index) {
+        return new Response(
+          JSON.stringify({ error: 'Question index mismatch; answer questions in order', code: 'QUESTION_INDEX_MISMATCH' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
-    // ANTI-CHEAT: Validate timing
-    const issuedAt = new Date(session.current_question_issued_at).getTime();
-    const now = Date.now();
-    const timeMs = now - issuedAt;
+    const round = session.round;
+    const questionIds = (Array.isArray(session.question_order) && session.question_order.length > 0)
+      ? session.question_order
+      : round.question_ids;
 
-    if (timeMs > MAX_ANSWER_TIME_MS) {
+    const issuedAt = session.current_question_issued_at ? new Date(session.current_question_issued_at).getTime() : null;
+    const now = Date.now();
+    const timeMs = issuedAt != null ? now - issuedAt : (body.time_taken_ms ?? 0);
+
+    // Timeout only when token was issued (fetch-next-question flow)
+    if (useTokenFlow && issuedAt != null && timeMs > MAX_ANSWER_TIME_MS) {
       // Time expired - record as wrong answer
-      const round = session.round;
-      const questionId = round.question_ids[session.current_question_index];
+      const questionId = questionIds[session.current_question_index];
 
       // Record the answer as timed out (wrong)
       await supabase.from('answers').insert({
@@ -207,8 +241,7 @@ serve(async (req) => {
     }
 
     // Get the question to check the correct answer
-    const round = session.round;
-    const questionId = round.question_ids[session.current_question_index];
+    const questionId = questionIds[session.current_question_index];
 
     const { data: question, error: qError } = await supabase
       .from('questions')
@@ -227,8 +260,8 @@ serve(async (req) => {
     const correct = selectedIndex === question.correct_index;
     const pointsEarned = calculatePoints(correct, timeMs);
 
-    // Record the answer
-    const { error: answerError } = await supabase.from('answers').insert({
+    // Record the answer (token/issued_at only set in fetch-next-question flow)
+    const answerRow: Record<string, unknown> = {
       session_id: sessionId,
       question_index: session.current_question_index,
       question_id: questionId,
@@ -236,9 +269,10 @@ serve(async (req) => {
       correct,
       points_earned: pointsEarned,
       time_ms: timeMs,
-      token,
-      issued_at: session.current_question_issued_at,
-    });
+    };
+    if (token != null) answerRow.token = token;
+    if (session.current_question_issued_at != null) answerRow.issued_at = session.current_question_issued_at;
+    const { error: answerError } = await supabase.from('answers').insert(answerRow);
 
     if (answerError) {
       console.error('Failed to record answer:', answerError);

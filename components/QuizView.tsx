@@ -13,6 +13,7 @@ interface QuizViewProps {
 const BASE_POINTS = 500;
 const MAX_SPEED_BONUS = 500;
 const SPEED_BONUS_DECAY_SEC = 10;
+const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const; // Display labels; indices 0–3 sent to API
 
 const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -267,7 +268,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
                   className={`relative p-5 md:p-7 text-left border transition-all duration-300 group flex items-center gap-5 md:gap-8 active:scale-[0.99] ${stateClass} ${animationClass}`}
                 >
                   <div className={`w-8 h-8 md:w-12 md:h-12 border flex items-center justify-center font-[1000] italic text-sm md:text-xl transition-all duration-300 flex-shrink-0 ${selectedOption === idx ? 'bg-current text-black border-transparent' : 'border-current opacity-20 group-hover:opacity-100'}`}>
-                    {String.fromCharCode(65 + idx)}
+                    {OPTION_LABELS[idx] ?? String.fromCharCode(65 + idx)}
                   </div>
                   <span className="text-base md:text-lg font-black italic uppercase tracking-tight flex-1 leading-tight">{option}</span>
                   

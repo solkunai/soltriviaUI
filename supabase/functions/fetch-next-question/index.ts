@@ -101,13 +101,14 @@ serve(async (req) => {
       );
     }
 
-    // Get session with round data
+    // Get session with round data; session.question_order (when set) overrides round order per user
     const { data: session, error: sessionError } = await supabase
       .from('game_sessions')
       .select(`
         id,
         current_question_index,
         finished_at,
+        question_order,
         round:daily_rounds(id, question_ids, status)
       `)
       .eq('id', sessionId)
@@ -136,7 +137,9 @@ serve(async (req) => {
     }
 
     const questionIndex = session.current_question_index;
-    const questionIds = round.question_ids;
+    const questionIds = (Array.isArray(session.question_order) && session.question_order.length > 0)
+      ? session.question_order
+      : round.question_ids;
 
     if (questionIndex >= questionIds.length) {
       return new Response(

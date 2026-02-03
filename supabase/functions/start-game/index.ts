@@ -51,6 +51,16 @@ function convertSignatureToBase58(signature: string): string {
   }
 }
 
+// Shuffle array (Fisher–Yates); returns new array so each session gets random question order
+function shuffle<T>(arr: T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 serve(async (req) => {
   const corsHeaders = getCorsHeadersFromRequest(req);
   
@@ -351,7 +361,8 @@ serve(async (req) => {
           );
         }
 
-        // Create session with life_used flag
+        // Create session with life_used flag; question_order randomizes questions per user
+        const questionOrder = shuffle(Array.isArray(round.question_ids) ? [...round.question_ids] : []);
         const { data: session, error: sessionError } = await supabase
           .from('game_sessions')
           .insert({
@@ -360,6 +371,7 @@ serve(async (req) => {
             entry_tx_signature: entryTxSignature,
             current_question_index: 0,
             life_used: true,
+            question_order: questionOrder.length ? questionOrder : null,
           })
           .select('id')
           .single();
@@ -436,7 +448,8 @@ serve(async (req) => {
       );
     }
 
-    // Create new game session
+    // Create new game session; question_order randomizes questions per user
+    const questionOrder = shuffle(Array.isArray(round.question_ids) ? [...round.question_ids] : []);
     const { data: session, error: sessionError } = await supabase
       .from('game_sessions')
       .insert({
@@ -444,6 +457,7 @@ serve(async (req) => {
         wallet_address: walletAddress,
         entry_tx_signature: entryTxSignature,
         current_question_index: 0,
+        question_order: questionOrder.length ? questionOrder : null,
       })
       .select('id')
       .single();

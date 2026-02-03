@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS public.game_sessions (
     time_taken_seconds INTEGER DEFAULT 0,
     started_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     finished_at TIMESTAMP WITH TIME ZONE,
-    answers JSONB DEFAULT '[]'::jsonb
+    answers JSONB DEFAULT '[]'::jsonb,
+    question_order JSONB
 );
 
 -- Index for faster queries
