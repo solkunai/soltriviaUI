@@ -151,12 +151,26 @@ serve(async (req) => {
     const byId = new Map(questionsRows.map((q) => [q.id, q]));
     const questions = questionIds.map((id) => byId.get(id)).filter(Boolean);
 
+    // Ensure options is always an array in DB order (index 0-3 = A-D); correct_index refers to this order
+    const normalizeOptions = (op: unknown): string[] => {
+      if (Array.isArray(op)) return op.map((o) => String(o ?? ''));
+      if (typeof op === 'string') {
+        try {
+          const parsed = JSON.parse(op);
+          return Array.isArray(parsed) ? parsed.map((o: unknown) => String(o ?? '')) : [];
+        } catch {
+          return [];
+        }
+      }
+      return [];
+    };
+
     const questionsWithTokens = questions.map((q, index) => ({
       index,
       id: q.id,
       category: q.category,
       text: q.text,
-      options: q.options ?? [],
+      options: normalizeOptions(q.options),
       difficulty: q.difficulty ?? '',
     }));
 

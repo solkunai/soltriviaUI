@@ -256,9 +256,25 @@ serve(async (req) => {
       );
     }
 
-    // Check if answer is correct
-    const correct = selectedIndex === question.correct_index;
+    // Check if answer is correct (normalize to number in case of string from DB/JSON)
+    const correctIndexNum = Number(question.correct_index);
+    const selectedNum = Number(selectedIndex);
+    const correct = selectedNum === correctIndexNum;
     const pointsEarned = calculatePoints(correct, timeMs);
+
+    // Debug: set DEBUG_ANSWERS=true in Edge Function secrets to log one line per submission (Supabase Dashboard → Logs)
+    if (Deno.env.get('DEBUG_ANSWERS') === 'true') {
+      console.log(JSON.stringify({
+        debug: 'submit-answer',
+        questionId,
+        question_index: session.current_question_index,
+        selectedIndex,
+        selectedNum,
+        correct_index_raw: question.correct_index,
+        correctIndexNum,
+        correct,
+      }));
+    }
 
     // Record the answer (token/issued_at only set in fetch-next-question flow)
     const answerRow: Record<string, unknown> = {
@@ -350,7 +366,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         correct,
-        correctIndex: question.correct_index,
+        correctIndex: correctIndexNum,
         pointsEarned,
         timeMs,
         timedOut: false,
