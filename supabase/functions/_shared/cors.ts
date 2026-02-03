@@ -2,14 +2,17 @@
 // For mobile apps, we allow all origins since requests come from the app bundle
 // For web deployments, set ALLOWED_ORIGIN env var to your domain
 // Supports multiple origins separated by commas
+
+// @ts-ignore - Deno is available at runtime in Supabase Edge Functions
 const ALLOWED_ORIGINS_STRING = Deno.env.get('ALLOWED_ORIGINS') || 
-  'https://soltrivia.app,https://soltriviaui.onrender.com,http://localhost:3000,http://localhost:19006';
+  'https://soltrivia.app,https://soltrivia.fun,https://soltriviaui.onrender.com,http://localhost:3000,http://localhost:19006';
 
 // Parse allowed origins from environment variable or use defaults
-const ALLOWED_ORIGINS = ALLOWED_ORIGINS_STRING.split(',').map(origin => origin.trim());
+const ALLOWED_ORIGINS = ALLOWED_ORIGINS_STRING.split(',').map((origin: string) => origin.trim());
 
 // For mobile apps (React Native), Origin header may be absent or vary
 // Use '*' for mobile app development, restrict for production web
+// @ts-ignore - Deno is available at runtime in Supabase Edge Functions
 const isMobileMode = Deno.env.get('CORS_MODE') === 'mobile';
 
 // Default CORS headers (will be overridden by getCorsHeaders for dynamic origin checking)
@@ -44,7 +47,7 @@ export function getCorsHeaders(requestOrigin?: string): Record<string, string> {
 }
 
 // Helper to get CORS headers from a Request object
-export function getCorsHeadersFromRequest(req: Request): Record<string, string> {
+export function getCorsHeadersFromRequest(req: { headers: { get: (key: string) => string | null } }): Record<string, string> {
   const requestOrigin = req.headers.get('origin') || undefined;
   return getCorsHeaders(requestOrigin);
 }
