@@ -76,15 +76,7 @@
 </head>
 <body>
     <div id="root"></div>
-    <!-- Load Buffer polyfill from CDN before app loads -->
-    <script src="https://cdn.jsdelivr.net/npm/buffer@6.0.3/index.js"></script>
-    <script>
-        // Make Buffer available globally for Solana web3.js
-        if (typeof buffer !== 'undefined' && buffer.Buffer) {
-            window.Buffer = buffer.Buffer;
-            globalThis.Buffer = buffer.Buffer;
-        }
-    </script>
+    <!-- Buffer is provided via Vite alias to src/utils/buffer-polyfill.ts (ESM); no CDN script needed -->
     <script type="module" src="/main.tsx"></script>
 </body>
 </html>

@@ -15,6 +15,8 @@ import QuizView from './components/QuizView';
 import ResultsView from './components/ResultsView';
 import WalletRequiredModal from './components/WalletRequiredModal';
 import AdminRoute from './components/AdminRoute';
+import TermsOfServiceView from './components/TermsOfServiceView';
+import PrivacyPolicyView from './components/PrivacyPolicyView';
 import { getPlayerLives, startGame, registerPlayerProfile } from './src/utils/api';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS } from './src/utils/constants';
 import { getRecentBlockhashWithRetry } from './src/utils/rpc';
@@ -361,6 +363,10 @@ const App: React.FC = () => {
             onBuyLives={() => setIsBuyLivesOpen(true)}
           />
         ) : null;
+      case View.TERMS:
+        return <TermsOfServiceView onBack={() => setCurrentView(View.HOME)} />;
+      case View.PRIVACY:
+        return <PrivacyPolicyView onBack={() => setCurrentView(View.HOME)} />;
       case View.ADMIN:
         return <AdminRoute />;
       default:
@@ -387,8 +393,11 @@ const App: React.FC = () => {
     }
   };
 
-  // Hide sidebar during active quiz for immersion
-  const hideSidebar = currentView === View.QUIZ;
+  // Hide sidebar during active quiz or legal full-page views
+  const hideSidebar = currentView === View.QUIZ || currentView === View.TERMS || currentView === View.PRIVACY;
+
+  // Show footer on main app views (not quiz, legal pages, or admin)
+  const showFooter = ![View.QUIZ, View.TERMS, View.PRIVACY, View.ADMIN].includes(currentView);
 
   // Optimized help button logic to avoid duplication on views with built-in headers
   const viewsWithBuiltInHeader = [View.LEADERBOARD, View.PROFILE, View.QUESTS];
@@ -398,8 +407,27 @@ const App: React.FC = () => {
     <div className="flex flex-col md:flex-row h-screen bg-[#050505] overflow-hidden text-white selection:bg-[#00FFA3] selection:text-black">
       {!hideSidebar && <Sidebar currentView={currentView} setView={handleViewChange} />}
 
-      <main className="flex-1 overflow-y-auto relative h-full scroll-smooth">
-        {renderContent()}
+      <main className="flex-1 overflow-y-auto relative h-full scroll-smooth flex flex-col">
+        <div className="flex-1 min-h-0">{renderContent()}</div>
+        {showFooter && (
+          <footer className="border-t border-white/5 bg-[#050505] px-6 md:px-12 py-4 flex flex-wrap items-center justify-center gap-4 md:gap-8 text-zinc-500">
+            <button
+              type="button"
+              onClick={() => setCurrentView(View.TERMS)}
+              className="text-[10px] font-black uppercase tracking-widest italic hover:text-[#14F195] transition-colors"
+            >
+              Terms of Service
+            </button>
+            <span className="text-white/20 text-[10px]">|</span>
+            <button
+              type="button"
+              onClick={() => setCurrentView(View.PRIVACY)}
+              className="text-[10px] font-black uppercase tracking-widest italic hover:text-[#14F195] transition-colors"
+            >
+              Privacy Policy
+            </button>
+          </footer>
+        )}
       </main>
 
       {/* Global Mobile Help Button for views without headers */}

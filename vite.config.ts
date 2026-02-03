@@ -58,8 +58,11 @@ export default defineConfig(({ mode, command }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
           // Polyfill Node.js crypto module for browser compatibility
-          // Trezor and other wallet adapters need this
           'crypto': path.resolve(__dirname, 'src/utils/crypto-polyfill.ts'),
+          // ESM shim so "import { Buffer } from 'buffer'" works (CJS buffer has no named export)
+          'buffer': path.resolve(__dirname, 'src/utils/buffer-polyfill.ts'),
+          // Raw buffer package for the polyfill to import (avoids circular alias)
+          'buffer-cjs': path.resolve(__dirname, 'node_modules/buffer/index.js'),
         },
         // Fix for valtio/vanilla subpath export resolution
         dedupe: ['valtio'],
@@ -82,10 +85,9 @@ export default defineConfig(({ mode, command }) => {
           '@solana/wallet-adapter-react',
           '@solana/wallet-adapter-react-ui',
           '@solana/wallet-adapter-wallets',
+          'buffer',
         ],
-        // Exclude problematic packages from optimization
-        // buffer is loaded from CDN, so exclude it
-        exclude: ['derive-valtio', 'buffer'],
+        exclude: ['derive-valtio'],
       },
       publicDir: 'public',
       build: {
@@ -93,43 +95,13 @@ export default defineConfig(({ mode, command }) => {
         minify: isProduction ? 'terser' : 'esbuild',
         terserOptions: isProduction ? {
           compress: {
-            // Remove ALL console methods (log, error, warn, info, debug, trace, etc.)
+            // Remove console.* call expressions from our bundle only (safe).
+            // Do NOT use global_defs/pure_funcs to replace console with void 0 —
+            // that turns console.warn(...) into (void 0)(...) and breaks extensions (e.g. MetaMask).
             drop_console: true,
-            // Remove debugger statements
             drop_debugger: true,
-            // More aggressive dead code elimination
             dead_code: true,
-            // Remove unused code
             unused: true,
-            // Additional pure functions to remove (redundant with drop_console, but explicit)
-            pure_funcs: [
-              'console.log',
-              'console.info',
-              'console.debug',
-              'console.trace',
-              'console.warn',
-              'console.error',
-              'console.table',
-              'console.group',
-              'console.groupEnd',
-              'console.dir',
-              'console.dirxml',
-              'console.assert',
-              'console.count',
-              'console.countReset',
-              'console.time',
-              'console.timeEnd',
-              'console.timeLog',
-            ],
-            // Remove all console statements globally
-            global_defs: {
-              'console.log': 'void 0',
-              'console.info': 'void 0',
-              'console.debug': 'void 0',
-              'console.warn': 'void 0',
-              'console.error': 'void 0',
-              'console.trace': 'void 0',
-            },
           },
           format: {
             // Remove all comments in production
@@ -167,8 +139,8 @@ export default defineConfig(({ mode, command }) => {
         },
       },
       esbuild: {
-        // Also drop console and debugger during esbuild transform phase (for dependencies)
-        drop: isProduction ? ['console', 'debugger'] : [],
+        // Only drop debugger in deps; do not drop console so third-party code (e.g. wallet scripts) still works
+        drop: isProduction ? ['debugger'] : [],
       },
     };
 });
