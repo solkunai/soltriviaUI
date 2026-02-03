@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.js"
   },
   "dependencies": {
     "@solana/wallet-adapter-base": "^0.9.23",
@@ -18,8 +19,10 @@
     "@tailwindcss/postcss": "^4.1.18",
     "autoprefixer": "^10.4.24",
     "bs58": "^6.0.0",
+    "express": "^4.22.1",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "valtio": "^2.3.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

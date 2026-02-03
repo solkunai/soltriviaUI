@@ -1,0 +1,6 @@
+# Redirects for client-side routing (SPA)
+# All routes should serve index.html for React Router/SPA routing
+
+/admin          /index.html   200
+/adminlogin     /index.html   200
+/*              /index.html   200
