@@ -2,17 +2,28 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { View } from './types';
 
-const HASH_TO_VIEW: Record<string, View> = {
-  home: View.HOME, play: View.PLAY, quests: View.QUESTS, leaderboard: View.LEADERBOARD,
-  profile: View.PROFILE, quiz: View.QUIZ, results: View.RESULTS, terms: View.TERMS, privacy: View.PRIVACY,
+const PATH_TO_VIEW: Record<string, View> = {
+  '/': View.HOME,
+  '/play': View.PLAY,
+  '/quests': View.QUESTS,
+  '/leaderboard': View.LEADERBOARD,
+  '/profile': View.PROFILE,
+  '/quiz': View.QUIZ,
+  '/results': View.RESULTS,
+  '/terms': View.TERMS,
+  '/privacy': View.PRIVACY,
+  '/admin': View.ADMIN,
+  '/adminlogin': View.ADMIN,
 };
-function viewFromHash(): View {
+function viewFromPath(): View {
   if (typeof window === 'undefined') return View.HOME;
-  if (window.location.pathname === '/adminlogin' || window.location.pathname === '/admin') return View.ADMIN;
-  // hash can be "#/profile" or "#profile" depending on how it was set
-  const raw = window.location.hash.slice(1).replace(/^\//, '').trim().toLowerCase();
-  const hash = raw || 'home';
-  return HASH_TO_VIEW[hash] ?? View.HOME;
+  const path = window.location.pathname.replace(/\/$/, '') || '/';
+  return PATH_TO_VIEW[path] ?? View.HOME;
+}
+function pathForView(view: View): string {
+  if (view === View.HOME) return '/';
+  if (view === View.ADMIN) return '/admin';
+  return '/' + view.toLowerCase();
 }
 import { useWallet, useConnection } from './src/contexts/WalletContext';
 import { Transaction, SystemProgram, PublicKey } from '@solana/web3.js';
@@ -42,7 +53,7 @@ const App: React.FC = () => {
   useKeepAlive(true);
   const { connected, publicKey, sendTransaction } = useWallet();
   const { connection } = useConnection();
-  const [currentView, setCurrentView] = useState<View>(viewFromHash);
+  const [currentView, setCurrentView] = useState<View>(viewFromPath);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isBuyLivesOpen, setIsBuyLivesOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
@@ -114,20 +125,19 @@ const App: React.FC = () => {
     setCurrentView(view);
   };
 
-  // Sync hash to URL when view changes (so reload keeps the same page)
+  // Sync path to URL when view changes (so reload keeps the same page)
   useEffect(() => {
-    if (currentView !== View.ADMIN) {
-      const slug = currentView.toLowerCase();
-      const want = '#' + (slug === 'home' ? '/' : '/' + slug);
-      if (window.location.hash !== want) window.history.replaceState(null, '', want);
+    const want = pathForView(currentView);
+    if (window.location.pathname.replace(/\/$/, '') !== want.replace(/\/$/, '')) {
+      window.history.replaceState(null, '', want);
     }
   }, [currentView]);
 
-  // Back/forward: update view from hash
+  // Back/forward: update view from path
   useEffect(() => {
-    const onHashChange = () => setCurrentView(viewFromHash());
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
+    const onPopState = () => setCurrentView(viewFromPath());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   // Redirect to HOME only when user disconnects (not on initial load – so reload keeps same page)
