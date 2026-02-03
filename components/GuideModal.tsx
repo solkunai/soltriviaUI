@@ -3,9 +3,11 @@ import React from 'react';
 interface GuideModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenTerms?: () => void;
+  onOpenPrivacy?: () => void;
 }
 
-const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
+const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose, onOpenTerms, onOpenPrivacy }) => {
   if (!isOpen) return null;
 
   const steps = [
@@ -68,6 +70,25 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose }) => {
                 <span>0.0025 SOL</span>
               </div>
             </div>
+          </div>
+
+          {/* Legal links */}
+          <div className="pt-6 mt-6 border-t border-white/5 flex flex-wrap items-center justify-center gap-3 text-zinc-500">
+            <button
+              type="button"
+              onClick={() => { onClose(); onOpenTerms?.(); }}
+              className="text-[10px] font-black uppercase tracking-widest italic hover:text-[#14F195] transition-colors"
+            >
+              Terms of Service
+            </button>
+            <span className="text-white/20 text-[10px]">|</span>
+            <button
+              type="button"
+              onClick={() => { onClose(); onOpenPrivacy?.(); }}
+              className="text-[10px] font-black uppercase tracking-widest italic hover:text-[#14F195] transition-colors"
+            >
+              Privacy Policy
+            </button>
           </div>
         </div>
 

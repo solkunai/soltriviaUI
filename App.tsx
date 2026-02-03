@@ -396,8 +396,7 @@ const App: React.FC = () => {
   // Hide sidebar during active quiz or legal full-page views
   const hideSidebar = currentView === View.QUIZ || currentView === View.TERMS || currentView === View.PRIVACY;
 
-  // Show footer on main app views (not quiz, legal pages, or admin)
-  const showFooter = ![View.QUIZ, View.TERMS, View.PRIVACY, View.ADMIN].includes(currentView);
+  // Footer removed – Terms & Privacy links are in the How to Play modal
 
   // Optimized help button logic to avoid duplication on views with built-in headers
   const viewsWithBuiltInHeader = [View.LEADERBOARD, View.PROFILE, View.QUESTS];
@@ -407,27 +406,8 @@ const App: React.FC = () => {
     <div className="flex flex-col md:flex-row h-screen bg-[#050505] overflow-hidden text-white selection:bg-[#00FFA3] selection:text-black">
       {!hideSidebar && <Sidebar currentView={currentView} setView={handleViewChange} />}
 
-      <main className="flex-1 overflow-y-auto relative h-full scroll-smooth flex flex-col">
+      <main className="flex-1 overflow-y-auto relative h-full scroll-smooth flex flex-col pb-[100px] md:pb-0 safe-bottom">
         <div className="flex-1 min-h-0">{renderContent()}</div>
-        {showFooter && (
-          <footer className="border-t border-white/5 bg-[#050505] px-6 md:px-12 py-4 flex flex-wrap items-center justify-center gap-4 md:gap-8 text-zinc-500">
-            <button
-              type="button"
-              onClick={() => setCurrentView(View.TERMS)}
-              className="text-[10px] font-black uppercase tracking-widest italic hover:text-[#14F195] transition-colors"
-            >
-              Terms of Service
-            </button>
-            <span className="text-white/20 text-[10px]">|</span>
-            <button
-              type="button"
-              onClick={() => setCurrentView(View.PRIVACY)}
-              className="text-[10px] font-black uppercase tracking-widest italic hover:text-[#14F195] transition-colors"
-            >
-              Privacy Policy
-            </button>
-          </footer>
-        )}
       </main>
 
       {/* Global Mobile Help Button for views without headers */}
@@ -451,7 +431,12 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <GuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
+      <GuideModal
+        isOpen={isGuideOpen}
+        onClose={() => setIsGuideOpen(false)}
+        onOpenTerms={() => setCurrentView(View.TERMS)}
+        onOpenPrivacy={() => setCurrentView(View.PRIVACY)}
+      />
       <BuyLivesModal isOpen={isBuyLivesOpen} onClose={() => setIsBuyLivesOpen(false)} onBuySuccess={handleBuyLivesSuccess} />
       <EditProfileModal 
         isOpen={isEditProfileOpen} 
