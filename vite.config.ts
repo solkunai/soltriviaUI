@@ -3,11 +3,12 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // Custom plugin to remove console logs in production
-const removeConsolePlugin = () => {
+const removeConsolePlugin = (isProduction: boolean) => {
   return {
     name: 'remove-console',
     transform(code: string, id: string) {
-      if (process.env.NODE_ENV === 'production') {
+      // Remove console logs in production builds
+      if (isProduction) {
         // Remove all console statements
         return {
           code: code
@@ -31,9 +32,10 @@ const removeConsolePlugin = () => {
   };
 };
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
     const env = loadEnv(mode, '.', '');
-    const isProduction = mode === 'production';
+    // Check if building for production (either mode='production' or command='build')
+    const isProduction = mode === 'production' || command === 'build';
     
     return {
       server: {
@@ -42,7 +44,7 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [
         react(),
-        ...(isProduction ? [removeConsolePlugin()] : []),
+        ...(isProduction ? [removeConsolePlugin(isProduction)] : []),
       ],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),

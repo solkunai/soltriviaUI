@@ -43,7 +43,7 @@ services:
   - type: web
     name: sol-trivia-web
     runtime: node
-    buildCommand: export NODE_ENV=production && npm install && npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
