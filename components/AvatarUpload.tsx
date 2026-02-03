@@ -56,7 +56,8 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({
       // Create unique file name
       const fileExt = selectedFile.name.split('.').pop();
       const fileName = `${walletAddress}-${Date.now()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
+      // File path should not include bucket name since we're already in the 'avatars' bucket
+      const filePath = fileName;
 
       // Upload to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage

@@ -4,6 +4,21 @@ import { SUPABASE_FUNCTIONS_URL } from './constants';
 
 const FUNCTIONS_URL = SUPABASE_FUNCTIONS_URL;
 
+// Get Supabase anon key for Edge Function authentication
+const getSupabaseAnonKey = (): string => {
+  return import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+};
+
+// Helper to create authenticated fetch headers
+const getAuthHeaders = (): Record<string, string> => {
+  const anonKey = getSupabaseAnonKey();
+  return {
+    'Content-Type': 'application/json',
+    'apikey': anonKey,
+    'Authorization': `Bearer ${anonKey}`,
+  };
+};
+
 // Types
 export interface SubmitEntryParams {
   wallet_address: string;
@@ -85,7 +100,7 @@ export async function startGame(
 ): Promise<{ sessionId: string; roundId: string; totalQuestions: number; resumed: boolean }> {
   const response = await fetch(`${FUNCTIONS_URL}/start-game`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ walletAddress, entryTxSignature }),
   });
 
@@ -101,7 +116,7 @@ export async function startGame(
 export async function getQuestions(session_id: string): Promise<GetQuestionsResponse> {
   const response = await fetch(`${FUNCTIONS_URL}/get-questions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ session_id }),
   });
 
@@ -117,7 +132,7 @@ export async function getQuestions(session_id: string): Promise<GetQuestionsResp
 export async function submitAnswer(params: SubmitAnswerParams): Promise<SubmitAnswerResponse> {
   const response = await fetch(`${FUNCTIONS_URL}/submit-answer`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(params),
   });
 
@@ -133,7 +148,7 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<SubmitAn
 export async function getLeaderboard(round_id?: string): Promise<LeaderboardEntry[]> {
   const response = await fetch(`${FUNCTIONS_URL}/get-leaderboard`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ round_id }),
   });
 
@@ -193,7 +208,7 @@ export async function purchaseLives(
 ): Promise<PurchaseLivesResponse> {
   const response = await fetch(`${FUNCTIONS_URL}/purchase-lives`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ walletAddress, txSignature }),
   });
 
