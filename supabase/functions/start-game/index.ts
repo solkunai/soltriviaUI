@@ -106,68 +106,122 @@ serve(async (req) => {
       );
     }
 
-    // Verify the payment details - must have TWO transfers:
+    // Verify the payment details using BALANCE CHANGES (more reliable)
+    // Must have TWO transfers:
     // 1. 0.02 SOL to PRIZE_POOL_WALLET (entry fee)
     // 2. 0.0025 SOL to REVENUE_WALLET (transaction fee)
-    const instructions = transaction.transaction.message.instructions;
-    if (!instructions || instructions.length < 2) {
+    
+    console.log('Verifying transaction using balance changes...');
+    
+    const accountKeys = transaction.transaction.message.staticAccountKeys ||
+                       transaction.transaction.message.accountKeys;
+                       
+    if (!accountKeys || accountKeys.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Invalid transaction: expected 2 transfers (entry fee + transaction fee)' }),
+        JSON.stringify({ error: 'Invalid transaction: no account keys found' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const accountKeys = transaction.transaction.message.staticAccountKeys ||
-                       transaction.transaction.message.accountKeys;
-
-    let prizePoolVerified = false;
-    let revenueVerified = false;
-    let senderVerified = false;
-
-    for (const instruction of instructions) {
-      // SystemProgram.transfer has programIdIndex 0
-      if (instruction.programIdIndex === 0) {
-        const accounts = instruction.accounts;
-        if (accounts && accounts.length >= 2) {
-          const fromIndex = accounts[0];
-          const toIndex = accounts[1];
-
-          const fromPubkey = accountKeys[fromIndex];
-          const toPubkey = accountKeys[toIndex];
-
-          // Verify sender matches claimed wallet address
-          if (fromPubkey.toString() === walletAddress) {
-            senderVerified = true;
-
-            // Get the amount from instruction data
-            const data = instruction.data;
-            if (data && data.length >= 12) {
-              const view = new DataView(new Uint8Array(data).buffer);
-              const lamports = Number(view.getBigUint64(4, true));
-
-              // Check if this is the prize pool transfer (0.02 SOL entry fee)
-              if (toPubkey.toString() === PRIZE_POOL_WALLET && lamports === EXPECTED_PRIZE_POOL_AMOUNT) {
-                prizePoolVerified = true;
-              }
-
-              // Check if this is the revenue transfer (0.0025 SOL transaction fee)
-              if (toPubkey.toString() === REVENUE_WALLET && lamports === EXPECTED_REVENUE_AMOUNT) {
-                revenueVerified = true;
-              }
-            }
-          }
-        }
-      }
+    const meta = transaction.meta;
+    if (!meta || !meta.postBalances || !meta.preBalances) {
+      return new Response(
+        JSON.stringify({ error: 'Transaction missing balance information' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    if (!prizePoolVerified || !revenueVerified || !senderVerified) {
+    console.log('Transaction meta:', {
+      preBalances: meta.preBalances,
+      postBalances: meta.postBalances,
+      accountKeys: accountKeys.map((k: any) => k.toString()),
+    });
+
+    // Find indices of sender, prize pool, and revenue wallets
+    let senderIndex = -1;
+    let prizePoolIndex = -1;
+    let revenueIndex = -1;
+    
+    for (let i = 0; i < accountKeys.length; i++) {
+      const key = accountKeys[i].toString();
+      if (key === walletAddress) senderIndex = i;
+      if (key === PRIZE_POOL_WALLET) prizePoolIndex = i;
+      if (key === REVENUE_WALLET) revenueIndex = i;
+    }
+
+    console.log('Account indices:', { senderIndex, prizePoolIndex, revenueIndex });
+
+    if (senderIndex === -1) {
       return new Response(
-        JSON.stringify({
-          error: 'Transaction verification failed: invalid amount, sender, or recipients'
+        JSON.stringify({ 
+          error: 'Sender wallet not found in transaction',
+          details: { expectedSender: walletAddress }
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    if (prizePoolIndex === -1 || revenueIndex === -1) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Prize pool or revenue wallet not found in transaction',
+          details: { 
+            expectedPrizePool: PRIZE_POOL_WALLET,
+            expectedRevenue: REVENUE_WALLET,
+            foundPrizePool: prizePoolIndex !== -1,
+            foundRevenue: revenueIndex !== -1,
+          }
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Calculate actual transfer amounts from balance changes
+    const prizePoolChange = meta.postBalances[prizePoolIndex] - meta.preBalances[prizePoolIndex];
+    const revenueChange = meta.postBalances[revenueIndex] - meta.preBalances[revenueIndex];
+    
+    console.log('Balance changes:', {
+      prizePool: {
+        pre: meta.preBalances[prizePoolIndex],
+        post: meta.postBalances[prizePoolIndex],
+        change: prizePoolChange,
+        expected: EXPECTED_PRIZE_POOL_AMOUNT,
+      },
+      revenue: {
+        pre: meta.preBalances[revenueIndex],
+        post: meta.postBalances[revenueIndex],
+        change: revenueChange,
+        expected: EXPECTED_REVENUE_AMOUNT,
+      },
+    });
+
+    // Verify both amounts match exactly
+    const prizePoolVerified = prizePoolChange === EXPECTED_PRIZE_POOL_AMOUNT;
+    const revenueVerified = revenueChange === EXPECTED_REVENUE_AMOUNT;
+
+    if (!prizePoolVerified || !revenueVerified) {
+      console.error('❌ Payment verification failed');
+      return new Response(
+        JSON.stringify({
+          error: 'Payment verification failed: Invalid amounts or recipients',
+          details: {
+            prizePool: {
+              expected: EXPECTED_PRIZE_POOL_AMOUNT,
+              actual: prizePoolChange,
+              verified: prizePoolVerified,
+            },
+            revenue: {
+              expected: EXPECTED_REVENUE_AMOUNT,
+              actual: revenueChange,
+              verified: revenueVerified,
+            },
+          }
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('✅ Payment verification passed');
 
     // Get or create current round (4 rounds per day, every 6 hours)
     const now = new Date();

@@ -30,6 +30,13 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
 
     try {
       // Create the transaction
+      console.log('Creating purchase lives transaction:', {
+        from: publicKey.toBase58(),
+        to: REVENUE_WALLET,
+        lamports: LIVES_PRICE_LAMPORTS,
+        sol: LIVES_PRICE_LAMPORTS / 1_000_000_000,
+      });
+      
       const transaction = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
@@ -66,6 +73,11 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
       await Promise.race([confirmationPromise, timeoutPromise]);
 
       // Call the backend API to record the purchase
+      console.log('Calling purchase-lives API:', {
+        walletAddress: publicKey.toBase58(),
+        txSignature: signature,
+      });
+      
       const result = await purchaseLives(publicKey.toBase58(), signature);
 
       if (result.success) {

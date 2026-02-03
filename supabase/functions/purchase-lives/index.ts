@@ -12,18 +12,26 @@ import { decode as decodeBase64 } from 'https://deno.land/std@0.177.0/encoding/b
 // @ts-ignore - Deno URL imports are valid at runtime
 import * as base58 from 'https://esm.sh/bs58@5.0.0';
 
-// Get values from environment variables (set in Supabase dashboard)
+// =====================
+// CONFIG (from environment variables)
+// =====================
 const LIVES_PER_PURCHASE = 3;
 const EXPECTED_AMOUNT_LAMPORTS = parseInt(Deno.env.get('LIVES_PRICE_LAMPORTS') || '30000000', 10); // 0.03 SOL
-const REVENUE_WALLET = Deno.env.get('REVENUE_WALLET') || '4u1UTyMBX8ghSQBagZHCzArt32XMFSw4CUXbdgo2Cv74'; // Ledger/Phantom wallet
+const REVENUE_WALLET = Deno.env.get('REVENUE_WALLET') || '4u1UTyMBX8ghSQBagZHCzArt32XMFSw4CUXbdgo2Cv74';
 const SOLANA_RPC_URL = Deno.env.get('SOLANA_RPC_URL') || 'https://api.mainnet-beta.solana.com';
+const SYSTEM_PROGRAM_ID = '11111111111111111111111111111111';
 
+// =====================
+// TYPES
+// =====================
 interface PurchaseLivesRequest {
   walletAddress: string;
   txSignature: string;
 }
 
-// Validate Solana address format
+// =====================
+// HELPERS
+// =====================
 function isValidSolanaAddress(address: string): boolean {
   try {
     new PublicKey(address);
@@ -33,209 +41,249 @@ function isValidSolanaAddress(address: string): boolean {
   }
 }
 
-// Convert base64 signature to base58 (MWA returns base64, Solana RPC expects base58)
+// Convert base64 → base58 (MWA compatibility)
 function convertSignatureToBase58(signature: string): string {
   try {
-    // Try to decode as base64 first
     const decoded = decodeBase64(signature);
     return base58.encode(decoded);
   } catch {
-    // If it fails, assume it's already base58
-    return signature;
+    return signature; // Already base58
   }
 }
 
+// =====================
+// MAIN
+// =====================
 serve(async (req) => {
-  const corsHeaders = getCorsHeadersFromRequest(req);
-  
-  // Handle CORS preflight
+  const cors = getCorsHeadersFromRequest(req);
+
+  // --- CORS preflight ---
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: cors });
   }
 
   try {
-    console.log('🔍 purchase-lives function called');
+    console.log('🔍 purchase-lives called');
 
-    const supabase = getSupabaseClient();
-    console.log('✅ Supabase client created');
+    // Initialize Supabase client with error handling
+    let supabase;
+    try {
+      supabase = getSupabaseClient();
+      console.log('✅ Supabase client initialized');
+    } catch (supabaseError) {
+      console.error('❌ Failed to initialize Supabase client:', supabaseError);
+      return new Response(
+        JSON.stringify({
+          error: 'Failed to initialize database connection',
+          details: supabaseError instanceof Error ? supabaseError.message : String(supabaseError),
+        }),
+        { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    const { walletAddress, txSignature }: PurchaseLivesRequest = await req.json();
-    console.log('📝 Request data:', { walletAddress, txSignature: txSignature?.substring(0, 20) + '...' });
+    // Parse request body with error handling
+    let body: PurchaseLivesRequest;
+    try {
+      body = await req.json();
+      console.log('✅ Request body parsed');
+    } catch (jsonError) {
+      console.error('❌ Failed to parse request body:', jsonError);
+      return new Response(
+        JSON.stringify({
+          error: 'Invalid request body',
+          details: jsonError instanceof Error ? jsonError.message : String(jsonError),
+        }),
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    // Input validation
+    const { walletAddress, txSignature } = body;
+
     if (!walletAddress || !txSignature) {
       return new Response(
         JSON.stringify({ error: 'walletAddress and txSignature are required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Validate address format
     if (!isValidSolanaAddress(walletAddress)) {
       return new Response(
-        JSON.stringify({ error: 'Invalid wallet address format' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Invalid wallet address' }),
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Convert signature to base58 (MWA sends base64, Solana expects base58)
     const base58Signature = convertSignatureToBase58(txSignature);
 
-    // Check if this transaction was already used (prevent replay attacks)
-    const { data: existingPurchase, error: checkError } = await supabase
+    // --- Replay protection ---
+    const { data: existingTx, error: replayError } = await supabase
       .from('lives_purchases')
       .select('id')
       .eq('tx_signature', base58Signature)
       .single();
 
-    if (checkError && checkError.code !== 'PGRST116') {
-      // PGRST116 = "not found" which is OK, any other error is a problem
-      console.error('Database check error:', checkError);
+    if (existingTx) {
       return new Response(
-        JSON.stringify({
-          error: 'Database error',
-          details: checkError.message,
-          code: checkError.code
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Transaction already used' }),
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    if (existingPurchase) {
+    if (replayError && replayError.code !== 'PGRST116') {
+      console.error('Database error checking replay:', replayError);
       return new Response(
-        JSON.stringify({ error: 'Transaction already used', code: 'TX_ALREADY_USED' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Database error', details: replayError.message }),
+        { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    // 🔒 CRITICAL SECURITY: Verify transaction on-chain
+    // --- Fetch transaction with retries ---
     const connection = new Connection(SOLANA_RPC_URL, 'confirmed');
+    let transaction = null;
 
-    // Retry logic: Transaction might not be confirmed immediately
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let transaction: any = null;
-    const maxRetries = 5;
-    const retryDelay = 1000; // 1 second
-
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
+    for (let i = 0; i < 5; i++) {
       try {
         transaction = await connection.getTransaction(base58Signature, {
           commitment: 'confirmed',
           maxSupportedTransactionVersion: 0,
         });
-
-        if (transaction) break; // Found it!
-
-        // Wait before next retry
-        if (attempt < maxRetries - 1) {
-          await new Promise(resolve => setTimeout(resolve, retryDelay * (attempt + 1)));
-        }
+        if (transaction) break;
       } catch (err) {
-        // Wait before retry on error
-        if (attempt < maxRetries - 1) {
-          await new Promise(resolve => setTimeout(resolve, retryDelay * (attempt + 1)));
-        }
+        console.error(`Transaction fetch attempt ${i + 1} failed:`, err);
+      }
+      if (i < 4) {
+        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
       }
     }
 
-    // Verify transaction exists and succeeded
     if (!transaction) {
       return new Response(
-        JSON.stringify({ error: 'Transaction not found on-chain after retries' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Transaction not found on-chain' }),
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
     if (transaction.meta?.err) {
       return new Response(
         JSON.stringify({ error: 'Transaction failed on-chain' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Verify the payment details from the transaction
-    const instructions = transaction.transaction.message.instructions;
-    if (!instructions || instructions.length === 0) {
+    // --- Verify transaction details using BALANCE CHANGES (more reliable) ---
+    console.log('Verifying transaction using balance changes...');
+    
+    // Get account keys
+    const accountKeys =
+      transaction.transaction.message.staticAccountKeys ??
+      transaction.transaction.message.accountKeys;
+    
+    if (!accountKeys || accountKeys.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Invalid transaction: no instructions found' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Invalid transaction: no account keys found' }),
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Find the transfer instruction
-    const accountKeys = transaction.transaction.message.staticAccountKeys ||
-                       transaction.transaction.message.accountKeys;
-
-    let foundValidTransfer = false;
-    let senderPubkey: PublicKey | null = null;
-
-    for (const instruction of instructions) {
-      // SystemProgram.transfer has programIdIndex 0 and 3 accounts
-      if (instruction.programIdIndex === 0) {
-        const accounts = instruction.accounts;
-        if (accounts && accounts.length >= 2) {
-          const fromIndex = accounts[0];
-          const toIndex = accounts[1];
-
-          const fromPubkey = accountKeys[fromIndex];
-          const toPubkey = accountKeys[toIndex];
-
-          // Verify recipient is the revenue wallet
-          if (toPubkey.toString() === REVENUE_WALLET) {
-            // Verify sender matches claimed wallet address
-            if (fromPubkey.toString() === walletAddress) {
-              senderPubkey = fromPubkey;
-
-              // Get the amount from instruction data
-              // For SystemProgram.transfer, data is: [2, 0, 0, 0, lamports (8 bytes)]
-              const data = instruction.data;
-              if (data && data.length >= 12) {
-                // Read lamports as little-endian 64-bit integer
-                const view = new DataView(new Uint8Array(data).buffer);
-                const lamports = Number(view.getBigUint64(4, true));
-
-                // Verify exact amount
-                if (lamports === EXPECTED_AMOUNT_LAMPORTS) {
-                  foundValidTransfer = true;
-                  break;
-                }
-              }
-            }
-          }
-        }
-      }
+    // Use postBalances and preBalances to verify the transfer amount
+    const meta = transaction.meta;
+    if (!meta || !meta.postBalances || !meta.preBalances) {
+      return new Response(
+        JSON.stringify({ error: 'Transaction missing balance information' }),
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
+      );
     }
 
-    if (!foundValidTransfer) {
-      // DEBUG: Log what we actually found
-      console.error('Verification failed. Instructions:', JSON.stringify(instructions.map(i => ({
-        programIdIndex: i.programIdIndex,
-        accounts: i.accounts,
-        data: i.data ? Array.from(i.data) : null
-      }))));
-      console.error('Account keys:', accountKeys.map(k => k.toString()));
-      console.error('Expected wallet:', walletAddress);
-      console.error('Expected recipient:', REVENUE_WALLET);
-      console.error('Expected amount:', EXPECTED_AMOUNT_LAMPORTS);
+    console.log('Transaction meta:', {
+      preBalances: meta.preBalances,
+      postBalances: meta.postBalances,
+      accountKeys: accountKeys.map((k: any) => k.toString()),
+    });
 
+    // Find indices of sender and recipient
+    let senderIndex = -1;
+    let recipientIndex = -1;
+    
+    for (let i = 0; i < accountKeys.length; i++) {
+      const key = accountKeys[i].toString();
+      if (key === walletAddress) senderIndex = i;
+      if (key === REVENUE_WALLET) recipientIndex = i;
+    }
+
+    console.log('Account indices:', { senderIndex, recipientIndex });
+
+    if (senderIndex === -1) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Sender wallet not found in transaction',
+          details: { expectedSender: walletAddress }
+        }),
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (recipientIndex === -1) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Revenue wallet not found in transaction',
+          details: { expectedRecipient: REVENUE_WALLET }
+        }),
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Calculate the actual transfer amount from balance changes
+    const senderBalanceChange = meta.postBalances[senderIndex] - meta.preBalances[senderIndex];
+    const recipientBalanceChange = meta.postBalances[recipientIndex] - meta.preBalances[recipientIndex];
+    
+    console.log('Balance changes:', {
+      sender: {
+        pre: meta.preBalances[senderIndex],
+        post: meta.postBalances[senderIndex],
+        change: senderBalanceChange,
+      },
+      recipient: {
+        pre: meta.preBalances[recipientIndex],
+        post: meta.postBalances[recipientIndex],
+        change: recipientBalanceChange,
+      },
+    });
+
+    // Sender should have decreased by amount + fee
+    // Recipient should have increased by exactly the amount
+    const transferredAmount = recipientBalanceChange;
+
+    console.log('Transfer verification:', {
+      transferredAmount,
+      expectedAmount: EXPECTED_AMOUNT_LAMPORTS,
+      match: transferredAmount === EXPECTED_AMOUNT_LAMPORTS,
+    });
+
+    // Verify the recipient received the correct amount
+    if (transferredAmount !== EXPECTED_AMOUNT_LAMPORTS) {
+      console.error('❌ Amount mismatch');
       return new Response(
         JSON.stringify({
-          error: 'Transaction verification failed: invalid amount, sender, or recipient'
+          error: 'Transaction amount mismatch',
+          details: {
+            expectedAmount: EXPECTED_AMOUNT_LAMPORTS,
+            actualAmount: transferredAmount,
+            difference: transferredAmount - EXPECTED_AMOUNT_LAMPORTS,
+          }
         }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Record the purchase
-    console.log('💾 Recording purchase in database...');
-    const { error: purchaseError } = await supabase
-      .from('lives_purchases')
-      .insert({
-        wallet_address: walletAddress,
-        lives_purchased: LIVES_PER_PURCHASE,
-        amount_lamports: EXPECTED_AMOUNT_LAMPORTS,
-        tx_signature: base58Signature,
-      });
+    console.log('✅ Transaction verification passed');
+
+    // --- Record purchase ---
+    const { error: purchaseError } = await supabase.from('lives_purchases').insert({
+      wallet_address: walletAddress,
+      lives_purchased: LIVES_PER_PURCHASE,
+      amount_lamports: EXPECTED_AMOUNT_LAMPORTS,
+      tx_signature: base58Signature,
+    });
 
     if (purchaseError) {
       console.error('❌ Failed to record purchase:', purchaseError);
@@ -243,113 +291,67 @@ serve(async (req) => {
         JSON.stringify({
           error: 'Failed to record purchase',
           details: purchaseError.message,
-          code: purchaseError.code
         }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
-    console.log('✅ Purchase recorded successfully');
 
-    // Upsert player_lives - add lives to existing count
-    const { data: existingLives, error: fetchError } = await supabase
+    // --- Update lives ---
+    const { data: livesRow, error: livesError } = await supabase
       .from('player_lives')
       .select('lives_count, total_purchased, total_used')
       .eq('wallet_address', walletAddress)
       .single();
 
-    if (fetchError && fetchError.code !== 'PGRST116') {
-      console.error('Failed to fetch existing lives:', fetchError);
+    if (livesError && livesError.code !== 'PGRST116') {
+      console.error('Failed to fetch lives:', livesError);
       return new Response(
         JSON.stringify({
           error: 'Database error fetching lives',
-          details: fetchError.message,
-          code: fetchError.code
+          details: livesError.message,
         }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    const currentCount = existingLives?.lives_count || 0;
-    const totalPurchased = existingLives?.total_purchased || 0;
-    const totalUsed = existingLives?.total_used || 0;
+    const livesCount = livesRow?.lives_count ?? 0;
+    const totalPurchased = livesRow?.total_purchased ?? 0;
+    const totalUsed = livesRow?.total_used ?? 0;
 
-    console.log('💾 Updating player lives...', { currentCount, totalPurchased, totalUsed, adding: LIVES_PER_PURCHASE });
-    
-    const newLivesCount = currentCount + LIVES_PER_PURCHASE;
+    const newLivesCount = livesCount + LIVES_PER_PURCHASE;
     const newTotalPurchased = totalPurchased + LIVES_PER_PURCHASE;
-    
-    let updatedLives;
-    
-    if (existingLives) {
-      // Row exists - update it
-      console.log('📝 Updating existing player_lives row');
-      const { data, error: updateError } = await supabase
-        .from('player_lives')
-        .update({
-          lives_count: newLivesCount,
-          total_purchased: newTotalPurchased,
-          total_used: totalUsed,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('wallet_address', walletAddress)
-        .select('lives_count, total_purchased, total_used')
-        .single();
 
-      if (updateError) {
-        console.error('❌ Failed to update lives:', updateError);
-        console.error('Update error details:', JSON.stringify(updateError, null, 2));
-        return new Response(
-          JSON.stringify({
-            error: 'Failed to update lives count',
-            details: updateError.message,
-            code: updateError.code
-          }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      updatedLives = data;
-    } else {
-      // Row doesn't exist - insert it
-      console.log('📝 Inserting new player_lives row');
-      const { data, error: insertError } = await supabase
-        .from('player_lives')
-        .insert({
-          wallet_address: walletAddress,
-          lives_count: newLivesCount,
-          total_purchased: newTotalPurchased,
-          total_used: 0,
-          updated_at: new Date().toISOString(),
-        })
-        .select('lives_count, total_purchased, total_used')
-        .single();
+    const { data: updatedLives, error: updateError } = await supabase
+      .from('player_lives')
+      .upsert({
+        wallet_address: walletAddress,
+        lives_count: newLivesCount,
+        total_purchased: newTotalPurchased,
+        total_used: totalUsed,
+        updated_at: new Date().toISOString(),
+      })
+      .select('lives_count, total_purchased, total_used')
+      .single();
 
-      if (insertError) {
-        console.error('❌ Failed to insert lives:', insertError);
-        console.error('Insert error details:', JSON.stringify(insertError, null, 2));
-        return new Response(
-          JSON.stringify({
-            error: 'Failed to insert lives count',
-            details: insertError.message,
-            code: insertError.code
-          }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      updatedLives = data;
+    if (updateError) {
+      console.error('❌ Failed to update lives:', updateError);
+      return new Response(
+        JSON.stringify({
+          error: 'Failed to update lives',
+          details: updateError.message,
+        }),
+        { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
+      );
     }
 
     if (!updatedLives) {
-      console.error('❌ No data returned after update/insert');
       return new Response(
-        JSON.stringify({
-          error: 'Failed to update lives: no data returned'
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Failed to update lives: no data returned' }),
+        { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
     console.log('✅ Lives updated successfully:', updatedLives);
-    console.log('📊 Final lives count:', updatedLives.lives_count);
 
     return new Response(
       JSON.stringify({
@@ -359,19 +361,34 @@ serve(async (req) => {
         totalPurchased: updatedLives.total_purchased,
         totalUsed: updatedLives.total_used || 0,
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...cors, 'Content-Type': 'application/json' } }
     );
-  } catch (error) {
-    console.error('❌ Uncaught error in purchase-lives:', error);
-    console.error('Error type:', error instanceof Error ? error.constructor.name : typeof error);
-    console.error('Error message:', error instanceof Error ? error.message : String(error));
-    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+  } catch (err) {
+    console.error('🔥 Uncaught error:', err);
+    console.error('Error type:', err instanceof Error ? err.constructor.name : typeof err);
+    console.error('Error message:', err instanceof Error ? err.message : String(err));
+    console.error('Error stack:', err instanceof Error ? err.stack : 'No stack trace');
+    
+    // Ensure we have CORS headers even in error case
+    let errorCors = cors;
+    try {
+      errorCors = getCorsHeadersFromRequest(req);
+    } catch {
+      // Fallback if we can't get CORS headers
+      errorCors = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+      };
+    }
+    
     return new Response(
       JSON.stringify({
         error: 'Internal server error',
-        details: error instanceof Error ? error.message : String(error)
+        details: err instanceof Error ? err.message : String(err),
+        type: err instanceof Error ? err.constructor.name : typeof err,
       }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...errorCors, 'Content-Type': 'application/json' } }
     );
   }
 });

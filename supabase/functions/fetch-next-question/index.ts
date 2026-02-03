@@ -2,10 +2,76 @@
 // Returns one question at a time with a unique token
 // NEVER exposes the correct answer - that's revealed only after submission
 
+// @ts-ignore - Deno URL imports are valid at runtime
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { getCorsHeadersFromRequest } from '../_shared/cors.ts';
-import { getSupabaseClient } from '../_shared/supabase.ts';
+// @ts-ignore - Deno URL imports are valid at runtime
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+// =====================
+// CORS CONFIGURATION (inlined)
+// =====================
+// @ts-ignore - Deno is available at runtime
+const ALLOWED_ORIGINS_STRING = Deno.env.get('ALLOWED_ORIGINS') || 
+  'https://soltrivia.app,https://soltrivia.fun,https://soltriviaui.onrender.com,http://localhost:3000,http://localhost:19006';
+
+const ALLOWED_ORIGINS = ALLOWED_ORIGINS_STRING.split(',').map((origin: string) => origin.trim()).filter(Boolean);
+
+// @ts-ignore - Deno is available at runtime
+const isMobileMode = Deno.env.get('CORS_MODE') === 'mobile';
+
+function getCorsHeaders(requestOrigin?: string): Record<string, string> {
+  if (isMobileMode) {
+    return {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+      'Access-Control-Max-Age': '86400',
+    };
+  }
+
+  let originToUse: string;
+  if (requestOrigin && ALLOWED_ORIGINS.includes(requestOrigin)) {
+    originToUse = requestOrigin;
+  } else if (ALLOWED_ORIGINS.length > 0) {
+    originToUse = ALLOWED_ORIGINS[0];
+  } else {
+    originToUse = 'null';
+  }
+
+  return {
+    'Access-Control-Allow-Origin': originToUse,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
+
+function getCorsHeadersFromRequest(req: { headers: { get: (key: string) => string | null } }): Record<string, string> {
+  const requestOrigin = req.headers.get('origin') || undefined;
+  return getCorsHeaders(requestOrigin);
+}
+
+// =====================
+// SUPABASE CLIENT (inlined)
+// =====================
+function getSupabaseClient() {
+  // @ts-ignore - Deno is available at runtime
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  // @ts-ignore - Deno is available at runtime
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error('❌ Missing required Supabase environment variables for service role client.');
+    throw new Error('Missing required Supabase environment variables for service role client.');
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
+
+// =====================
+// TYPES & HELPERS
+// =====================
 interface FetchQuestionRequest {
   sessionId: string;
 }

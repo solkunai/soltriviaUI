@@ -1,11 +1,91 @@
 // submit-entry Edge Function
 // Called when a player pays entry fee and joins a round
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+// @ts-ignore - Deno URL imports are valid at runtime
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
+// @ts-ignore - Deno URL imports are valid at runtime
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getCorsHeadersFromRequest } from '../_shared/cors.ts';
-import { isValidWalletAddress, isValidTxSignature, sanitizeString } from '../_shared/validation.ts';
 
+// =====================
+// CORS CONFIGURATION (inlined)
+// =====================
+// @ts-ignore - Deno is available at runtime
+const ALLOWED_ORIGINS_STRING = Deno.env.get('ALLOWED_ORIGINS') || 
+  'https://soltrivia.app,https://soltrivia.fun,https://soltriviaui.onrender.com,http://localhost:3000,http://localhost:19006';
+
+const ALLOWED_ORIGINS = ALLOWED_ORIGINS_STRING.split(',').map((origin: string) => origin.trim()).filter(Boolean);
+
+// @ts-ignore - Deno is available at runtime
+const isMobileMode = Deno.env.get('CORS_MODE') === 'mobile';
+
+function getCorsHeaders(requestOrigin?: string): Record<string, string> {
+  if (isMobileMode) {
+    return {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+      'Access-Control-Max-Age': '86400',
+    };
+  }
+
+  let originToUse: string;
+  if (requestOrigin && ALLOWED_ORIGINS.includes(requestOrigin)) {
+    originToUse = requestOrigin;
+  } else if (ALLOWED_ORIGINS.length > 0) {
+    originToUse = ALLOWED_ORIGINS[0];
+  } else {
+    originToUse = 'null';
+  }
+
+  return {
+    'Access-Control-Allow-Origin': originToUse,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
+
+function getCorsHeadersFromRequest(req: { headers: { get: (key: string) => string | null } }): Record<string, string> {
+  const requestOrigin = req.headers.get('origin') || undefined;
+  return getCorsHeaders(requestOrigin);
+}
+
+// =====================
+// SUPABASE CLIENT (inlined)
+// =====================
+function getSupabaseClient() {
+  // @ts-ignore - Deno is available at runtime
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  // @ts-ignore - Deno is available at runtime
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error('❌ Missing required Supabase environment variables for service role client.');
+    throw new Error('Missing required Supabase environment variables for service role client.');
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
+
+// =====================
+// VALIDATION (inlined)
+// =====================
+function isValidWalletAddress(address: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+}
+
+function isValidTxSignature(signature: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{87,88}$/.test(signature);
+}
+
+function sanitizeString(input: string): string {
+  return input.replace(/[^\w\s-]/gi, '').trim().slice(0, 100);
+}
+
+// =====================
+// CONSTANTS
+// =====================
 const ENTRY_FEE_LAMPORTS = 10_000_000; // 0.01 SOL
 
 serve(async (req) => {
@@ -16,10 +96,7 @@ serve(async (req) => {
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    const supabase = getSupabaseClient();
 
     const { wallet_address, tx_signature, display_name, avatar } = await req.json();
 
