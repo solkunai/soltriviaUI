@@ -28,6 +28,7 @@ interface GameHistory {
   correct_answers: number;
   total_questions: number;
   payout_sol: number;
+  xp_earned: number;
   finished_at: string;
 }
 
@@ -50,13 +51,21 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
       setLoading(true); // Show loading indicator
       const walletAddress = publicKey.toBase58();
       
+      console.log('🔍 Fetching profile for wallet:', walletAddress);
+      
       try {
         // Fetch player profile/stats (includes username and avatar)
-        const { data: profileData } = await supabase
+        const { data: profileData, error: profileError } = await supabase
           .from('player_profiles')
           .select('*')
           .eq('wallet_address', walletAddress)
           .single();
+
+        if (profileError) {
+          console.log('⚠️ Profile not found, using defaults:', profileError.message);
+        } else {
+          console.log('✅ Profile data:', profileData);
+        }
 
         if (profileData) {
           setCurrentUsername(profileData.username || username);
@@ -90,7 +99,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
         }
 
         // Fetch game history (last 10 games)
-        const { data: gamesData } = await supabase
+        console.log('🎮 Fetching game history for:', walletAddress);
+        const { data: gamesData, error: gamesError } = await supabase
           .from('game_sessions')
           .select('*')
           .eq('wallet_address', walletAddress)
@@ -98,18 +108,80 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
           .order('finished_at', { ascending: false })
           .limit(10);
 
-        if (gamesData) {
-          // Transform game data to history format
-          const transformedHistory: GameHistory[] = gamesData.map((game: any) => ({
-            round_id: game.round_id || 'N/A',
-            rank: 0, // TODO: Calculate rank from leaderboard
-            time_taken_seconds: game.time_taken_seconds || 0,
-            correct_answers: game.correct_answers || 0,
-            total_questions: 10, // Fixed for now
-            payout_sol: 0, // TODO: Get from payouts table
-            finished_at: game.finished_at,
-          }));
+        if (gamesError) {
+          console.error('❌ Error fetching games:', gamesError);
+        } else {
+          console.log('✅ Found games:', gamesData?.length || 0, 'games');
+          console.log('Game data sample:', gamesData?.[0]);
+        }
+
+        if (gamesData && gamesData.length > 0) {
+          console.log('📊 Processing game history...');
+          
+          // Fetch leaderboard ranks and payouts for each game
+          const historyPromises = gamesData.map(async (game: any) => {
+            let rank = 0;
+            let payout_sol = 0;
+            
+            // Get rank from leaderboard
+            try {
+              const { data: leaderboardData } = await supabase
+                .from('game_sessions')
+                .select('wallet_address, score')
+                .eq('round_id', game.round_id)
+                .not('finished_at', 'is', null)
+                .order('score', { ascending: false });
+              
+              if (leaderboardData) {
+                const playerIndex = leaderboardData.findIndex(
+                  (entry: any) => entry.wallet_address === walletAddress
+                );
+                rank = playerIndex >= 0 ? playerIndex + 1 : 0;
+              }
+            } catch (err) {
+              console.error('Error fetching rank for round', game.round_id, ':', err);
+            }
+            
+            // Get payout from payouts table
+            try {
+              const { data: payoutData } = await supabase
+                .from('payouts')
+                .select('amount_lamports')
+                .eq('session_id', game.id)
+                .single();
+              
+              if (payoutData) {
+                payout_sol = payoutData.amount_lamports / 1_000_000_000; // Convert lamports to SOL
+              }
+            } catch (err) {
+              // No payout found, that's ok (most games don't win)
+            }
+            
+            // Handle different column names (score vs total_points, correct_count vs correct_answers)
+            const scoreValue = game.score ?? game.total_points ?? 0;
+            const correctValue = game.correct_count ?? game.correct_answers ?? 0;
+            const timeValue = game.time_taken_ms ?? game.time_taken_seconds ?? 0;
+            const timeInSeconds = timeValue > 1000 ? Math.floor(timeValue / 1000) : timeValue;
+            
+            return {
+              round_id: game.round_id || 'N/A',
+              rank: rank,
+              time_taken_seconds: timeInSeconds,
+              correct_answers: correctValue,
+              total_questions: 10,
+              payout_sol: payout_sol,
+              xp_earned: scoreValue,
+              finished_at: game.finished_at,
+            };
+          });
+          
+          const transformedHistory = await Promise.all(historyPromises);
+          console.log('✅ Game history processed:', transformedHistory.length, 'games');
+          console.log('Sample game:', transformedHistory[0]);
           setHistory(transformedHistory);
+        } else {
+          console.log('ℹ️ No game history found');
+          setHistory([]);
         }
       } catch (error) {
         console.error('Error fetching profile data:', error);
@@ -234,7 +306,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
                             {row.correct_answers}/{row.total_questions}
                           </td>
                           <td className="px-6 py-5 md:px-10 md:py-8 text-right font-[1000] italic text-[#14F195] text-lg md:text-3xl tabular-nums drop-shadow-[0_0_10px_rgba(20,241,149,0.3)]">
-                            {row.payout_sol > 0 ? `+${row.payout_sol.toFixed(2)} SOL` : `+${row.correct_answers * 100} XP`}
+                            {row.payout_sol > 0 ? `+${row.payout_sol.toFixed(3)} SOL` : `+${row.xp_earned.toLocaleString()} XP`}
                           </td>
                         </tr>
                       ))

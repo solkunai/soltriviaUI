@@ -18,6 +18,47 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [prizePool, setPrizePool] = useState(0);
   const [playersEntered, setPlayersEntered] = useState(0);
+  const [nextRoundCountdown, setNextRoundCountdown] = useState('');
+
+  // Calculate time until next round (6-hour intervals)
+  const calculateNextRoundTime = () => {
+    const now = new Date();
+    const currentHour = now.getUTCHours();
+    const currentMinutes = now.getUTCMinutes();
+    const currentSeconds = now.getUTCSeconds();
+    
+    // Rounds start at: 00:00, 06:00, 12:00, 18:00 UTC
+    const roundStartHours = [0, 6, 12, 18];
+    
+    // Find the next round start hour
+    let nextRoundHour = roundStartHours.find(h => h > currentHour);
+    if (!nextRoundHour) {
+      // If past 18:00, next round is 00:00 tomorrow
+      nextRoundHour = 24; // Will become 00:00 next day
+    }
+    
+    // Calculate time difference
+    const hoursUntilNextRound = nextRoundHour - currentHour;
+    const minutesUntilNextRound = 60 - currentMinutes;
+    const secondsUntilNextRound = 60 - currentSeconds;
+    
+    // Adjust for minutes/seconds overflow
+    let hours = hoursUntilNextRound - 1;
+    let minutes = minutesUntilNextRound - 1;
+    let seconds = secondsUntilNextRound;
+    
+    if (seconds === 60) {
+      seconds = 0;
+      minutes++;
+    }
+    if (minutes === 60) {
+      minutes = 0;
+      hours++;
+    }
+    
+    // Format as HH:MM:SS
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
 
   // Fetch wallet balance when connected
   useEffect(() => {
@@ -34,6 +75,18 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
       setBalance(null);
     }
   }, [connected, publicKey, connection]);
+
+  // Countdown timer: Update every second
+  useEffect(() => {
+    const updateCountdown = () => {
+      setNextRoundCountdown(calculateNextRoundTime());
+    };
+    
+    updateCountdown(); // Initial update
+    const timer = setInterval(updateCountdown, 1000);
+    
+    return () => clearInterval(timer);
+  }, []);
 
   // Trivia pool + players: fast initial fetch, then 2s polling (works without Supabase Realtime)
   useEffect(() => {
@@ -171,10 +224,19 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                    </div>
                 </div>
                 <div className="pt-2 border-t border-white/5">
-                   <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic leading-none block mb-1">PLAYERS ENTERED</span>
+                   <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic leading-none block mb-1">PLAYERS</span>
                    <span className="text-white text-base font-black italic tabular-nums leading-none">
-                     {playersEntered.toLocaleString()}
+                     {playersEntered.toLocaleString()} <span className="text-[8px] text-zinc-500">UNIT</span>
                    </span>
+                </div>
+                <div className="pt-2 border-t border-white/5">
+                   <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic leading-none block mb-1">NEXT ROUND IN</span>
+                   <div className="flex items-center gap-1">
+                     <span className="text-white text-lg font-black italic tabular-nums leading-none">
+                       {nextRoundCountdown}
+                     </span>
+                     <div className="w-1.5 h-1.5 rounded-full bg-[#00FFA3] animate-pulse"></div>
+                   </div>
                 </div>
               </div>
             </div>

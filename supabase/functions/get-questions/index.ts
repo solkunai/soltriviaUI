@@ -181,7 +181,7 @@ serve(async (req) => {
         session_id,
         questions: questionsWithTokens,
         total_questions: questionsWithTokens.length,
-        time_per_question: 15,
+        time_per_question: 7,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

@@ -42,7 +42,7 @@ import WalletRequiredModal from './components/WalletRequiredModal';
 import AdminRoute from './components/AdminRoute';
 import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
-import { getPlayerLives, startGame, registerPlayerProfile, updateQuestProgress } from './src/utils/api';
+import { getPlayerLives, startGame, registerPlayerProfile, updateQuestProgress, getLeaderboard } from './src/utils/api';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR } from './src/utils/constants';
 import { getRecentBlockhashWithRetry } from './src/utils/rpc';
 import { supabase } from './src/utils/supabase';
@@ -63,7 +63,7 @@ const App: React.FC = () => {
   const [lives, setLives] = useState(1);
   
   // Quiz results state
-  const [lastGameResults, setLastGameResults] = useState<{ score: number, points: number, time: number } | null>(null);
+  const [lastGameResults, setLastGameResults] = useState<{ score: number, points: number, time: number, rank?: number } | null>(null);
   
   // Current game session ID
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -272,12 +272,28 @@ const App: React.FC = () => {
     }
   };
 
-  const handleQuizFinish = (score: number, points: number, totalTime: number) => {
+  const handleQuizFinish = async (score: number, points: number, totalTime: number) => {
     try {
       sessionStorage.removeItem('quiz_session_id');
     } catch (_) {}
     setCurrentSessionId(null);
-    setLastGameResults({ score, points, time: totalTime });
+    
+    // Fetch user's rank from leaderboard
+    let rank: number | undefined = undefined;
+    if (publicKey) {
+      try {
+        const response = await getLeaderboard();
+        const leaderboard = Array.isArray(response) ? response : (response.leaderboard || []);
+        const userAddress = publicKey.toBase58();
+        const userEntry = leaderboard.find((entry: any) => entry.wallet_address === userAddress);
+        rank = userEntry?.rank;
+        console.log('🏆 User rank:', rank);
+      } catch (err) {
+        console.error('Failed to fetch rank:', err);
+      }
+    }
+    
+    setLastGameResults({ score, points, time: totalTime, rank });
     setCurrentView(View.RESULTS);
   };
 

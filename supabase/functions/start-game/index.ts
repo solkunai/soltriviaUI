@@ -61,6 +61,24 @@ function shuffle<T>(arr: T[]): T[] {
   return out;
 }
 
+// Select random questions from pool (prevents same questions on replay)
+// If pool has more than count questions, randomly select count questions
+// Otherwise, shuffle all available questions
+function selectRandomQuestions<T>(pool: T[], count: number = 10): T[] {
+  if (!Array.isArray(pool) || pool.length === 0) {
+    return [];
+  }
+  
+  // If pool is small, just shuffle everything
+  if (pool.length <= count) {
+    return shuffle(pool);
+  }
+  
+  // Pool is large - randomly select 'count' unique questions
+  const shuffled = shuffle(pool);
+  return shuffled.slice(0, count);
+}
+
 serve(async (req) => {
   const corsHeaders = getCorsHeadersFromRequest(req);
   
@@ -389,7 +407,8 @@ serve(async (req) => {
         }
 
         // Create session with life_used flag; question_order randomizes questions per user
-        const questionOrder = shuffle(Array.isArray(round.question_ids) ? [...round.question_ids] : []);
+        // Select 10 random questions from the round's pool (prevents same questions on replay)
+        const questionOrder = selectRandomQuestions(Array.isArray(round.question_ids) ? [...round.question_ids] : [], 10);
         const { data: session, error: sessionError } = await supabase
           .from('game_sessions')
           .insert({
@@ -507,7 +526,8 @@ serve(async (req) => {
     console.log('✅ Life deducted successfully. Remaining:', currentLivesCount - 1);
 
     // Create new game session; question_order randomizes questions per user
-    const questionOrder = shuffle(Array.isArray(round.question_ids) ? [...round.question_ids] : []);
+    // Select 10 random questions from the round's pool (prevents same questions on replay)
+    const questionOrder = selectRandomQuestions(Array.isArray(round.question_ids) ? [...round.question_ids] : [], 10);
     const { data: session, error: sessionError } = await supabase
       .from('game_sessions')
       .insert({
