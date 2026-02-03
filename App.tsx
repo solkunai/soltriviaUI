@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { View } from './types';
 import { useWallet, useConnection } from './src/contexts/WalletContext';
 import { Transaction, SystemProgram, PublicKey } from '@solana/web3.js';
@@ -351,8 +352,6 @@ const App: React.FC = () => {
         return connected ? <ProfileView username={profile.username} avatar={profile.avatar} onEdit={() => setIsEditProfileOpen(true)} onOpenGuide={() => setIsGuideOpen(true)} /> : null;
       case View.QUIZ:
         return connected ? <QuizView sessionId={currentSessionId} onFinish={handleQuizFinish} onQuit={() => setCurrentView(View.PLAY)} /> : null;
-      case View.ADMIN:
-        return <AdminRoute />;
       case View.RESULTS:
         return connected && lastGameResults ? (
           <ResultsView 
