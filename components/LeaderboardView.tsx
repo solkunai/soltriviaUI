@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DEFAULT_AVATAR } from '../src/utils/constants';
+import { getLeaderboard, LeaderboardEntry, LeaderboardResponse } from '../src/utils/api';
+import { useWallet } from '../src/contexts/WalletContext';
 
 type RankPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY';
 
@@ -20,25 +22,66 @@ interface LeaderboardViewProps {
 
 const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
   const [period, setPeriod] = useState<RankPeriod>('WEEKLY');
-  
-  const statsByPeriod = {
-    'DAILY': { totalWon: '850.50' },
-    'WEEKLY': { totalWon: '25,402' },
-    'MONTHLY': { totalWon: '125,402' }
-  };
+  const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
+  const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [totalSolWon, setTotalSolWon] = useState(0);
+  const [playerCount, setPlayerCount] = useState(0);
+  const { publicKey } = useWallet();
 
-  const allPlayers: PlayerStats[] = [
-    { rank: '1', username: '@DIANA.LOVE', winnings: '1,240.50 SOL', avatar: DEFAULT_AVATAR, score: '8,805', correct: '10/10', time: '42s', gamesPlayed: '242' },
-    { rank: '2', username: '@JOHN_LIFE', winnings: '450.20 SOL', avatar: DEFAULT_AVATAR, score: '8,239', correct: '10/10', time: '48s', gamesPlayed: '185' },
-    { rank: '3', username: '@PHIL.GAMER', winnings: '285.15 SOL', avatar: DEFAULT_AVATAR, score: '7,987', correct: '9/10', time: '45s', gamesPlayed: '156' },
-    { rank: '4', username: '@KENDAL4848', winnings: '150.00 SOL', avatar: DEFAULT_AVATAR, score: '7,568', correct: '9/10', time: '52s', gamesPlayed: '120' },
-    { rank: '5', username: '@SHIV.RAJPUT', winnings: '120.40 SOL', avatar: DEFAULT_AVATAR, score: '7,532', correct: '8/10', time: '41s', gamesPlayed: '98' },
-    { rank: '6', username: '@SAILY.STEWART45', winnings: '0.00 SOL', score: '7,218', correct: '8/10', time: '55s', avatar: DEFAULT_AVATAR, gamesPlayed: '45' },
-    { rank: '7', username: '@KABIR_SEN2345', winnings: '0.00 SOL', score: '7,199', correct: '8/10', time: '58s', avatar: DEFAULT_AVATAR, gamesPlayed: '32' },
-    { rank: '8', username: '@natalie.fun', winnings: '0.00 SOL', score: '6,980', correct: '7/10', time: '44s', avatar: DEFAULT_AVATAR, gamesPlayed: '28' },
-    { rank: '9', username: '@veronica6794', winnings: '0.00 SOL', score: '6,757', correct: '7/10', time: '51s', avatar: DEFAULT_AVATAR, gamesPlayed: '15' },
-    { rank: '10', username: '@lex.crypto', winnings: '0.00 SOL', score: '6,420', correct: '6/10', time: '39s', avatar: DEFAULT_AVATAR, gamesPlayed: '10' },
-  ];
+  // Fetch leaderboard data and refresh every 5 seconds
+  useEffect(() => {
+    const fetchLeaderboard = async () => {
+      try {
+        setLoading(true);
+        const response = await getLeaderboard();
+        
+        // API returns { leaderboard: [...], period, pot_lamports, player_count, etc }
+        const data = Array.isArray(response) ? response : (response.leaderboard || []);
+        setLeaderboardData(data);
+        
+        // Update pot and player count from API response
+        if (!Array.isArray(response)) {
+          const potSol = (response.pot_lamports || 0) / 1_000_000_000; // Convert lamports to SOL
+          setTotalSolWon(potSol);
+          setPlayerCount(response.player_count || 0);
+        }
+        
+        // Find user's rank if wallet is connected
+        if (publicKey && Array.isArray(data)) {
+          const userAddress = publicKey.toBase58();
+          const userEntry = data.find(entry => entry.wallet_address === userAddress);
+          setUserRank(userEntry || null);
+        }
+      } catch (error) {
+        console.error('Error fetching leaderboard:', error);
+        setLeaderboardData([]); // Set empty array on error
+        setTotalSolWon(0);
+        setPlayerCount(0);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchLeaderboard();
+    
+    // Refresh every 5 seconds for real-time updates
+    const interval = setInterval(fetchLeaderboard, 5000);
+    
+    return () => clearInterval(interval);
+  }, [publicKey, period]);
+
+  // Transform API data to display format
+  const allPlayers: PlayerStats[] = leaderboardData.map((entry, index) => ({
+    rank: entry.rank.toString(),
+    username: entry.display_name || `${entry.wallet_address.slice(0, 4)}...${entry.wallet_address.slice(-4)}`,
+    winnings: '0.00 SOL', // TODO: Calculate from payouts
+    avatar: entry.avatar || DEFAULT_AVATAR,
+    score: entry.score.toLocaleString(),
+    correct: `${entry.correct_count}/10`,
+    time: `${Math.floor(entry.time_taken_ms / 1000)}s`,
+    gamesPlayed: '1', // Can be calculated from game_sessions if needed
+  }));
 
   return (
     <div className="min-h-full bg-[#050505] text-white safe-top relative flex flex-col overflow-x-hidden">
@@ -72,16 +115,23 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
           </div>
 
           <div className="text-right">
-            <span className="text-zinc-500 text-[9px] md:text-[11px] font-black uppercase tracking-widest italic block mb-1">TOTAL SOL WON</span>
+            <span className="text-zinc-500 text-[9px] md:text-[11px] font-black uppercase tracking-widest italic block mb-1">TOTAL PRIZE POOL</span>
             <div className="flex items-baseline justify-end gap-1">
-               <span className="text-[#14F195] text-3xl md:text-6xl font-[1000] italic tracking-tighter tabular-nums leading-none">{statsByPeriod[period].totalWon}</span>
+               <span className="text-[#14F195] text-3xl md:text-6xl font-[1000] italic tracking-tighter tabular-nums leading-none">
+                 {loading ? '...' : totalSolWon.toFixed(3)}
+               </span>
                <span className="text-[#14F195] text-sm md:text-xl font-black italic">SOL</span>
+            </div>
+            <div className="mt-2 text-right">
+              <span className="text-zinc-600 text-[8px] md:text-[10px] font-black uppercase tracking-widest italic">
+                {playerCount} {playerCount === 1 ? 'PLAYER' : 'PLAYERS'}
+              </span>
             </div>
           </div>
         </div>
 
         {/* Period Tabs */}
-        <div className="flex justify-center mb-24 px-4">
+        <div className="flex justify-center mb-10 px-4">
           <div className="flex w-full max-w-md items-center justify-between bg-black/40 p-1.5 rounded-full border border-white/10">
             {(['DAILY', 'WEEKLY', 'MONTHLY'] as RankPeriod[]).map((p) => (
               <button
@@ -99,11 +149,64 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
           </div>
         </div>
 
+        {/* Your Rank Section */}
+        {publicKey && userRank && (
+          <div className="mb-16 px-4">
+            <div className="max-w-2xl mx-auto bg-gradient-to-r from-[#14F195]/10 via-[#14F195]/5 to-transparent border border-[#14F195]/20 rounded-2xl p-6 backdrop-blur-md">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-zinc-400 text-[10px] font-black uppercase tracking-widest block mb-2">YOUR RANK</span>
+                  <div className="flex items-baseline gap-3">
+                    <span className="text-[#14F195] text-5xl font-[1000] italic leading-none">#{userRank.rank}</span>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-500 text-[8px] font-black uppercase">XP:</span>
+                        <span className="text-[#14F195] text-sm font-black italic">{userRank.score.toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-500 text-[8px] font-black uppercase">Correct:</span>
+                        <span className="text-white text-sm font-black italic">{userRank.correct_count}/10</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="w-16 h-16 rounded-full border-4 border-[#14F195] overflow-hidden bg-zinc-900">
+                  <img src={userRank.avatar || DEFAULT_AVATAR} className="w-full h-full object-cover" alt="Your avatar" />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* No Rank Message for Non-Players */}
+        {publicKey && !userRank && !loading && (
+          <div className="mb-16 px-4">
+            <div className="max-w-2xl mx-auto bg-zinc-900/50 border border-white/5 rounded-2xl p-6 text-center">
+              <p className="text-zinc-400 text-sm font-bold italic">Play a game to get your rank!</p>
+            </div>
+          </div>
+        )}
+
         {/* TOP PODIUM AREA */}
         <div>
+          {/* Empty State */}
+          {loading && allPlayers.length === 0 && (
+            <div className="text-center py-20">
+              <p className="text-zinc-500 text-lg font-bold italic animate-pulse">Loading leaderboard...</p>
+            </div>
+          )}
+          
+          {!loading && allPlayers.length === 0 && (
+            <div className="text-center py-20">
+              <p className="text-zinc-400 text-xl font-bold italic mb-4">No players yet!</p>
+              <p className="text-zinc-600 text-sm">Be the first to play and claim the top spot 🏆</p>
+            </div>
+          )}
+
           {/* Mobile Podium (Top 3) */}
-          <div className="md:hidden flex items-end justify-center gap-2 mb-24 px-2">
-            {[allPlayers[1], allPlayers[0], allPlayers[2]].map((player, idx) => {
+          {allPlayers.length >= 3 && (
+            <div className="md:hidden flex items-end justify-center gap-2 mb-24 px-2">
+              {[allPlayers[1], allPlayers[0], allPlayers[2]].filter(Boolean).map((player, idx) => {
               const isFirst = player.rank === '1';
               const rankColor = isFirst ? 'border-[#FFD700]' : player.rank === '2' ? 'border-zinc-500' : 'border-[#D97706]';
               const badgeColor = isFirst ? 'bg-[#FFD700]' : player.rank === '2' ? 'bg-zinc-400' : 'bg-[#D97706]';
@@ -137,11 +240,13 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                 </div>
               );
             })}
-          </div>
+            </div>
+          )}
 
           {/* Desktop Podium (Top 5) */}
-          <div className="hidden md:flex items-end justify-center gap-10 lg:gap-14 mb-32">
-            {[allPlayers[4], allPlayers[2], allPlayers[0], allPlayers[1], allPlayers[3]].map((player, idx) => {
+          {allPlayers.length >= 5 && (
+            <div className="hidden md:flex items-end justify-center gap-10 lg:gap-14 mb-32">
+              {[allPlayers[4], allPlayers[2], allPlayers[0], allPlayers[1], allPlayers[3]].filter(Boolean).map((player, idx) => {
               const rankInt = parseInt(player.rank);
               const isCenter = rankInt === 1;
               const isInner = rankInt === 2 || rankInt === 3;
@@ -187,7 +292,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                    </div>
                    <div className="text-center">
                      <p className="font-[1000] italic uppercase text-white text-base lg:text-2xl mb-1 tracking-tight">{player.username}</p>
-                     <p className="text-[#14F195] font-[1000] text-2xl lg:text-5xl italic leading-none">{player.score}</p>
+                     <p className="text-[#14F195] font-[1000] text-2xl lg:text-5xl italic leading-none">{player.score} <span className="text-xs text-[#14F195]/60">XP</span></p>
                      <div className="flex items-center justify-center gap-3 mt-3">
                         <span className="text-zinc-500 font-black italic text-[10px] uppercase">{player.winnings}</span>
                         <div className="w-1 h-1 bg-zinc-700 rounded-full"></div>
@@ -197,10 +302,12 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                 </div>
               );
             })}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* RANKINGS LIST SECTION */}
+        {allPlayers.length > 0 && (
         <div className="pb-48">
           {/* Desktop Version: Sleek Row-Based Layout */}
           <div className="hidden md:block space-y-4">
@@ -210,7 +317,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                 <span className="flex-1">Identity</span>
                 <span className="w-32 text-center">Accuracy</span>
                 <span className="w-32 text-center">Time Taken</span>
-                <span className="w-40 text-right">Trivia Points</span>
+                <span className="w-40 text-right">XP Earned</span>
               </div>
               {allPlayers.slice(5).map((player, idx) => (
                 <div key={idx} className="flex items-center gap-8 p-6 bg-white/[0.02] border border-white/5 rounded-2xl group hover:bg-white/[0.04] transition-all duration-300">
@@ -226,7 +333,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                     <div className="w-32 text-center font-black italic text-xl text-[#14F195]">{player.time}</div>
                     <div className="w-40 text-right">
                         <p className="text-white font-[1000] italic text-4xl leading-none tabular-nums group-hover:text-[#14F195] transition-colors">{player.score}</p>
-                        <p className="text-zinc-600 text-[10px] font-black uppercase italic tracking-widest mt-1">TRIVIA PTS</p>
+                        <p className="text-zinc-600 text-[10px] font-black uppercase italic tracking-widest mt-1">XP</p>
                     </div>
                 </div>
               ))}
@@ -277,6 +384,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
             })}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

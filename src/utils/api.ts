@@ -173,7 +173,16 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<SubmitAn
 }
 
 // Get leaderboard
-export async function getLeaderboard(round_id?: string): Promise<LeaderboardEntry[]> {
+export interface LeaderboardResponse {
+  period: string;
+  leaderboard: LeaderboardEntry[];
+  pot_lamports: number;
+  player_count: number;
+  user_rank: number | null;
+  user_score: number | null;
+}
+
+export async function getLeaderboard(round_id?: string): Promise<LeaderboardResponse> {
   const response = await fetch(`${FUNCTIONS_URL}/get-leaderboard`, {
     method: 'POST',
     headers: getAuthHeaders(),

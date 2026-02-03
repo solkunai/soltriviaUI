@@ -12,7 +12,7 @@ interface QuizViewProps {
 
 const BASE_POINTS = 500;
 const MAX_SPEED_BONUS = 500;
-const SPEED_BONUS_DECAY_SEC = 10;
+const SPEED_BONUS_DECAY_SEC = 7; // Match backend timer (7 seconds per question)
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const; // Display labels; indices 0–3 sent to API
 
 const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {

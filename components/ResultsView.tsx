@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 interface ResultsViewProps {
-  results: { score: number, points: number, time: number };
+  results: { score: number, points: number, time: number, rank?: number };
   lives: number;
   onRestart: () => void;
   onGoHome: () => void;
@@ -72,9 +72,11 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, onRestart, on
               </div>
             </div>
             <div className="bg-black/40 border border-white/5 p-4 md:p-6 rounded-xl">
-              <span className="text-zinc-300 text-[8px] md:text-[10px] font-black uppercase block mb-2 tracking-widest italic">Global</span>
+              <span className="text-zinc-300 text-[8px] md:text-[10px] font-black uppercase block mb-2 tracking-widest italic">Rank</span>
               <div className="flex items-baseline justify-center gap-1">
-                <span className="text-2xl md:text-4xl font-[1000] italic text-[#FFD700] leading-none tabular-nums">#842</span>
+                <span className="text-2xl md:text-4xl font-[1000] italic text-[#FFD700] leading-none tabular-nums">
+                  {results.rank ? `#${results.rank}` : '—'}
+                </span>
               </div>
             </div>
           </div>
@@ -167,7 +169,9 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, onRestart, on
                     </div>
                     <div className="flex flex-col items-center">
                        <span className="text-[8px] text-zinc-600 font-black uppercase tracking-widest italic">RANK</span>
-                       <span className="text-[#FFD700] font-black italic text-sm">#842</span>
+                       <span className="text-[#FFD700] font-black italic text-sm">
+                         {results.rank ? `#${results.rank}` : '—'}
+                       </span>
                     </div>
                  </div>
               </div>

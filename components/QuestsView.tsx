@@ -301,8 +301,57 @@ const QuestCard: React.FC<QuestCardProps> = ({
           <span className="text-[#14F195] text-lg md:text-3xl font-[1000] italic leading-none">{rewardLabel}</span>
         </div>
         <button
-          onClick={() => {
-            if (isClaimable) return; // TODO: claim flow
+          onClick={async () => {
+            if (isClaimable) {
+              // Claim quest reward
+              if (!connected || !publicKey) {
+                alert('Please connect wallet to claim rewards');
+                return;
+              }
+              
+              try {
+                setSubmitStatus('submitting');
+                setSubmitMessage('Claiming reward...');
+                
+                // Call claim quest Edge Function
+                const response = await fetch(`${process.env.REACT_APP_FUNCTIONS_URL || 'https://uekqrkjiunezsytzyjmx.supabase.co/functions/v1'}/claim-quest-reward`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    wallet_address: publicKey.toBase58(),
+                    quest_id: quest.id,
+                  }),
+                });
+                
+                if (!response.ok) {
+                  throw new Error('Failed to claim reward');
+                }
+                
+                const data = await response.json();
+                setSubmitStatus('success');
+                setSubmitMessage(`✅ Claimed ${data.reward_tp || quest.reward_tp} TP!`);
+                
+                // Refresh progress
+                await loadProgress();
+                
+                setTimeout(() => {
+                  setSubmitStatus('idle');
+                  setSubmitMessage('');
+                }, 3000);
+              } catch (error) {
+                console.error('Claim error:', error);
+                setSubmitStatus('error');
+                setSubmitMessage('❌ Failed to claim. Try again.');
+                setTimeout(() => {
+                  setSubmitStatus('idle');
+                  setSubmitMessage('');
+                }, 3000);
+              }
+              return;
+            }
+            
             if (quest.slug === 'identity_sync') onGoToProfile?.();
             if (quest.slug === 'true_raider') onRaiderClick?.();
           }}
