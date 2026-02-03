@@ -453,13 +453,13 @@ export async function fetchCurrentRoundStats(): Promise<CurrentRoundStats> {
   const { date, roundNumber } = getCurrentRoundKey();
   const { data, error } = await supabase
     .from('daily_rounds')
-    .select('pot_lamports, player_count, entry_count')
+    .select('pot_lamports, player_count')
     .eq('date', date)
     .eq('round_number', roundNumber)
     .maybeSingle();
   if (error) throw new Error(error.message);
   const pot = (data?.pot_lamports ?? 0) as number;
-  const players = (data?.player_count ?? data?.entry_count ?? 0) as number;
+  const players = (data?.player_count ?? 0) as number;
   return {
     prizePoolSol: pot / 1_000_000_000,
     playersEntered: players,
@@ -482,10 +482,10 @@ export function subscribeCurrentRoundStats(
         filter: `date=eq.${date}`,
       },
       (payload) => {
-        const row = payload.new as { round_number?: number; pot_lamports?: number; player_count?: number; entry_count?: number } | undefined;
+        const row = payload.new as { round_number?: number; pot_lamports?: number; player_count?: number } | undefined;
         if (row?.round_number !== roundNumber) return;
         const pot = (row.pot_lamports ?? 0) as number;
-        const players = (row.player_count ?? row.entry_count ?? 0) as number;
+        const players = (row.player_count ?? 0) as number;
         onStats({
           prizePoolSol: pot / 1_000_000_000,
           playersEntered: players,

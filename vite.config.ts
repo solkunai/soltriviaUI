@@ -3,17 +3,44 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
+/** Strip all console.* in production for app code (src/, components/; public/ is static; supabase/ is server-side). */
+function stripConsolePlugin(isProduction: boolean) {
+  if (!isProduction) return null;
+  const noop = '(()=>{})';
+  return {
+    name: 'strip-console',
+    transform(code: string, id: string) {
+      const ourCode = !id.includes('node_modules') && (
+        id.includes('/src/') || id.includes('\\src\\') ||
+        id.includes('/components/') || id.includes('\\components\\') ||
+        id.includes('/public/') || id.includes('\\public\\')
+      );
+      if (ourCode) {
+        return {
+          code: code
+            .replace(/\bconsole\.log\s*/g, noop)
+            .replace(/\bconsole\.warn\s*/g, noop)
+            .replace(/\bconsole\.error\s*/g, noop)
+            .replace(/\bconsole\.info\s*/g, noop)
+            .replace(/\bconsole\.debug\s*/g, noop),
+          map: null,
+        };
+      }
+      return null;
+    },
+  };
+}
+
 export default defineConfig(({ mode, command }) => {
     const env = loadEnv(mode, '.', '');
-    // Check if building for production (either mode='production' or command='build')
     const isProduction = mode === 'production' || command === 'build';
-    
+
     return {
       server: {
         port: 3000,
         host: '0.0.0.0',
       },
-      plugins: [react()],
+      plugins: [react(), stripConsolePlugin(isProduction)].filter(Boolean),
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
