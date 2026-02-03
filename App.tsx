@@ -19,8 +19,11 @@ import { getPlayerLives, startGame, registerPlayerProfile } from './src/utils/ap
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS } from './src/utils/constants';
 import { getRecentBlockhashWithRetry } from './src/utils/rpc';
 import { supabase } from './src/utils/supabase';
+import { useKeepAlive } from './src/hooks/useKeepAlive';
 
 const App: React.FC = () => {
+  // Keep Render free tier service alive (pings every 2 minutes)
+  useKeepAlive(true);
   const { connected, publicKey, sendTransaction } = useWallet();
   const { connection } = useConnection();
   const [currentView, setCurrentView] = useState<View>(View.HOME);

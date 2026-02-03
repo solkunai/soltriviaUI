@@ -1,0 +1,29 @@
+name: Keep Render Service Alive
+
+on:
+  schedule:
+    # Run every 2 minutes
+    - cron: '*/2 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Service
+        run: |
+          echo "Pinging Render service at $(date)"
+          
+          # Ping the main page
+          curl -f https://soltriviaui.onrender.com/ || echo "Main page ping failed"
+          
+          # Ping a health endpoint (if you have one)
+          curl -f https://soltriviaui.onrender.com/api/health || echo "Health endpoint not available"
+          
+          echo "Ping completed successfully"
+        continue-on-error: true
+      
+      - name: Log Status
+        run: |
+          echo "Keep-alive ping executed at $(date)"
+          echo "Service should remain active for another 15 minutes"
