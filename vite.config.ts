@@ -20,6 +20,9 @@ export default defineConfig(({ mode }) => {
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
+          // Polyfill Node.js crypto module for browser compatibility
+          // Trezor and other wallet adapters need this
+          'crypto': path.resolve(__dirname, 'src/utils/crypto-polyfill.ts'),
         },
         // Fix for valtio/vanilla subpath export resolution
         dedupe: ['valtio'],
