@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import WalletConnectButton from './WalletConnectButton';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { getBalanceSafely } from '../src/utils/balance';
+import { fetchCurrentRoundStats, subscribeCurrentRoundStats } from '../src/utils/api';
 
 interface HomeViewProps {
   lives: number;
@@ -34,42 +35,32 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
     }
   }, [connected, publicKey, connection]);
 
-  // Fetch real-time stats from Supabase
+  // Trivia pool + players: fast initial fetch, then 2s polling (works without Supabase Realtime)
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        // Fetch current round stats
-        const today = new Date().toISOString().split('T')[0];
-        const currentHour = new Date().getUTCHours();
-        const roundNumber = Math.floor(currentHour / 6);
-        
-        const { data: round } = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/daily_rounds?select=pot_lamports,player_count&date=eq.${today}&round_number=eq.${roundNumber}&limit=1`,
-          {
-            headers: {
-              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            }
+    let mounted = true;
+    const refresh = () => {
+      fetchCurrentRoundStats()
+        .then((stats) => {
+          if (mounted) {
+            setPrizePool(stats.prizePoolSol);
+            setPlayersEntered(stats.playersEntered);
           }
-        ).then(res => res.json());
-
-        if (round && round.length > 0) {
-          // Convert lamports to SOL
-          const solAmount = (round[0].pot_lamports || 0) / 1_000_000_000;
-          setPrizePool(solAmount);
-          setPlayersEntered(round[0].player_count || 0);
-        }
-      } catch (err) {
-        console.error('Failed to fetch stats:', err);
-      }
+        })
+        .catch(() => {});
     };
-
-    // Fetch immediately
-    fetchStats();
-    
-    // Poll every 10 seconds for real-time updates
-    const interval = setInterval(fetchStats, 10000);
-    return () => clearInterval(interval);
+    refresh();
+    const interval = setInterval(refresh, 2000);
+    const sub = subscribeCurrentRoundStats((stats) => {
+      if (mounted) {
+        setPrizePool(stats.prizePoolSol);
+        setPlayersEntered(stats.playersEntered);
+      }
+    });
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+      sub.unsubscribe();
+    };
   }, []);
 
   return (

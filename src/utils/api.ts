@@ -434,3 +434,66 @@ export async function submitQuestProof(walletAddress: string, questSlug: string,
   if (!res.ok) return { ok: false, error: json.error || 'Submit failed' };
   return { ok: true };
 }
+
+// ─── Current round stats (trivia pool + players entered) ───────────────────
+export function getCurrentRoundKey(): { date: string; roundNumber: number } {
+  const now = new Date();
+  const date = now.toISOString().split('T')[0];
+  const roundNumber = Math.floor(now.getUTCHours() / 6);
+  return { date, roundNumber };
+}
+
+export interface CurrentRoundStats {
+  prizePoolSol: number;
+  playersEntered: number;
+}
+
+/** Fetch current round pot and player count from Supabase (fast, single row). */
+export async function fetchCurrentRoundStats(): Promise<CurrentRoundStats> {
+  const { date, roundNumber } = getCurrentRoundKey();
+  const { data, error } = await supabase
+    .from('daily_rounds')
+    .select('pot_lamports, player_count, entry_count')
+    .eq('date', date)
+    .eq('round_number', roundNumber)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const pot = (data?.pot_lamports ?? 0) as number;
+  const players = (data?.player_count ?? data?.entry_count ?? 0) as number;
+  return {
+    prizePoolSol: pot / 1_000_000_000,
+    playersEntered: players,
+  };
+}
+
+/** Realtime subscription: pool and players update instantly when someone enters. No polling. */
+export function subscribeCurrentRoundStats(
+  onStats: (stats: CurrentRoundStats) => void
+): { unsubscribe: () => void } {
+  const { date, roundNumber } = getCurrentRoundKey();
+  const ch = supabase
+    .channel('current-round-stats')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'daily_rounds',
+        filter: `date=eq.${date}`,
+      },
+      (payload) => {
+        const row = payload.new as { round_number?: number; pot_lamports?: number; player_count?: number; entry_count?: number } | undefined;
+        if (row?.round_number !== roundNumber) return;
+        const pot = (row.pot_lamports ?? 0) as number;
+        const players = (row.player_count ?? row.entry_count ?? 0) as number;
+        onStats({
+          prizePoolSol: pot / 1_000_000_000,
+          playersEntered: players,
+        });
+      }
+    );
+  ch.subscribe();
+  return {
+    unsubscribe: () => supabase.removeChannel(ch),
+  };
+}
