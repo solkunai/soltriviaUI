@@ -42,7 +42,7 @@ import WalletRequiredModal from './components/WalletRequiredModal';
 import AdminRoute from './components/AdminRoute';
 import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
-import { getPlayerLives, startGame, registerPlayerProfile, updateQuestProgress, getLeaderboard } from './src/utils/api';
+import { getPlayerLives, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard } from './src/utils/api';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR } from './src/utils/constants';
 import { getRecentBlockhashWithRetry } from './src/utils/rpc';
 import { supabase } from './src/utils/supabase';
@@ -272,28 +272,46 @@ const App: React.FC = () => {
     }
   };
 
-  const handleQuizFinish = async (score: number, points: number, totalTime: number) => {
+  const handleQuizFinish = async (correctCount: number, points: number, totalTimeSeconds: number) => {
+    const sessionIdToComplete = currentSessionId;
     try {
       sessionStorage.removeItem('quiz_session_id');
     } catch (_) {}
     setCurrentSessionId(null);
-    
-    // Fetch user's rank from leaderboard
+
     let rank: number | undefined = undefined;
-    if (publicKey) {
+
+    // Store final score in Supabase via complete-session (so profile + leaderboard show it)
+    if (sessionIdToComplete) {
+      try {
+        const completeRes = await completeSession({
+          session_id: sessionIdToComplete,
+          total_score: points,
+          correct_count: correctCount,
+          time_taken_ms: Math.round(totalTimeSeconds * 1000),
+        });
+        rank = completeRes.rank ?? undefined;
+        console.log('✅ Session completed, rank:', rank);
+      } catch (err) {
+        console.error('Failed to complete session (score may not be saved):', err);
+      }
+    }
+
+    // If rank not from complete-session, fetch from leaderboard
+    if (rank === undefined && publicKey) {
       try {
         const response = await getLeaderboard();
         const leaderboard = Array.isArray(response) ? response : (response.leaderboard || []);
         const userAddress = publicKey.toBase58();
         const userEntry = leaderboard.find((entry: any) => entry.wallet_address === userAddress);
         rank = userEntry?.rank;
-        console.log('🏆 User rank:', rank);
+        console.log('🏆 User rank from leaderboard:', rank);
       } catch (err) {
         console.error('Failed to fetch rank:', err);
       }
     }
-    
-    setLastGameResults({ score, points, time: totalTime, rank });
+
+    setLastGameResults({ score: correctCount, points, time: totalTimeSeconds, rank });
     setCurrentView(View.RESULTS);
   };
 

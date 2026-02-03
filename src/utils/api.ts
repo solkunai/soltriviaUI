@@ -172,6 +172,37 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<SubmitAn
   return response.json();
 }
 
+// Complete session (store final score when quiz ends)
+export interface CompleteSessionParams {
+  session_id: string;
+  total_score: number;
+  correct_count: number;
+  time_taken_ms: number;
+}
+
+export interface CompleteSessionResponse {
+  success: boolean;
+  rank: number | null;
+  score: number;
+  correct_count: number;
+  time_taken_ms: number;
+}
+
+export async function completeSession(params: CompleteSessionParams): Promise<CompleteSessionResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/complete-session`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to complete session');
+  }
+
+  return response.json();
+}
+
 // Get leaderboard
 export interface LeaderboardResponse {
   period: string;
@@ -182,11 +213,11 @@ export interface LeaderboardResponse {
   user_score: number | null;
 }
 
-export async function getLeaderboard(round_id?: string): Promise<LeaderboardResponse> {
+export async function getLeaderboard(round_id?: string, wallet?: string): Promise<LeaderboardResponse> {
   const response = await fetch(`${FUNCTIONS_URL}/get-leaderboard`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ round_id }),
+    body: JSON.stringify({ round_id, wallet }),
   });
 
   if (!response.ok) {
