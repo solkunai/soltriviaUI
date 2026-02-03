@@ -37,6 +37,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
   const [loading, setLoading] = useState(true);
   const [showAvatarUpload, setShowAvatarUpload] = useState(false);
   const [currentAvatar, setCurrentAvatar] = useState(avatar);
+  const [currentUsername, setCurrentUsername] = useState(username);
 
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -45,10 +46,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
         return;
       }
 
+      setLoading(true); // Show loading indicator
       const walletAddress = publicKey.toBase58();
       
       try {
-        // Fetch player profile/stats
+        // Fetch player profile/stats (includes username and avatar)
         const { data: profileData } = await supabase
           .from('player_profiles')
           .select('*')
@@ -56,6 +58,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
           .single();
 
         if (profileData) {
+          // Update username and avatar from database
+          setCurrentUsername(profileData.username || username);
+          setCurrentAvatar(profileData.avatar_url || avatar);
+          
           setStats({
             total_games_played: profileData.total_games_played || 0,
             total_wins: profileData.total_wins || 0,
@@ -66,6 +72,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
             total_sol_won: 0, // Calculate from game history
           });
         } else {
+          // Use props as fallback
+          setCurrentUsername(username);
+          setCurrentAvatar(avatar);
+          
           // Default stats if profile doesn't exist
           setStats({
             total_games_played: 0,
@@ -114,6 +124,30 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
     setCurrentAvatar(url);
     setShowAvatarUpload(false);
   };
+
+  // Show loading skeleton initially
+  if (loading) {
+    return (
+      <div className="min-h-full bg-[#050505] overflow-x-hidden safe-top relative flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 md:py-6 border-b border-white/5 bg-[#050505] sticky top-0 z-[60]">
+          <h2 className="text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter text-white">PROFILE</h2>
+          <button 
+            onClick={onOpenGuide}
+            className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] flex items-center justify-center shadow-lg active:scale-95 transition-all"
+          >
+            <span className="text-white font-black text-lg md:text-xl italic leading-none">?</span>
+          </button>
+        </div>
+        <div className="flex justify-center items-center py-20">
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-[#14F195] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-zinc-500 text-sm font-black uppercase tracking-widest italic">Loading Profile...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-full bg-[#050505] overflow-x-hidden safe-top relative flex flex-col">
       {/* Sticky Profile Header */}
@@ -147,7 +181,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
           <div className="flex-1 flex flex-col items-center md:items-start text-center md:text-left">
               <div className="mb-4 md:mb-10">
                 <span className="text-[#14F195] text-[8px] md:text-xs font-black uppercase tracking-[0.5em] italic block mb-1 md:mb-3 opacity-70">PROTOCOL OPERATIVE</span>
-                <h1 className="text-3xl md:text-8xl font-[1000] italic uppercase tracking-tighter text-white leading-none md:leading-[0.75] mb-3 md:mb-6">{username}</h1>
+                <h1 className="text-3xl md:text-8xl font-[1000] italic uppercase tracking-tighter text-white leading-none md:leading-[0.75] mb-3 md:mb-6">{currentUsername}</h1>
                 <div className="h-1 w-12 md:h-1.5 md:w-20 bg-[#14F195] mx-auto md:mx-0 shadow-[0_0_10px_#14F195]"></div>
               </div>
               
@@ -161,18 +195,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
         </div>
 
         {/* Global Stats Grid - Optimized for Mobile */}
-        {loading ? (
-          <div className="flex justify-center items-center py-20">
-            <div className="w-16 h-16 border-4 border-[#14F195] border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-8 mb-8 md:mb-20 relative z-10">
-            <ProfileStatCard label="TOTAL WON" value={stats?.total_sol_won.toFixed(2) || "0.00"} unit="SOL" highlight />
-            <ProfileStatCard label="TRIVIAS" value={stats?.total_games_played.toString() || "0"} />
-            <ProfileStatCard label="STREAK" value={stats?.current_streak.toString() || "0"} suffix="🔥" />
-            <ProfileStatCard label="POINTS" value={stats?.total_points.toLocaleString() || "0"} />
-          </div>
-        )}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-8 mb-8 md:mb-20 relative z-10">
+          <ProfileStatCard label="TOTAL WON" value={stats?.total_sol_won.toFixed(2) || "0.00"} unit="SOL" highlight />
+          <ProfileStatCard label="TRIVIAS" value={stats?.total_games_played.toString() || "0"} />
+          <ProfileStatCard label="STREAK" value={stats?.current_streak.toString() || "0"} suffix="🔥" />
+          <ProfileStatCard label="POINTS" value={stats?.total_points.toLocaleString() || "0"} />
+        </div>
 
         {/* Trivia History Table - Optimized for Mobile */}
         <div className="bg-[#0A0A0A] border border-white/5 relative z-10 shadow-2xl rounded-[24px] md:rounded-[40px] overflow-hidden">
