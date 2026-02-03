@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { DEFAULT_AVATAR } from '../src/utils/constants';
 
 type RankPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY';
 
@@ -27,16 +28,16 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
   };
 
   const allPlayers: PlayerStats[] = [
-    { rank: '1', username: '@DIANA.LOVE', winnings: '1,240.50 SOL', avatar: 'https://picsum.photos/id/64/400/400?grayscale', score: '8,805', correct: '10/10', time: '42s', gamesPlayed: '242' },
-    { rank: '2', username: '@JOHN_LIFE', winnings: '450.20 SOL', avatar: 'https://picsum.photos/id/1025/400/400?grayscale', score: '8,239', correct: '10/10', time: '48s', gamesPlayed: '185' },
-    { rank: '3', username: '@PHIL.GAMER', winnings: '285.15 SOL', avatar: 'https://picsum.photos/id/168/400/400?grayscale', score: '7,987', correct: '9/10', time: '45s', gamesPlayed: '156' },
-    { rank: '4', username: '@KENDAL4848', winnings: '150.00 SOL', avatar: 'https://picsum.photos/id/88/200/200?grayscale', score: '7,568', correct: '9/10', time: '52s', gamesPlayed: '120' },
-    { rank: '5', username: '@SHIV.RAJPUT', winnings: '120.40 SOL', avatar: 'https://picsum.photos/id/20/200/200?grayscale', score: '7,532', correct: '8/10', time: '41s', gamesPlayed: '98' },
-    { rank: '6', username: '@SAILY.STEWART45', winnings: '0.00 SOL', score: '7,218', correct: '8/10', time: '55s', avatar: 'https://picsum.photos/id/22/200/200?grayscale', gamesPlayed: '45' },
-    { rank: '7', username: '@KABIR_SEN2345', winnings: '0.00 SOL', score: '7,199', correct: '8/10', time: '58s', avatar: 'https://picsum.photos/id/24/200/200?grayscale', gamesPlayed: '32' },
-    { rank: '8', username: '@natalie.fun', winnings: '0.00 SOL', score: '6,980', correct: '7/10', time: '44s', avatar: 'https://picsum.photos/id/26/200/200?grayscale', gamesPlayed: '28' },
-    { rank: '9', username: '@veronica6794', winnings: '0.00 SOL', score: '6,757', correct: '7/10', time: '51s', avatar: 'https://picsum.photos/id/28/200/200?grayscale', gamesPlayed: '15' },
-    { rank: '10', username: '@lex.crypto', winnings: '0.00 SOL', score: '6,420', correct: '6/10', time: '39s', avatar: 'https://picsum.photos/id/32/200/200?grayscale', gamesPlayed: '10' },
+    { rank: '1', username: '@DIANA.LOVE', winnings: '1,240.50 SOL', avatar: DEFAULT_AVATAR, score: '8,805', correct: '10/10', time: '42s', gamesPlayed: '242' },
+    { rank: '2', username: '@JOHN_LIFE', winnings: '450.20 SOL', avatar: DEFAULT_AVATAR, score: '8,239', correct: '10/10', time: '48s', gamesPlayed: '185' },
+    { rank: '3', username: '@PHIL.GAMER', winnings: '285.15 SOL', avatar: DEFAULT_AVATAR, score: '7,987', correct: '9/10', time: '45s', gamesPlayed: '156' },
+    { rank: '4', username: '@KENDAL4848', winnings: '150.00 SOL', avatar: DEFAULT_AVATAR, score: '7,568', correct: '9/10', time: '52s', gamesPlayed: '120' },
+    { rank: '5', username: '@SHIV.RAJPUT', winnings: '120.40 SOL', avatar: DEFAULT_AVATAR, score: '7,532', correct: '8/10', time: '41s', gamesPlayed: '98' },
+    { rank: '6', username: '@SAILY.STEWART45', winnings: '0.00 SOL', score: '7,218', correct: '8/10', time: '55s', avatar: DEFAULT_AVATAR, gamesPlayed: '45' },
+    { rank: '7', username: '@KABIR_SEN2345', winnings: '0.00 SOL', score: '7,199', correct: '8/10', time: '58s', avatar: DEFAULT_AVATAR, gamesPlayed: '32' },
+    { rank: '8', username: '@natalie.fun', winnings: '0.00 SOL', score: '6,980', correct: '7/10', time: '44s', avatar: DEFAULT_AVATAR, gamesPlayed: '28' },
+    { rank: '9', username: '@veronica6794', winnings: '0.00 SOL', score: '6,757', correct: '7/10', time: '51s', avatar: DEFAULT_AVATAR, gamesPlayed: '15' },
+    { rank: '10', username: '@lex.crypto', winnings: '0.00 SOL', score: '6,420', correct: '6/10', time: '39s', avatar: DEFAULT_AVATAR, gamesPlayed: '10' },
   ];
 
   return (
@@ -111,7 +112,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                 <div key={idx} className={`flex flex-col items-center flex-1 ${isFirst ? 'max-w-[150px] -translate-y-8' : 'max-w-[120px]'}`}>
                    <div className="relative mb-6">
                       <div className={`w-24 h-24 sm:w-32 sm:h-32 rounded-full border-[6px] ${rankColor} overflow-hidden bg-zinc-900 shadow-2xl`}>
-                        <img src={player.avatar} className="w-full h-full object-cover grayscale" alt="" />
+                        <img src={player.avatar} className="w-full h-full object-cover grayscale" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                       </div>
                       <div className={`absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full ${badgeColor} border-[3px] border-white flex items-center justify-center shadow-lg`}>
                         <span className="text-black font-[1000] italic text-[11px] leading-none">{player.rank}</span>
@@ -178,7 +179,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                 <div key={idx} className={`flex flex-col items-center ${containerY} transition-all duration-500`}>
                    <div className="relative mb-6">
                       <div className={`${size} rounded-full border-[6px] ${rankColor} ${glowColor} overflow-hidden bg-zinc-900`}>
-                        <img src={player.avatar} className="w-full h-full object-cover grayscale" alt="" />
+                        <img src={player.avatar} className="w-full h-full object-cover grayscale" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                       </div>
                       <div className={`absolute -top-4 left-1/2 -translate-x-1/2 w-10 h-10 lg:w-16 lg:h-16 rounded-full ${badgeColor} border-[4px] border-[#050505] flex items-center justify-center shadow-xl`}>
                         <span className="font-[1000] italic text-base lg:text-3xl leading-none">{player.rank}</span>
@@ -215,7 +216,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                 <div key={idx} className="flex items-center gap-8 p-6 bg-white/[0.02] border border-white/5 rounded-2xl group hover:bg-white/[0.04] transition-all duration-300">
                     <span className="w-12 text-center font-[1000] italic text-zinc-600 group-hover:text-[#14F195] text-4xl tabular-nums transition-colors leading-none">{player.rank}</span>
                     <div className="w-16 h-16 rounded-xl overflow-hidden border border-white/10 grayscale group-hover:grayscale-0 transition-all flex-shrink-0">
-                        <img src={player.avatar} className="w-full h-full object-cover" alt="" />
+                        <img src={player.avatar} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                     </div>
                     <div className="flex-1 truncate">
                         <p className="font-[1000] italic text-2xl uppercase text-white truncate tracking-tight">{player.username}</p>
@@ -253,7 +254,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                   </span>
                   
                   <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/10 grayscale flex-shrink-0">
-                      <img src={player.avatar} className="w-full h-full object-cover" alt="" />
+                      <img src={player.avatar} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                   </div>
                   
                   <div className="flex-1 min-w-0">

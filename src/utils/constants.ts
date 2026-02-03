@@ -34,3 +34,7 @@ export const ROUNDS_PER_DAY = 4;
 export const SUPABASE_FUNCTIONS_URL = 
   import.meta.env.VITE_SUPABASE_FUNCTIONS_URL || 
   'https://uekqrkjiunezsytzyjmx.supabase.co/functions/v1';
+
+// Default avatar (inline SVG, no network) – use when no avatar_url or when external image fails
+export const DEFAULT_AVATAR =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Ccircle fill='%23374151' cx='100' cy='100' r='100'/%3E%3Ccircle fill='%236b7280' cx='100' cy='82' r='32'/%3E%3Cellipse fill='%236b7280' cx='100' cy='165' rx='48' ry='38'/%3E%3C/svg%3E";

@@ -19,7 +19,7 @@ import AdminRoute from './components/AdminRoute';
 import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
 import { getPlayerLives, startGame, registerPlayerProfile, updateQuestProgress } from './src/utils/api';
-import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS } from './src/utils/constants';
+import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR } from './src/utils/constants';
 import { getRecentBlockhashWithRetry } from './src/utils/rpc';
 import { supabase } from './src/utils/supabase';
 import { useKeepAlive } from './src/hooks/useKeepAlive';
@@ -145,22 +145,18 @@ const App: React.FC = () => {
     }
   }, [currentView]);
 
-  // Profile state
+  // Profile state (DEFAULT_AVATAR = inline SVG, no network, fast load)
   const [profile, setProfile] = useState({
     username: 'Solana_Sage',
-    avatar: 'https://picsum.photos/id/237/400/400?grayscale'
+    avatar: DEFAULT_AVATAR,
   });
   const [profileLoading, setProfileLoading] = useState(false);
 
-  // Fetch profile data when wallet connects
+  // Fetch profile when wallet connects (single fast Supabase query)
   useEffect(() => {
     const fetchProfile = async () => {
       if (!connected || !publicKey) {
-        // Reset to default when disconnected
-        setProfile({
-          username: 'Solana_Sage',
-          avatar: 'https://picsum.photos/id/237/400/400?grayscale'
-        });
+        setProfile({ username: 'Solana_Sage', avatar: DEFAULT_AVATAR });
         return;
       }
 
@@ -168,7 +164,6 @@ const App: React.FC = () => {
       const walletAddress = publicKey.toBase58();
 
       try {
-        // Fetch from Supabase
         const { data: profileData, error } = await supabase
           .from('player_profiles')
           .select('username, avatar_url')
@@ -178,13 +173,11 @@ const App: React.FC = () => {
         if (profileData && !error) {
           setProfile({
             username: profileData.username || 'Solana_Sage',
-            avatar: profileData.avatar_url || 'https://picsum.photos/id/237/400/400?grayscale'
+            avatar: profileData.avatar_url || DEFAULT_AVATAR,
           });
         } else if (error && error.code !== 'PGRST116') {
-          // Error other than "not found" - log it
           console.error('Error fetching profile:', error);
         }
-        // If no profile found (PGRST116), keep defaults
       } catch (err) {
         console.error('Failed to fetch profile:', err);
       } finally {
