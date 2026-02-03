@@ -262,29 +262,60 @@ interface AdminQuest {
   is_active: boolean;
 }
 
+interface QuestSubmission {
+  id: string;
+  wallet_address: string;
+  quest_id: string;
+  proof_url: string;
+  status: string;
+  created_at: string;
+  quest?: { id: string; slug: string; title: string };
+}
+
+const CATEGORY_OPTIONS = ['Priority Mission', 'Social Operations', 'Active Operations'];
+const QUEST_TYPES = ['STANDARD', 'ELITE', 'SOCIAL'];
+
 const QuestsManagementView: React.FC = () => {
   const [quests, setQuests] = useState<AdminQuest[]>([]);
+  const [submissions, setSubmissions] = useState<QuestSubmission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [submissionsLoading, setSubmissionsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newQuest, setNewQuest] = useState({
+    slug: '',
+    title: '',
+    description: '',
+    category: 'Active Operations',
+    reward_tp: 250,
+    reward_label: '250 TP',
+    requirement_type: 'manual',
+    requirement_config: { max: 1 },
+    sort_order: 0,
+    quest_type: 'STANDARD' as string,
+    is_active: true,
+  });
 
-  const getCreds = (): { u: string; p: string } | null => {
-    try {
-      const raw = sessionStorage.getItem('admin_creds');
-      if (!raw) return null;
-      return JSON.parse(raw) as { u: string; p: string };
-    } catch {
-      return null;
-    }
-  };
+  // Use same credentials as login (env). Dashboard only renders when authenticated.
+  const getCreds = (): { u: string; p: string } => ({
+    u: import.meta.env.VITE_ADMIN_USERNAME || '',
+    p: import.meta.env.VITE_ADMIN_PASSWORD || '',
+  });
 
   const fetchQuests = async () => {
     setLoading(true);
     setError('');
     try {
-      const { data, err } = await supabase.from('quests').select('*').order('category').order('sort_order');
-      if (err) throw err;
-      setQuests((data || []) as AdminQuest[]);
+      const creds = getCreds();
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-quests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminUsername: creds.u, adminPassword: creds.p, action: 'list', payload: {} }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Failed to load quests');
+      setQuests((json.data || []) as AdminQuest[]);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load quests');
     } finally {
@@ -292,8 +323,42 @@ const QuestsManagementView: React.FC = () => {
     }
   };
 
+  const fetchSubmissions = async () => {
+    setSubmissionsLoading(true);
+    try {
+      const creds = getCreds();
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-quests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminUsername: creds.u, adminPassword: creds.p, action: 'list_submissions', payload: { status: 'pending' } }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) setSubmissions((json.data || []) as QuestSubmission[]);
+    } catch {
+      // ignore
+    } finally {
+      setSubmissionsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchQuests();
+    fetchSubmissions();
+  }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-quests-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quests' }, () => {
+        fetchQuests();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quest_submissions' }, () => {
+        fetchSubmissions();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const callManage = async (action: string, payload?: Record<string, unknown>) => {
@@ -301,7 +366,7 @@ const QuestsManagementView: React.FC = () => {
     const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-quests`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminUsername: creds?.u, adminPassword: creds?.p, action, payload }),
+      body: JSON.stringify({ adminUsername: creds.u, adminPassword: creds.p, action, payload }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || 'Request failed');
@@ -332,19 +397,123 @@ const QuestsManagementView: React.FC = () => {
     }
   };
 
+  const handleTogglePause = async (quest: AdminQuest) => {
+    setError('');
+    setSuccess('');
+    try {
+      await callManage('update', { id: quest.id, is_active: !quest.is_active });
+      setSuccess(quest.is_active ? 'Quest paused' : 'Quest resumed');
+      setQuests((prev) => prev.map((x) => x.id === quest.id ? { ...x, is_active: !x.is_active } : x));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Update failed');
+    }
+  };
+
+  const handleDelete = async (quest: AdminQuest) => {
+    if (!confirm(`Delete "${quest.title}"? This cannot be undone.`)) return;
+    setError('');
+    setSuccess('');
+    try {
+      await callManage('delete', { id: quest.id });
+      setSuccess('Quest deleted');
+      setQuests((prev) => prev.filter((x) => x.id !== quest.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!newQuest.slug.trim() || !newQuest.title.trim()) {
+      setError('Slug and title required');
+      return;
+    }
+    setError('');
+    setSuccess('');
+    try {
+      await callManage('create', {
+        slug: newQuest.slug.trim().toLowerCase().replace(/\s+/g, '_'),
+        title: newQuest.title.trim(),
+        description: newQuest.description.trim(),
+        category: newQuest.category,
+        reward_tp: newQuest.reward_tp,
+        reward_label: newQuest.reward_label || `${newQuest.reward_tp} TP`,
+        requirement_type: newQuest.requirement_type,
+        requirement_config: newQuest.requirement_config,
+        sort_order: newQuest.sort_order,
+        quest_type: newQuest.quest_type,
+        is_active: newQuest.is_active,
+      });
+      setSuccess('Quest created');
+      setShowAddForm(false);
+      setNewQuest({ slug: '', title: '', description: '', category: 'Active Operations', reward_tp: 250, reward_label: '250 TP', requirement_type: 'manual', requirement_config: { max: 1 }, sort_order: 0, quest_type: 'STANDARD', is_active: true });
+      fetchQuests();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Create failed');
+    }
+  };
+
+  const handleReviewSubmission = async (submissionId: string, decision: 'approve' | 'reject') => {
+    setError('');
+    setSuccess('');
+    try {
+      const creds = getCreds();
+      await callManage('review_submission', { submissionId, decision, reviewedBy: creds.u });
+      setSuccess(decision === 'approve' ? 'Approved — user rewarded' : 'Rejected');
+      setSubmissions((prev) => prev.filter((s) => s.id !== submissionId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Review failed');
+    }
+  };
+
   if (loading) return <div className="text-center py-20">Loading quests...</div>;
 
   return (
     <div>
-      <h2 className="text-2xl font-black mb-6">Quests Management ({quests.length})</h2>
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <h2 className="text-2xl font-black">Quests Management ({quests.length})</h2>
+        <button
+          onClick={() => { setShowAddForm(!showAddForm); setError(''); }}
+          className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded"
+        >
+          {showAddForm ? 'Cancel' : '+ Add Quest'}
+        </button>
+      </div>
       {error && <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm">{error}</div>}
       {success && <div className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-lg text-green-400 text-sm">{success}</div>}
-      <p className="text-zinc-500 text-sm mb-6">Quest list is loaded from Supabase. Edit and save to update. Identity Sync is in Priority Mission; Trivia Nerd / Trivia Genius / Healing Master use TP.</p>
+
+      {showAddForm && (
+        <div className="mb-6 p-6 bg-white/5 border border-white/10 rounded-xl space-y-3">
+          <h3 className="font-black text-[#14F195]">New Quest</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" placeholder="Slug (e.g. my_quest)" value={newQuest.slug} onChange={(e) => setNewQuest((q) => ({ ...q, slug: e.target.value }))} />
+            <input className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" placeholder="Title" value={newQuest.title} onChange={(e) => setNewQuest((q) => ({ ...q, title: e.target.value }))} />
+            <textarea className="md:col-span-2 bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" placeholder="Description" value={newQuest.description} onChange={(e) => setNewQuest((q) => ({ ...q, description: e.target.value }))} rows={2} />
+            <select className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" value={newQuest.category} onChange={(e) => setNewQuest((q) => ({ ...q, category: e.target.value }))}>
+              {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" value={newQuest.quest_type} onChange={(e) => setNewQuest((q) => ({ ...q, quest_type: e.target.value }))}>
+              {QUEST_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input type="number" className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" placeholder="Reward TP" value={newQuest.reward_tp} onChange={(e) => setNewQuest((q) => ({ ...q, reward_tp: parseInt(e.target.value, 10) || 0, reward_label: `${parseInt(e.target.value, 10) || 0} TP` }))} />
+            <input type="number" className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" placeholder="Sort order" value={newQuest.sort_order} onChange={(e) => setNewQuest((q) => ({ ...q, sort_order: parseInt(e.target.value, 10) || 0 }))} />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={newQuest.is_active} onChange={(e) => setNewQuest((q) => ({ ...q, is_active: e.target.checked }))} />
+              Active
+            </label>
+          </div>
+          <button onClick={handleCreate} className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded">Create Quest</button>
+        </div>
+      )}
+
+      <p className="text-zinc-500 text-sm mb-4">Changes (add/delete/pause) sync in real time to the app. Paused quests are hidden from players.</p>
       <div className="space-y-4">
         {quests.map((q) => (
-          <div key={q.id} className="bg-white/5 border border-white/10 p-4 rounded-xl flex flex-wrap items-center gap-4">
+          <div key={q.id} className={`bg-white/5 border p-4 rounded-xl flex flex-wrap items-center gap-4 ${q.is_active ? 'border-white/10' : 'border-amber-500/30 opacity-80'}`}>
             <div className="flex-1 min-w-[200px]">
-              <div className="font-black text-[#14F195]">{q.title}</div>
+              <div className="flex items-center gap-2">
+                <span className="font-black text-[#14F195]">{q.title}</span>
+                {!q.is_active && <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 uppercase">Paused</span>}
+              </div>
               <div className="text-zinc-500 text-xs">{q.description}</div>
               <div className="text-zinc-600 text-[10px] mt-1">{q.category} · {q.reward_label || `${q.reward_tp} TP`}</div>
             </div>
@@ -359,18 +528,41 @@ const QuestsManagementView: React.FC = () => {
               value={q.category}
               onChange={(e) => setQuests((prev) => prev.map((x) => x.id === q.id ? { ...x, category: e.target.value } : x))}
             >
-              <option value="Priority Mission">Priority Mission</option>
-              <option value="Social Operations">Social Operations</option>
-              <option value="Active Operations">Active Operations</option>
+              {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
-            <button
-              onClick={() => handleUpdate(quests.find((x) => x.id === q.id)!)}
-              className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded"
-            >
-              Save
+            <button onClick={() => handleTogglePause(q)} className="px-3 py-1.5 text-xs font-black uppercase rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30">
+              {q.is_active ? 'Pause' : 'Resume'}
             </button>
+            <button onClick={() => handleUpdate(quests.find((x) => x.id === q.id)!)} className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded">Save</button>
+            <button onClick={() => handleDelete(q)} className="px-3 py-1.5 text-xs font-black uppercase rounded bg-red-500/20 text-red-400 hover:bg-red-500/30">Delete</button>
           </div>
         ))}
+      </div>
+
+      <div className="mt-10 pt-8 border-t border-white/10">
+        <h3 className="text-xl font-black mb-4">Pending proof submissions (e.g. TRUE RAIDER)</h3>
+        <p className="text-zinc-500 text-sm mb-4">Approve to grant the user the quest reward (TP) automatically. Reject to let them submit again.</p>
+        {submissionsLoading ? (
+          <p className="text-zinc-500 text-sm">Loading...</p>
+        ) : submissions.length === 0 ? (
+          <p className="text-zinc-500 text-sm">No pending submissions.</p>
+        ) : (
+          <div className="space-y-3">
+            {submissions.map((s) => (
+              <div key={s.id} className="bg-white/5 border border-white/10 p-4 rounded-xl flex flex-wrap items-center gap-4">
+                <div className="flex-1 min-w-[180px]">
+                  <p className="font-mono text-xs text-[#14F195]">{s.wallet_address.slice(0, 8)}...{s.wallet_address.slice(-6)}</p>
+                  <p className="text-zinc-500 text-xs mt-1">{(s.quest as { title?: string })?.title || s.quest_id}</p>
+                  <a href={s.proof_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline break-all">{s.proof_url}</a>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => handleReviewSubmission(s.id, 'approve')} className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded">Approve</button>
+                  <button onClick={() => handleReviewSubmission(s.id, 'reject')} className="px-4 py-2 bg-red-500/20 text-red-400 font-black text-xs uppercase rounded">Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

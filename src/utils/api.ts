@@ -108,6 +108,7 @@ export interface Quest {
   requirement_config: { max?: number };
   sort_order: number;
   quest_type: string;
+  is_active?: boolean;
 }
 
 export interface UserQuestProgress {
@@ -383,7 +384,7 @@ export function subscribeUserQuestProgress(
   onData: (rows: UserQuestProgress[]) => void
 ): { unsubscribe: () => void } {
   const channelName = `quest-progress-${walletAddress}`;
-  supabase
+  const ch = supabase
     .channel(channelName)
     .on(
       'postgres_changes',
@@ -396,9 +397,40 @@ export function subscribeUserQuestProgress(
       () => {
         fetchUserQuestProgress(walletAddress).then(onData).catch(() => {});
       }
-    )
-    .subscribe();
+    );
+  ch.subscribe();
   return {
-    unsubscribe: () => supabase.removeChannel(channelName),
+    unsubscribe: () => supabase.removeChannel(ch),
   };
+}
+
+/** Subscribe to quests table changes (add/delete/update/pause). Refreshes active quest list. */
+export function subscribeQuests(onQuests: (quests: Quest[]) => void): { unsubscribe: () => void } {
+  const channelName = 'quests-realtime';
+  const ch = supabase
+    .channel(channelName)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'quests' },
+      () => {
+        fetchQuests().then(onQuests).catch(() => {});
+      }
+    );
+  ch.subscribe();
+  return {
+    unsubscribe: () => supabase.removeChannel(ch),
+  };
+}
+
+/** Submit proof URL for verification quests (e.g. TRUE RAIDER). Admin approves later; then user is rewarded automatically. */
+export async function submitQuestProof(walletAddress: string, questSlug: string, proofUrl: string): Promise<{ ok: boolean; error?: string }> {
+  const url = `${FUNCTIONS_URL}/submit-quest-proof`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ wallet_address: walletAddress, quest_slug: questSlug, proof_url: proofUrl }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: json.error || 'Submit failed' };
+  return { ok: true };
 }
