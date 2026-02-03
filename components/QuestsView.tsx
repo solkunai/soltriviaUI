@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '../src/contexts/WalletContext';
-import { fetchQuests, fetchUserQuestProgress, subscribeUserQuestProgress, type Quest, type UserQuestProgress } from '../src/utils/api';
+import { fetchQuests, fetchUserQuestProgress, subscribeUserQuestProgress, subscribeQuests, submitQuestProof, type Quest, type UserQuestProgress } from '../src/utils/api';
 
 interface QuestsViewProps {
   onGoToProfile?: () => void;
@@ -16,6 +16,8 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
   const [loading, setLoading] = useState(true);
   const [raiderUrl, setRaiderUrl] = useState('');
   const [showRaiderInput, setShowRaiderInput] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [submitMessage, setSubmitMessage] = useState('');
 
   const loadQuests = useCallback(async () => {
     try {
@@ -49,6 +51,11 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
     });
     return () => { mounted = false; };
   }, [loadQuests, loadProgress]);
+
+  useEffect(() => {
+    const sub = subscribeQuests((data) => setQuests(data));
+    return () => sub.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!connected || !publicKey) return;
@@ -152,6 +159,25 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
                         window.open('https://x.com/solana', '_blank');
                         setShowRaiderInput(true);
                       } : undefined}
+                      onVerifyRaider={quest.slug === 'true_raider' ? async () => {
+                        if (!publicKey || !raiderUrl.trim()) return;
+                        setSubmitStatus('submitting');
+                        setSubmitMessage('');
+                        const { ok, error } = await submitQuestProof(publicKey.toBase58(), 'true_raider', raiderUrl.trim());
+                        if (ok) {
+                          setSubmitStatus('success');
+                          setSubmitMessage('Submitted for review. You’ll get TP once approved.');
+                          setRaiderUrl('');
+                          setShowRaiderInput(false);
+                          loadProgress();
+                        } else {
+                          setSubmitStatus('error');
+                          setSubmitMessage(error || 'Submit failed');
+                        }
+                        setTimeout(() => setSubmitStatus('idle'), 4000);
+                      } : undefined}
+                      submitStatus={submitStatus}
+                      submitMessage={submitMessage}
                     />
                   ))}
                 </div>
@@ -173,6 +199,9 @@ interface QuestCardProps {
   onInputChange?: (v: string) => void;
   onGoToProfile?: () => void;
   onRaiderClick?: () => void;
+  onVerifyRaider?: () => void;
+  submitStatus?: 'idle' | 'submitting' | 'success' | 'error';
+  submitMessage?: string;
 }
 
 const QuestCard: React.FC<QuestCardProps> = ({
@@ -184,6 +213,9 @@ const QuestCard: React.FC<QuestCardProps> = ({
   onInputChange,
   onGoToProfile,
   onRaiderClick,
+  onVerifyRaider,
+  submitStatus = 'idle',
+  submitMessage = '',
 }) => {
   const max = quest.requirement_config?.max ?? 1;
   const isClaimable = progress >= max && !completed;
@@ -229,10 +261,19 @@ const QuestCard: React.FC<QuestCardProps> = ({
               placeholder="https://x.com/..."
               className="flex-1 bg-black border border-white/10 p-2 md:p-3 text-white font-bold text-[10px] md:text-xs focus:outline-none focus:border-[#14F195]/50 transition-all rounded-sm"
             />
-            <button className="px-3 md:px-4 bg-[#14F195] text-black font-black uppercase text-[8px] md:text-[9px] italic rounded-sm hover:scale-105 active:scale-95 shadow-md">
-              VERIFY
+            <button
+              onClick={onVerifyRaider}
+              disabled={submitStatus === 'submitting' || !inputValue?.trim()}
+              className="px-3 md:px-4 bg-[#14F195] text-black font-black uppercase text-[8px] md:text-[9px] italic rounded-sm hover:scale-105 active:scale-95 shadow-md disabled:opacity-50"
+            >
+              {submitStatus === 'submitting' ? '…' : 'VERIFY'}
             </button>
           </div>
+          {submitMessage && (
+            <p className={`mt-2 text-[10px] font-bold italic ${submitStatus === 'error' ? 'text-red-400' : 'text-[#14F195]'}`}>
+              {submitMessage}
+            </p>
+          )}
         </div>
       ) : (
         <div className="mb-4 md:mb-8">
