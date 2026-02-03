@@ -2,11 +2,14 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Custom plugin to remove console logs in production
+// Custom plugin to remove console logs in production (src only)
 const removeConsolePlugin = (isProduction: boolean) => {
   return {
     name: 'remove-console',
     transform(code: string, id: string) {
+      // Only run on project src; never transform node_modules or other paths (cross-platform)
+      const isInSrc = id.includes(`${path.sep}src${path.sep}`) || id.includes('/src/');
+      if (!isInSrc || id.includes('node_modules')) return null;
       // Remove console logs in production builds
       if (isProduction) {
         // Remove all console statements
@@ -68,9 +71,17 @@ export default defineConfig(({ mode, command }) => {
           define: {
             global: 'globalThis',
           },
+          target: 'esnext',
+          supported: { 
+            bigint: true 
+          },
         },
         include: [
           'valtio',
+          '@solana/web3.js',
+          '@solana/wallet-adapter-react',
+          '@solana/wallet-adapter-react-ui',
+          '@solana/wallet-adapter-wallets',
         ],
         // Exclude problematic packages from optimization
         // buffer is loaded from CDN, so exclude it
@@ -78,6 +89,7 @@ export default defineConfig(({ mode, command }) => {
       },
       publicDir: 'public',
       build: {
+        target: 'esnext',
         minify: isProduction ? 'terser' : 'esbuild',
         terserOptions: isProduction ? {
           compress: {
@@ -136,7 +148,7 @@ export default defineConfig(({ mode, command }) => {
             // Suppress valtio resolution warnings (handled by optimizeDeps)
             if (warning.message?.includes('valtio')) return;
             // Suppress resolution errors for valtio/vanilla (handled via resolve conditions)
-            if (warning.code === 'UNRESOLVED_IMPORT' && warning.source?.includes('valtio')) {
+            if (warning.code === 'UNRESOLVED_IMPORT' && (warning as { source?: string }).source?.includes('valtio')) {
               return;
             }
             // Suppress buffer parsing errors
