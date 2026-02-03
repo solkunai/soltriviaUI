@@ -29,6 +29,11 @@ const AdminRoute: React.FC = () => {
 
     if (username === adminUsername && password === adminPassword) {
       localStorage.setItem('admin_authenticated', 'true');
+      try {
+        sessionStorage.setItem('admin_creds', JSON.stringify({ u: username, p: password }));
+      } catch {
+        // ignore
+      }
       setIsAuthenticated(true);
       return true;
     }
@@ -37,6 +42,11 @@ const AdminRoute: React.FC = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('admin_authenticated');
+    try {
+      sessionStorage.removeItem('admin_creds');
+    } catch {
+      // ignore
+    }
     setIsAuthenticated(false);
   };
 
