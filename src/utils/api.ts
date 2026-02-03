@@ -45,11 +45,14 @@ export interface SubmitAnswerParams {
 }
 
 export interface SubmitAnswerResponse {
-  is_correct: boolean;
-  correct_index: number;
-  points_earned: number;
-  total_score: number;
-  total_correct: number;
+  correct: boolean; // Backend returns 'correct', not 'is_correct'
+  correctIndex: number; // Backend returns camelCase
+  pointsEarned: number; // Backend returns camelCase
+  totalScore: number;
+  correctCount: number;
+  timeMs?: number;
+  timedOut?: boolean;
+  isLastQuestion?: boolean;
 }
 
 export interface Question {
