@@ -131,18 +131,11 @@ serve(async (req) => {
     }
 
     // Get session with round data; session.question_order (when set) overrides round order per user
+    // Query ALL columns from game_sessions (let Supabase return what exists)
     const { data: session, error: sessionError } = await supabase
       .from('game_sessions')
       .select(`
-        id,
-        current_question_index,
-        current_question_token,
-        current_question_issued_at,
-        score,
-        correct_count,
-        finished_at,
-        wallet_address,
-        question_order,
+        *,
         round:daily_rounds(id, question_ids)
       `)
       .eq('id', sessionId)
@@ -189,7 +182,14 @@ serve(async (req) => {
     const round = session.round;
     const questionIds = (Array.isArray(session.question_order) && session.question_order.length > 0)
       ? session.question_order
-      : round.question_ids;
+      : (round && Array.isArray(round.question_ids) ? round.question_ids : null);
+    if (!questionIds || questionIds.length === 0) {
+      console.error('submit-answer: no question_order or round.question_ids for session', sessionId);
+      return new Response(
+        JSON.stringify({ error: 'Session has no questions configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     const issuedAt = session.current_question_issued_at ? new Date(session.current_question_issued_at).getTime() : null;
     const now = Date.now();
@@ -200,31 +200,38 @@ serve(async (req) => {
       // Time expired - record as wrong answer
       const questionId = questionIds[session.current_question_index];
 
-      // Record the answer as timed out (wrong)
-      await supabase.from('answers').insert({
-        session_id: sessionId,
-        question_index: session.current_question_index,
-        question_id: questionId,
-        selected_index: selectedIndex,
-        correct: false,
+      const timeoutAnswerRow: Record<string, unknown> = {
+        session_id: String(sessionId),
+        question_index: Number(session.current_question_index),
+        question_id: questionId == null ? null : String(questionId),
+        selected_index: Number(selectedIndex),
+        is_correct: false,
         points_earned: 0,
-        time_ms: timeMs,
-        token,
+        time_taken_ms: Math.round(Number(timeMs)) || 0,
+        token: String(token),
         issued_at: session.current_question_issued_at,
-      });
+      };
+      const { error: timeoutInsertErr } = await supabase.from('answers').insert(timeoutAnswerRow);
+      if (timeoutInsertErr) {
+        console.error('Failed to record timeout answer:', timeoutInsertErr);
+        return new Response(
+          JSON.stringify({ error: 'Failed to record answer', details: timeoutInsertErr.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
       // Move to next question
       const nextIndex = session.current_question_index + 1;
       const isLastQuestion = nextIndex >= 10;
-
+      const timeoutSessionUpdate: Record<string, unknown> = {
+        current_question_index: nextIndex,
+        current_question_token: null,
+        current_question_issued_at: null,
+        ...(isLastQuestion && { finished_at: new Date().toISOString() }),
+      };
       await supabase
         .from('game_sessions')
-        .update({
-          current_question_index: nextIndex,
-          current_question_token: null,
-          current_question_issued_at: null,
-          ...(isLastQuestion && { finished_at: new Date().toISOString() }),
-        })
+        .update(timeoutSessionUpdate)
         .eq('id', sessionId);
 
       return new Response(
@@ -240,25 +247,34 @@ serve(async (req) => {
       );
     }
 
-    // Get the question to check the correct answer
+    // Get the question to check the correct answer (use string id for consistent lookup)
     const questionId = questionIds[session.current_question_index];
-
-    const { data: question, error: qError } = await supabase
-      .from('questions')
-      .select('id, correct_index')
-      .eq('id', questionId)
-      .single();
-
-    if (qError || !question) {
+    const questionIdStr = questionId == null ? null : String(questionId);
+    if (!questionIdStr) {
       return new Response(
-        JSON.stringify({ error: 'Question not found' }),
+        JSON.stringify({ error: 'No question for this index' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Check if answer is correct (normalize to number in case of string from DB/JSON)
-    const correctIndexNum = Number(question.correct_index);
-    const selectedNum = Number(selectedIndex);
+    // Fetch the correct answer from the separate correct_answers table
+    const { data: correctAnswerData, error: qError } = await supabase
+      .from('question_correct_answers')
+      .select('correct_answer')
+      .eq('question_id', questionIdStr)
+      .single();
+
+    if (qError || !correctAnswerData) {
+      return new Response(
+        JSON.stringify({ error: 'Question answer not found' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Convert letter (A-D) to index (0-3)
+    const letterToIndex: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+    const correctIndexNum = letterToIndex[correctAnswerData.correct_answer] ?? 0;
+    const selectedNum = Math.max(0, Math.min(3, Number(selectedIndex)));
     const correct = selectedNum === correctIndexNum;
     const pointsEarned = calculatePoints(correct, timeMs);
 
@@ -270,50 +286,72 @@ serve(async (req) => {
         question_index: session.current_question_index,
         selectedIndex,
         selectedNum,
-        correct_index_raw: question.correct_index,
+        correct_answer_letter: correctAnswerData.correct_answer,
         correctIndexNum,
         correct,
       }));
     }
 
     // Record the answer (token/issued_at only set in fetch-next-question flow)
+    // Coerce types for DB; omit null/undefined optional columns
     const answerRow: Record<string, unknown> = {
-      session_id: sessionId,
-      question_index: session.current_question_index,
-      question_id: questionId,
-      selected_index: selectedIndex,
-      correct,
-      points_earned: pointsEarned,
-      time_ms: timeMs,
+      session_id: String(sessionId),
+      question_index: Number(session.current_question_index),
+      question_id: questionIdStr,
+      selected_index: Number(selectedIndex),
+      is_correct: Boolean(correct),
+      points_earned: Math.round(Number(pointsEarned)) || 0,
+      time_taken_ms: Math.round(Number(timeMs)) || 0,
     };
-    if (token != null) answerRow.token = token;
+    if (token != null && token !== '') answerRow.token = String(token);
     if (session.current_question_issued_at != null) answerRow.issued_at = session.current_question_issued_at;
     const { error: answerError } = await supabase.from('answers').insert(answerRow);
 
     if (answerError) {
+      const errMsg = answerError.message || 'Unknown error';
+      const errCode = (answerError as { code?: string }).code;
       console.error('Failed to record answer:', answerError);
       return new Response(
-        JSON.stringify({ error: 'Failed to record answer' }),
+        JSON.stringify({
+          error: 'Failed to record answer',
+          details: errMsg,
+          code: errCode,
+        }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Update session
+    // Update session (support both schemas: score/correct_count vs total_points/correct_answers)
     const nextIndex = session.current_question_index + 1;
     const isLastQuestion = nextIndex >= 10;
-    const newScore = session.score + pointsEarned;
-    const newCorrectCount = session.correct_count + (correct ? 1 : 0);
+    
+    // Determine which columns exist and calculate new values
+    const hasScoreColumn = 'score' in session;
+    const hasTotalPointsColumn = 'total_points' in session;
+    const hasCorrectCountColumn = 'correct_count' in session;
+    const hasCorrectAnswersColumn = 'correct_answers' in session;
+    
+    const currentScore = Number(session.score ?? session.total_points ?? 0);
+    const currentCorrect = Number(session.correct_count ?? session.correct_answers ?? 0);
+    const newScore = currentScore + pointsEarned;
+    const newCorrectCount = currentCorrect + (correct ? 1 : 0);
+
+    const sessionUpdate: Record<string, unknown> = {
+      current_question_index: nextIndex,
+      current_question_token: null,
+      current_question_issued_at: null,
+      ...(isLastQuestion && { finished_at: new Date().toISOString() }),
+    };
+    
+    // Update whichever columns exist
+    if (hasScoreColumn) sessionUpdate.score = newScore;
+    if (hasTotalPointsColumn) sessionUpdate.total_points = newScore;
+    if (hasCorrectCountColumn) sessionUpdate.correct_count = newCorrectCount;
+    if (hasCorrectAnswersColumn) sessionUpdate.correct_answers = newCorrectCount;
 
     await supabase
       .from('game_sessions')
-      .update({
-        current_question_index: nextIndex,
-        current_question_token: null,
-        current_question_issued_at: null,
-        score: newScore,
-        correct_count: newCorrectCount,
-        ...(isLastQuestion && { finished_at: new Date().toISOString() }),
-      })
+      .update(sessionUpdate)
       .eq('id', sessionId);
 
     // If game is finished, update player stats

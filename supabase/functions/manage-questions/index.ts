@@ -39,11 +39,18 @@ serve(async (req) => {
     switch (action) {
       case 'list': {
         const limit = typeof (payload as { limit?: number })?.limit === 'number' ? (payload as { limit: number }).limit : 100;
-        const { data, error } = await supabase
+        const search = typeof (payload as { search?: string })?.search === 'string' ? (payload as { search: string }).search.trim() : '';
+        let query = supabase
           .from('questions')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(limit);
+        if (search.length > 0) {
+          const esc = (s: string) => s.replace(/%/g, '\\%').replace(/_/g, '\\_').replace(/,/g, '\\,');
+          const pattern = `%${esc(search)}%`;
+          query = query.or(`text.ilike.${pattern},category.ilike.${pattern}`);
+        }
+        const { data, error } = await query;
         if (error) throw error;
         return new Response(JSON.stringify({ data }), { headers: { ...cors, 'Content-Type': 'application/json' } });
       }

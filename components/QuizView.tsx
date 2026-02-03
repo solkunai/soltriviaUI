@@ -34,22 +34,26 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
   useEffect(() => {
     const fetchQuestions = async () => {
       if (!sessionId) {
+        console.error('❌ No session ID provided to QuizView');
         setError('No session ID provided');
         setLoading(false);
         return;
       }
 
+      console.log('🎮 QuizView mounted with session:', sessionId);
+
       try {
         setLoading(true);
         const response = await getQuestions(sessionId);
+        console.log('📚 Questions fetched:', response.questions.length, 'questions');
         
-        // Transform API response to Question format
+        // Transform API response to Question format; keep real id (UUID string) for submit-answer
         // NOTE: correct_index is NOT sent from API for security (prevents cheating)
-        // Answer validation happens server-side only
+        // Answer validation happens server-side only; option indices 0-3 match DB order
         const transformedQuestions: Question[] = response.questions.map((q: any, idx: number) => ({
-          id: parseInt(q.id) || idx + 1,
+          id: q.id != null ? String(q.id) : String(idx),
           text: q.text || q.question || '',
-          options: Array.isArray(q.options) ? q.options : (Array.isArray(q.answers) ? q.answers : []),
+          options: Array.isArray(q.options) ? [...q.options] : (Array.isArray(q.answers) ? [...q.answers] : []),
           correctAnswer: -1, // Never exposed to client - validated server-side only
         }));
 
@@ -100,6 +104,14 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
         throw new Error('Missing session or question ID');
       }
       
+      // Debug logging
+      console.log('📤 Submitting answer:', {
+        session_id: sessionId,
+        question_id: currentQuestion.id.toString(),
+        question_index: currentIdx,
+        selected_index: optionIdx,
+      });
+      
       const answerResponse = await submitAnswer({
         session_id: sessionId,
         question_id: currentQuestion.id.toString(),
@@ -108,12 +120,16 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
         time_taken_ms: Math.floor(timeTaken * 1000),
       });
       
+      console.log('📥 Answer response:', answerResponse);
+      
       correct = answerResponse.correct; // Backend returns 'correct', not 'is_correct'
       pointsEarned = answerResponse.pointsEarned || 0; // Backend returns camelCase
       actualCorrectIndex = answerResponse.correctIndex !== undefined ? answerResponse.correctIndex : -1; // Backend returns camelCase
       
     } catch (err) {
-      console.error('Failed to submit answer:', err);
+      console.error('❌ Failed to submit answer:', err);
+      console.error('Session ID:', sessionId);
+      console.error('Question:', currentQuestion);
       setError('Failed to submit answer. Please try again.');
       setLoading(false);
       return;
@@ -130,11 +146,14 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
       playWrongSound();
     }
 
-    // Store the correct answer for display (when user gets it wrong)
-    if (!correct && actualCorrectIndex >= 0) {
+    // ALWAYS store the correct answer for display (especially when user gets it wrong)
+    if (actualCorrectIndex >= 0) {
       const updatedQuestions = [...questions];
       updatedQuestions[currentIdx].correctAnswer = actualCorrectIndex;
       setQuestions(updatedQuestions);
+      console.log('✅ Correct answer set:', OPTION_LABELS[actualCorrectIndex], '(index:', actualCorrectIndex, ')');
+    } else {
+      console.warn('⚠️ Backend did not return correctIndex');
     }
 
     let pointsForThisQuestion = pointsEarned || 0;

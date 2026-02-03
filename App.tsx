@@ -140,6 +140,15 @@ const App: React.FC = () => {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  // Restore quiz session from sessionStorage when we land on /quiz (e.g. after reload)
+  useEffect(() => {
+    if (currentView !== View.QUIZ || currentSessionId != null || !connected) return;
+    try {
+      const stored = sessionStorage.getItem('quiz_session_id');
+      if (stored) setCurrentSessionId(stored);
+    } catch (_) {}
+  }, [currentView, connected, currentSessionId]);
+
   // Redirect to HOME only when user disconnects (not on initial load – so reload keeps same page)
   const prevConnectedRef = useRef<boolean | undefined>(undefined);
   useEffect(() => {
@@ -264,6 +273,10 @@ const App: React.FC = () => {
   };
 
   const handleQuizFinish = (score: number, points: number, totalTime: number) => {
+    try {
+      sessionStorage.removeItem('quiz_session_id');
+    } catch (_) {}
+    setCurrentSessionId(null);
     setLastGameResults({ score, points, time: totalTime });
     setCurrentView(View.RESULTS);
   };
@@ -325,8 +338,11 @@ const App: React.FC = () => {
       // Call backend to start game session
       const gameResult = await startGame(publicKey.toBase58(), signature);
 
-      // Store session ID for quiz
+      // Store session ID for quiz (and persist so reload on /quiz keeps the game)
       setCurrentSessionId(gameResult.sessionId);
+      try {
+        sessionStorage.setItem('quiz_session_id', gameResult.sessionId);
+      } catch (_) {}
 
       // Optimistically update UI
       setLives(prev => Math.max(0, prev - 1));
@@ -391,7 +407,19 @@ const App: React.FC = () => {
       case View.PROFILE:
         return connected ? <ProfileView username={profile.username} avatar={profile.avatar} onEdit={() => setIsEditProfileOpen(true)} onOpenGuide={() => setIsGuideOpen(true)} /> : null;
       case View.QUIZ:
-        return connected ? <QuizView sessionId={currentSessionId} onFinish={handleQuizFinish} onQuit={() => setCurrentView(View.PLAY)} /> : null;
+        return connected ? (
+          <QuizView
+            sessionId={currentSessionId}
+            onFinish={handleQuizFinish}
+            onQuit={() => {
+              try {
+                sessionStorage.removeItem('quiz_session_id');
+              } catch (_) {}
+              setCurrentSessionId(null);
+              setCurrentView(View.PLAY);
+            }}
+          />
+        ) : null;
       case View.RESULTS:
         return connected && lastGameResults ? (
           <ResultsView 

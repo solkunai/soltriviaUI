@@ -1,0 +1,166 @@
+DEPLOY CORRECT ANSWERS SYSTEM
+==============================
+
+IMPORTANT: Old migration had INFINITE LOOP bug!
+Use SIMPLE_MIGRATION.sql instead (no triggers)
+
+If you already ran the old migration, clean it up first:
+------------------------------------------------------------
+DROP TRIGGER IF EXISTS trigger_sync_correct_answer ON question_correct_answers CASCADE;
+DROP TRIGGER IF EXISTS trigger_sync_correct_index ON questions CASCADE;
+DROP FUNCTION IF EXISTS sync_correct_answer_to_index() CASCADE;
+DROP FUNCTION IF EXISTS sync_correct_index_to_answer() CASCADE;
+DROP VIEW IF EXISTS questions_with_answers CASCADE;
+DROP TABLE IF EXISTS question_correct_answers CASCADE;
+
+Then run SIMPLE_MIGRATION.sql
+
+
+STEP 1: APPLY MIGRATION
+------------------------
+Go to Supabase Dashboard → SQL Editor → New Query
+
+Copy/paste: SIMPLE_MIGRATION.sql
+Click RUN
+
+Expected: "Success. X rows inserted."
+
+This creates:
+- question_correct_answers table
+- Migrates all existing questions (converts 0-3 to A-D)
+- Creates security policies
+- NO TRIGGERS (triggers caused infinite loop!)
+
+
+STEP 2: VERIFY
+--------------
+In SQL Editor, run: test-correct-answers-migration.sql
+
+Expected results:
+- total_answers > 0
+- missing_answers = 0
+- status column shows all "OK"
+- Answers distributed across A, B, C, D
+
+
+STEP 3: DEPLOY EDGE FUNCTION
+-----------------------------
+cd soltriviaUI
+supabase functions deploy submit-answer
+
+Expected: "Deployed function submit-answer"
+
+NOTE: The submit-answer function is already updated to:
+- Query question_correct_answers table
+- Convert letter (A-D) to index (0-3)
+- Compare with user's answer
+
+
+STEP 4: TEST GAME
+-----------------
+Start trivia → Answer questions
+
+Expected:
+- Correct answers show GREEN
+- Points awarded
+- Game progresses
+- No errors in console
+
+
+TROUBLESHOOTING
+===============
+
+If migration fails:
+-------------------
+Error: "relation already exists"
+→ Table was created already, check if data migrated:
+  SELECT COUNT(*) FROM question_correct_answers;
+
+Error: "function already exists"
+→ Drop and recreate:
+  DROP FUNCTION sync_correct_answer_to_index() CASCADE;
+  DROP FUNCTION sync_correct_index_to_answer() CASCADE;
+  Then run migration again
+
+If game fails:
+--------------
+Error: "Question answer not found"
+→ Migration didn't complete
+→ Run verify-migration.sql step by step
+→ Check each step passes
+
+Error: "Failed to submit answer"
+→ Check Supabase logs: Edge Functions → submit-answer → Logs
+→ Enable debug: Set DEBUG_ANSWERS=true in Edge Function secrets
+
+If answers wrong:
+-----------------
+→ Use Admin Dashboard → Answer debug tab
+→ Load questions, click options, verify correct detection
+
+
+HOW IT WORKS NOW
+================
+
+OLD WAY:
+questions table → correct_index (0-3)
+                ↓
+          submit-answer reads index
+                ↓
+          compares with user selection
+
+NEW WAY:
+questions table → correct_index (0-3) ←──┐
+                                          │ (kept in sync by triggers)
+                                          │
+question_correct_answers → correct_answer (A-D) ←──┐
+                                                    │
+                                              submit-answer reads letter
+                                                    │
+                                              converts to index
+                                                    │
+                                              compares with user selection
+
+FRONTEND ALREADY WORKS
+======================
+✓ QuizView.tsx calls submitAnswer() API
+✓ submitAnswer() calls submit-answer Edge Function
+✓ Edge Function (UPDATED) queries question_correct_answers table
+✓ Returns correct/incorrect + points to frontend
+✓ Frontend shows green highlight on correct answer
+
+NO FRONTEND CHANGES NEEDED - Everything goes through the Edge Function!
+
+WHAT WAS FIXED
+==============
+✓ test-correct-answers-migration.sql - Changed 'test' category to 'solana' 
+✓ submit-answer Edge Function - Now reads from question_correct_answers table
+✓ AdminDashboardEnhanced - Shows letter badges (✓ A, ✓ B, ✓ C, ✓ D)
+✓ Migration script - Creates new table + triggers
+✓ Test script - Verifies everything works
+
+FILES CREATED
+=============
+✓ supabase/migrations/separate_correct_answers.sql - Main migration
+✓ test-correct-answers-migration.sql - Quick verification (simplified)
+✓ verify-migration.sql - Detailed step-by-step verification
+✓ pre-migration-check.sql - Check current state before migrating
+✓ DEPLOY_STEPS.txt - This file
+
+
+FILES MODIFIED
+==============
+✓ supabase/functions/submit-answer/index.ts - Reads from new table
+✓ components/AdminDashboardEnhanced.tsx - Shows letter badges
+
+
+ROLLBACK IF NEEDED
+===================
+DROP TABLE question_correct_answers CASCADE;
+DROP VIEW questions_with_answers CASCADE;
+DROP FUNCTION sync_correct_answer_to_index() CASCADE;
+DROP FUNCTION sync_correct_index_to_answer() CASCADE;
+
+Then redeploy old Edge Function:
+git checkout HEAD~1 supabase/functions/submit-answer/index.ts
+supabase functions deploy submit-answer

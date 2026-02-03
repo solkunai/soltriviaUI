@@ -135,10 +135,12 @@ serve(async (req) => {
     }
 
     // Fetch questions in session order (same order submit-answer uses)
+    // Use string keys so UUID type (string vs object) never causes wrong lookup
+    const questionIdsStr = questionIds.map((id) => String(id));
     const { data: questionsRows, error: questionsError } = await supabase
       .from('questions')
       .select('id, category, text, options, difficulty')
-      .in('id', questionIds);
+      .in('id', questionIdsStr);
 
     if (questionsError || !questionsRows?.length) {
       console.error('Failed to fetch questions:', questionsError);
@@ -148,8 +150,8 @@ serve(async (req) => {
       );
     }
 
-    const byId = new Map(questionsRows.map((q) => [q.id, q]));
-    const questions = questionIds.map((id) => byId.get(id)).filter(Boolean);
+    const byId = new Map(questionsRows.map((q) => [String(q.id), q]));
+    const questions = questionIdsStr.map((id) => byId.get(id)).filter(Boolean);
 
     // Ensure options is always an array in DB order (index 0-3 = A-D); correct_index refers to this order
     const normalizeOptions = (op: unknown): string[] => {
@@ -167,9 +169,9 @@ serve(async (req) => {
 
     const questionsWithTokens = questions.map((q, index) => ({
       index,
-      id: q.id,
-      category: q.category,
-      text: q.text,
+      id: String(q.id),
+      category: q.category ?? '',
+      text: q.text ?? '',
       options: normalizeOptions(q.options),
       difficulty: q.difficulty ?? '',
     }));

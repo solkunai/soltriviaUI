@@ -33,7 +33,8 @@ export interface Quest {
 }
 
 export interface Question {
-  id: number;
+  /** Question id: UUID string from API (for submit-answer) or number for display */
+  id: number | string;
   text: string;
   options: string[];
   correctAnswer: number;

@@ -67,6 +67,22 @@ CREATE INDEX IF NOT EXISTS idx_game_sessions_wallet ON public.game_sessions(wall
 CREATE INDEX IF NOT EXISTS idx_game_sessions_round ON public.game_sessions(round_id);
 CREATE INDEX IF NOT EXISTS idx_game_sessions_finished ON public.game_sessions(finished_at);
 
+-- 3b. Answers Table (per-question answers within a session; submit-answer inserts here)
+CREATE TABLE IF NOT EXISTS public.answers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID NOT NULL REFERENCES public.game_sessions(id) ON DELETE CASCADE,
+    question_id UUID REFERENCES public.questions(id),
+    question_index INTEGER NOT NULL,
+    selected_index INTEGER,
+    is_correct BOOLEAN,
+    points_earned INTEGER DEFAULT 0,
+    time_taken_ms INTEGER,
+    token TEXT,
+    issued_at TIMESTAMP WITH TIME ZONE,
+    answered_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+CREATE INDEX IF NOT EXISTS idx_answers_session ON public.answers(session_id);
+
 -- 4. Player Lives Table
 -- Tracks player lives (rolling entries)
 CREATE TABLE IF NOT EXISTS public.player_lives (
@@ -152,6 +168,7 @@ CREATE INDEX IF NOT EXISTS idx_admin_actions_date ON public.admin_actions(create
 ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.daily_rounds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.game_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.answers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.player_lives ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lives_purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.player_profiles ENABLE ROW LEVEL SECURITY;
@@ -192,6 +209,12 @@ CREATE POLICY "Users can view their own sessions"
 DROP POLICY IF EXISTS "Service role can manage sessions" ON public.game_sessions;
 CREATE POLICY "Service role can manage sessions"
     ON public.game_sessions FOR ALL
+    USING (auth.role() = 'service_role');
+
+-- Answers: Only Edge Functions (service role) insert/read; submit-answer inserts here
+DROP POLICY IF EXISTS "Service role can manage answers" ON public.answers;
+CREATE POLICY "Service role can manage answers"
+    ON public.answers FOR ALL
     USING (auth.role() = 'service_role');
 
 -- Player Lives: Public read access

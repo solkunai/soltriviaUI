@@ -1,0 +1,83 @@
+🔥 FINAL FIX - Database Schema Issue
+=====================================
+
+THE PROBLEM:
+============
+Your database's 'answers' table is missing the 'is_correct' column.
+Error: "Could not find the 'is_correct' column of 'answers' in the schema cache"
+
+
+THE FIX (2 STEPS):
+==================
+
+STEP 1: Fix Database Schema
+----------------------------
+Go to: https://app.supabase.com/project/uekqrkjiunezsytzyjmx/sql/new
+
+Copy/paste ALL of this file:
+📁 FIX_ANSWERS_TABLE.sql
+
+Click "RUN"
+
+You should see:
+✅ FIXED - is_correct column exists
+
+
+STEP 2: Test Again
+-------------------
+Refresh your browser and play the game.
+
+The error should be gone!
+
+
+WHAT THIS DOES:
+===============
+
+1. Creates 'answers' table if it doesn't exist
+2. Adds 'is_correct' column if it's missing
+3. Creates indexes and RLS policies
+4. Verifies the fix worked
+
+
+IF YOU WANT TO CHECK FIRST:
+============================
+
+Run: CHECK_ANSWERS_TABLE.sql
+This shows what columns your answers table currently has.
+
+Then run: FIX_ANSWERS_TABLE.sql
+This adds any missing columns.
+
+
+AFTER FIXING:
+=============
+
+The game will:
+✅ Record answers in database
+✅ Show correct/wrong feedback
+✅ Display correct answer when you select wrong one
+✅ Calculate points properly
+✅ Randomize questions per player
+
+
+WHY DID THIS HAPPEN?
+====================
+
+Your database schema is out of sync with the code.
+Probably because:
+- Database was created before schema file was updated
+- Migration wasn't run when deploying
+- Table was manually edited
+
+This fix brings everything into sync.
+
+
+NEXT STEPS:
+===========
+
+1. Run FIX_ANSWERS_TABLE.sql (most important!)
+2. Refresh browser
+3. Play game
+4. Should work perfectly now!
+
+If you see any other errors, share them and I'll fix immediately.
