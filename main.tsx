@@ -1,11 +1,11 @@
 // Main entry point - Vite will use this
-import { Buffer } from 'buffer';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './src/index.css';
 import App from './App';
 import { WalletProvider } from './src/contexts/WalletContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { Buffer } from 'buffer/';
 
 // Polyfill Buffer for Solana web3.js
 (window as any).Buffer = Buffer;

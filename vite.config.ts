@@ -75,6 +75,8 @@ export default defineConfig(({ mode, command }) => {
         ],
         // Exclude problematic packages from optimization
         exclude: ['derive-valtio'],
+        // Force optimization for buffer
+        force: true,
       },
       publicDir: 'public',
       build: {
@@ -130,6 +132,7 @@ export default defineConfig(({ mode, command }) => {
         } : {},
         // Suppress build warnings and fix module resolution
         rollupOptions: {
+          external: [],
           onwarn(warning, warn) {
             // Suppress specific warnings if needed
             if (warning.code === 'UNUSED_EXTERNAL_IMPORT') return;
@@ -139,6 +142,8 @@ export default defineConfig(({ mode, command }) => {
             if (warning.code === 'UNRESOLVED_IMPORT' && warning.source?.includes('valtio')) {
               return;
             }
+            // Suppress buffer parsing errors
+            if (warning.message?.includes('buffer')) return;
             warn(warning);
           },
           // Ensure valtio is properly resolved
