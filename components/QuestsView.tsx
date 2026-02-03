@@ -54,8 +54,12 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
 
   useEffect(() => {
     const sub = subscribeQuests((data) => setQuests(data));
-    return () => sub.unsubscribe();
-  }, []);
+    const questPoll = setInterval(loadQuests, 30000);
+    return () => {
+      sub.unsubscribe();
+      clearInterval(questPoll);
+    };
+  }, [loadQuests]);
 
   useEffect(() => {
     if (!connected || !publicKey) return;

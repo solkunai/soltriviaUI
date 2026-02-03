@@ -76,6 +76,16 @@
 </head>
 <body>
     <div id="root"></div>
+    <script>
+      (function () {
+        var ow = console.warn;
+        console.warn = function () {
+          var msg = String(arguments[0] || '');
+          if (/SES|unpermitted intrinsics|403|Forbidden|failed to get|Blockhash attempt|Fallback endpoint/.test(msg)) return;
+          ow.apply(console, arguments);
+        };
+      })();
+    </script>
     <!-- Buffer is provided via Vite alias to src/utils/buffer-polyfill.ts (ESM); no CDN script needed -->
     <script type="module" src="/main.tsx"></script>
 </body>

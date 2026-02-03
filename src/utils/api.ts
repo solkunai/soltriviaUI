@@ -379,10 +379,14 @@ export async function updateQuestProgress(walletAddress: string, questSlug: stri
   }
 }
 
+/** Use Realtime only when explicitly enabled; otherwise polling only (avoids WebSocket errors when proxy/network blocks wss). */
+const REALTIME_ON = import.meta.env.VITE_ENABLE_SUPABASE_REALTIME === 'true';
+
 export function subscribeUserQuestProgress(
   walletAddress: string,
   onData: (rows: UserQuestProgress[]) => void
 ): { unsubscribe: () => void } {
+  if (!REALTIME_ON) return { unsubscribe: () => {} };
   const channelName = `quest-progress-${walletAddress}`;
   const ch = supabase
     .channel(channelName)
@@ -406,6 +410,7 @@ export function subscribeUserQuestProgress(
 
 /** Subscribe to quests table changes (add/delete/update/pause). Refreshes active quest list. */
 export function subscribeQuests(onQuests: (quests: Quest[]) => void): { unsubscribe: () => void } {
+  if (!REALTIME_ON) return { unsubscribe: () => {} };
   const channelName = 'quests-realtime';
   const ch = supabase
     .channel(channelName)
@@ -448,7 +453,7 @@ export interface CurrentRoundStats {
   playersEntered: number;
 }
 
-/** Fetch current round pot and player count from Supabase (fast, single row). */
+/** Fetch current round pot and player count from Supabase (fast, single row). daily_rounds has pot_lamports + player_count only (no entry_count). */
 export async function fetchCurrentRoundStats(): Promise<CurrentRoundStats> {
   const { date, roundNumber } = getCurrentRoundKey();
   const { data, error } = await supabase
@@ -466,10 +471,11 @@ export async function fetchCurrentRoundStats(): Promise<CurrentRoundStats> {
   };
 }
 
-/** Realtime subscription: pool and players update instantly when someone enters. No polling. */
+/** Realtime subscription: pool and players update when someone enters. Uses polling when Realtime disabled. */
 export function subscribeCurrentRoundStats(
   onStats: (stats: CurrentRoundStats) => void
 ): { unsubscribe: () => void } {
+  if (!REALTIME_ON) return { unsubscribe: () => {} };
   const { date, roundNumber } = getCurrentRoundKey();
   const ch = supabase
     .channel('current-round-stats')
