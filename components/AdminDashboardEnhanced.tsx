@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../src/utils/supabase';
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, SUPABASE_FUNCTIONS_URL } from '../src/utils/constants';
@@ -120,6 +121,11 @@ const AdminDashboardEnhanced: React.FC = () => {
     }
   };
 
+  const getCreds = (): { u: string; p: string } => ({
+    u: import.meta.env.VITE_ADMIN_USERNAME || '',
+    p: import.meta.env.VITE_ADMIN_PASSWORD || '',
+  });
+
   return (
     <div className="min-h-screen bg-[#050505] text-white p-8">
       {/* Header */}
@@ -157,7 +163,12 @@ const AdminDashboardEnhanced: React.FC = () => {
       <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-8">
         {activeTab === 'stats' && <StatsView stats={stats} loading={loading} />}
         {activeTab === 'rankings' && <RankingsView />}
-        {activeTab === 'questions' && <QuestionsView />}
+        {activeTab === 'questions' && (
+          <QuestionsView
+            functionsUrl={SUPABASE_FUNCTIONS_URL}
+            getAdminCreds={getCreds}
+          />
+        )}
         {activeTab === 'quests' && <QuestsManagementView />}
         {activeTab === 'users' && <UsersView />}
         {activeTab === 'rounds' && <RoundsView />}
@@ -568,8 +579,13 @@ const QuestsManagementView: React.FC = () => {
   );
 };
 
-// Questions Management Tab
-const QuestionsView: React.FC = () => {
+// Questions Management Tab (uses manage-questions Edge Function so admin can bypass RLS)
+interface QuestionsViewProps {
+  functionsUrl: string;
+  getAdminCreds: () => { u: string; p: string };
+}
+
+const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl, getAdminCreds }) => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -588,27 +604,29 @@ const QuestionsView: React.FC = () => {
 
   const categories = ['solana', 'defi', 'nfts', 'bitcoin', 'memecoins', 'history'];
 
+  const callManageQuestions = async (action: string, payload?: Record<string, unknown>) => {
+    const creds = getAdminCreds();
+    const res = await fetch(`${functionsUrl}/manage-questions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminUsername: creds.u, adminPassword: creds.p, action, payload: payload ?? {} }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Request failed');
+    return json;
+  };
+
   useEffect(() => {
     fetchQuestions();
-  }, []);
+  }, [functionsUrl]);
 
   const fetchQuestions = async () => {
     setLoading(true);
     setError('');
     try {
-      const { data, error: fetchError } = await supabase
-        .from('questions')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (fetchError) {
-        if (fetchError.message?.includes('JWT') || fetchError.message?.includes('auth')) {
-          throw new Error('Supabase not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.local');
-        }
-        throw fetchError;
-      }
-      setQuestions(data || []);
+      const json = await callManageQuestions('list', { limit: 100 });
+      const data = (json.data || []) as Question[];
+      setQuestions(data);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch questions');
     } finally {
@@ -623,48 +641,28 @@ const QuestionsView: React.FC = () => {
     setSuccess('');
 
     try {
-      // Validate options
       if (formData.options.some(opt => !opt.trim())) {
         throw new Error('All options must be filled');
       }
 
-      // Convert options array to JSONB format
       const optionsJsonb = JSON.stringify(formData.options);
+      const row = {
+        category: formData.category,
+        text: formData.text,
+        options: optionsJsonb,
+        correct_index: formData.correct_index,
+        difficulty: formData.difficulty,
+        active: formData.active,
+      };
 
       if (editingQuestion?.id) {
-        // Update existing question
-        const { error: updateError } = await supabase
-          .from('questions')
-          .update({
-            category: formData.category,
-            text: formData.text,
-            options: optionsJsonb,
-            correct_index: formData.correct_index,
-            difficulty: formData.difficulty,
-            active: formData.active,
-          })
-          .eq('id', editingQuestion.id);
-
-        if (updateError) throw updateError;
+        await callManageQuestions('update', { id: editingQuestion.id, ...row });
         setSuccess('Question updated successfully!');
       } else {
-        // Add new question
-        const { error: insertError } = await supabase
-          .from('questions')
-          .insert({
-            category: formData.category,
-            text: formData.text,
-            options: optionsJsonb,
-            correct_index: formData.correct_index,
-            difficulty: formData.difficulty,
-            active: formData.active,
-          });
-
-        if (insertError) throw insertError;
+        await callManageQuestions('create', row);
         setSuccess('Question added successfully!');
       }
 
-      // Reset form and refresh
       setFormData({
         category: 'solana',
         text: '',
@@ -688,7 +686,7 @@ const QuestionsView: React.FC = () => {
     setFormData({
       category: question.category,
       text: question.text,
-      options: Array.isArray(question.options) ? question.options : JSON.parse(question.options as any),
+      options: Array.isArray(question.options) ? question.options : (typeof question.options === 'string' ? JSON.parse(question.options) : ['', '', '', '']),
       correct_index: question.correct_index,
       difficulty: question.difficulty,
       active: question.active,
@@ -700,12 +698,7 @@ const QuestionsView: React.FC = () => {
     if (!confirm('Are you sure you want to delete this question?')) return;
 
     try {
-      const { error: deleteError } = await supabase
-        .from('questions')
-        .delete()
-        .eq('id', id);
-
-      if (deleteError) throw deleteError;
+      await callManageQuestions('delete', { id });
       setSuccess('Question deleted successfully!');
       fetchQuestions();
     } catch (err: any) {
@@ -715,12 +708,7 @@ const QuestionsView: React.FC = () => {
 
   const handleToggleActive = async (id: string, currentActive: boolean) => {
     try {
-      const { error: updateError } = await supabase
-        .from('questions')
-        .update({ active: !currentActive })
-        .eq('id', id);
-
-      if (updateError) throw updateError;
+      await callManageQuestions('set_active', { id, active: !currentActive });
       setSuccess(`Question ${!currentActive ? 'activated' : 'deactivated'} successfully!`);
       fetchQuestions();
     } catch (err: any) {
