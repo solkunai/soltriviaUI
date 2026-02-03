@@ -79,9 +79,17 @@ serve(async (req) => {
     const supabase = getSupabaseClient();
 
     const url = new URL(req.url);
-    const period = url.searchParams.get('period') || 'daily'; // daily, weekly, all-time
-    const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
-    const wallet = url.searchParams.get('wallet'); // optional: get user's rank
+    let period = url.searchParams.get('period') || 'daily';
+    let limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
+    let wallet = url.searchParams.get('wallet') || undefined;
+    if (req.method === 'POST') {
+      try {
+        const body = await req.json().catch(() => ({}));
+        if (body.period) period = body.period;
+        if (body.limit != null) limit = Math.min(Number(body.limit), 100);
+        if (body.wallet) wallet = body.wallet;
+      } catch (_) {}
+    }
 
     const today = new Date().toISOString().split('T')[0];
 
@@ -98,58 +106,63 @@ serve(async (req) => {
     let playerCount = 0;
 
     if (period === 'daily') {
-      // Get current active round or most recent completed round
+      // Use daily_rounds (same as start-game): current 6-hour window by date + round_number
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const currentHour = now.getUTCHours();
+      const roundNumber = Math.floor(currentHour / 6);
+
       const { data: round } = await supabase
-        .from('rounds')
-        .select('id, pot_lamports, entry_count')
-        .or(`status.eq.active,status.eq.ended,status.eq.paid_out`)
-        .order('ends_at', { ascending: false })
-        .limit(1)
+        .from('daily_rounds')
+        .select('id, pot_lamports, player_count')
+        .eq('date', today)
+        .eq('round_number', roundNumber)
         .single();
 
       if (round) {
-        potLamports = round.pot_lamports;
-        playerCount = round.entry_count;
+        potLamports = round.pot_lamports ?? 0;
+        playerCount = round.player_count ?? 0;
 
-        // Get top scores for today
+        // Get top scores for this round (support both score and total_points column names)
         const { data: sessions } = await supabase
           .from('game_sessions')
-          .select('wallet_address, score, correct_count')
+          .select('wallet_address, score, total_points, correct_count, correct_answers, time_taken_ms')
           .eq('round_id', round.id)
           .not('finished_at', 'is', null)
-          .order('score', { ascending: false })
-          .limit(limit);
+          .limit(limit * 2);
 
-        if (sessions) {
-          leaderboard = sessions.map((s, i) => ({
+        if (sessions && sessions.length > 0) {
+          const byScore = (s: any) => Number(s.score ?? s.total_points ?? 0);
+          const sorted = [...sessions].sort((a, b) => byScore(b) - byScore(a)).slice(0, limit);
+          leaderboard = sorted.map((s: any, i: number) => ({
             rank: i + 1,
             wallet_address: s.wallet_address,
-            score: s.score,
-            correct_count: s.correct_count,
+            score: byScore(s),
+            correct_count: s.correct_count ?? s.correct_answers ?? 0,
           }));
         }
 
         // Get user's rank if wallet provided
         if (wallet) {
-          const { data: userSession } = await supabase
-            .from('game_sessions')
-            .select('score')
-            .eq('round_id', round.id)
-            .eq('wallet_address', wallet)
-            .not('finished_at', 'is', null)
-            .single();
-
-          if (userSession) {
-            userScore = userSession.score;
-            // Count how many scores are higher
-            const { count } = await supabase
+          const userEntry = leaderboard.find((e: any) => e.wallet_address === wallet);
+          if (userEntry) {
+            userRank = userEntry.rank;
+            userScore = userEntry.score;
+          } else {
+            // User not in top N: fetch their session for this round to get score and compute rank
+            const { data: userSession } = await supabase
               .from('game_sessions')
-              .select('*', { count: 'exact', head: true })
+              .select('score, total_points')
               .eq('round_id', round.id)
+              .eq('wallet_address', wallet)
               .not('finished_at', 'is', null)
-              .gt('score', userSession.score);
-
-            userRank = (count || 0) + 1;
+              .single();
+            if (userSession) {
+              const uScore = Number((userSession as any).score ?? (userSession as any).total_points ?? 0);
+              userScore = uScore;
+              const higher = (sessions || []).filter((s: any) => (Number(s.score ?? s.total_points ?? 0)) > uScore).length;
+              userRank = higher + 1;
+            }
           }
         }
       }

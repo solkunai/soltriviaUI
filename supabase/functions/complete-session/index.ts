@@ -104,10 +104,10 @@ serve(async (req) => {
       );
     }
 
-    // Get the session
+    // Get the session (select * to support both schemas: score/total_points, correct_count/correct_answers, time_taken_ms/time_taken_seconds)
     const { data: session, error: sessionError } = await supabase
       .from('game_sessions')
-      .select('id, round_id, wallet_address, player_id, completed_at, score, correct_count')
+      .select('*')
       .eq('id', session_id)
       .single();
 
@@ -118,23 +118,29 @@ serve(async (req) => {
       );
     }
 
-    if (session.completed_at) {
+    const sessionAny = session as Record<string, unknown>;
+    if (sessionAny.completed_at) {
       return new Response(
         JSON.stringify({ error: 'Session already completed' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Update session with final results
+    const completedAt = new Date().toISOString();
+    const sessionUpdate: Record<string, unknown> = {
+      completed_at: completedAt,
+      finished_at: completedAt,
+    };
+    if ('score' in sessionAny) sessionUpdate.score = total_score;
+    if ('total_points' in sessionAny) sessionUpdate.total_points = total_score;
+    if ('correct_count' in sessionAny) sessionUpdate.correct_count = correct_count;
+    if ('correct_answers' in sessionAny) sessionUpdate.correct_answers = correct_count;
+    if ('time_taken_ms' in sessionAny) sessionUpdate.time_taken_ms = time_taken_ms;
+    if ('time_taken_seconds' in sessionAny) sessionUpdate.time_taken_seconds = Math.round(time_taken_ms / 1000);
+
     const { error: updateError } = await supabase
       .from('game_sessions')
-      .update({
-        score: total_score,
-        correct_count: correct_count,
-        time_taken_ms: time_taken_ms,
-        completed_at: new Date().toISOString(),
-        finished_at: new Date().toISOString(),
-      })
+      .update(sessionUpdate)
       .eq('id', session_id);
 
     if (updateError) {
@@ -145,25 +151,70 @@ serve(async (req) => {
       );
     }
 
-    // Update player stats
-    const { data: player, error: playerError } = await supabase
-      .from('players')
-      .select('games_played')
-      .eq('id', session.player_id)
-      .single();
+    const wallet = (session as Record<string, unknown>).wallet_address as string;
 
-    if (!playerError && player) {
-      await supabase
+    // Update players table if it exists and session has player_id
+    const playerId = (session as Record<string, unknown>).player_id;
+    if (playerId) {
+      const { data: player, error: playerError } = await supabase
         .from('players')
-        .update({
-          games_played: player.games_played + 1,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', session.player_id);
+        .select('games_played')
+        .eq('id', playerId)
+        .single();
+
+      if (!playerError && player) {
+        await supabase
+          .from('players')
+          .update({
+            games_played: (player as { games_played: number }).games_played + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', playerId);
+      }
     }
 
-    // Calculate rankings for the round (only count completed sessions)
-    await supabase.rpc('calculate_rankings', { p_round_id: session.round_id });
+    // Sync player_profiles (total_games_played, total_points, highest_score) so profile/leaderboard show correct stats
+    try {
+      const { data: profile } = await supabase
+        .from('player_profiles')
+        .select('wallet_address, total_games_played, total_points, highest_score, last_activity_date')
+        .eq('wallet_address', wallet)
+        .single();
+
+      const today = new Date().toISOString().split('T')[0];
+      if (profile) {
+        await supabase
+          .from('player_profiles')
+          .update({
+            total_games_played: ((profile as any).total_games_played ?? 0) + 1,
+            total_points: ((profile as any).total_points ?? 0) + total_score,
+            highest_score: Math.max((profile as any).highest_score ?? 0, total_score),
+            last_activity_date: today,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('wallet_address', wallet);
+      } else {
+        await supabase
+          .from('player_profiles')
+          .insert({
+            wallet_address: wallet,
+            total_games_played: 1,
+            total_points: total_score,
+            highest_score: total_score,
+            last_activity_date: today,
+            updated_at: new Date().toISOString(),
+          });
+      }
+    } catch (profileErr) {
+      console.error('Player profile sync failed (non-fatal):', profileErr);
+    }
+
+    // Calculate rankings for the round (only count completed sessions); RPC may not exist in all schemas
+    try {
+      await supabase.rpc('calculate_rankings', { p_round_id: (session as Record<string, unknown>).round_id });
+    } catch (_) {
+      // RPC might not exist; rank will be computed on read
+    }
 
     // Get the player's rank after calculation
     const { data: updatedSession, error: rankError } = await supabase

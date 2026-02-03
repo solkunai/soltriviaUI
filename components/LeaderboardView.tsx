@@ -34,30 +34,47 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
     const fetchLeaderboard = async () => {
       try {
         setLoading(true);
-        const response = await getLeaderboard();
+        const userAddress = publicKey?.toBase58();
+        const response = await getLeaderboard(undefined, userAddress || undefined);
         
-        // API returns { leaderboard: [...], period, pot_lamports, player_count, etc }
+        // API returns { leaderboard: [...], period, pot_lamports, player_count, user_rank, user_score }
         const data = Array.isArray(response) ? response : (response.leaderboard || []);
         setLeaderboardData(data);
         
-        // Update pot and player count from API response
         if (!Array.isArray(response)) {
-          const potSol = (response.pot_lamports || 0) / 1_000_000_000; // Convert lamports to SOL
+          const potSol = (response.pot_lamports || 0) / 1_000_000_000;
           setTotalSolWon(potSol);
           setPlayerCount(response.player_count || 0);
-        }
-        
-        // Find user's rank if wallet is connected
-        if (publicKey && Array.isArray(data)) {
-          const userAddress = publicKey.toBase58();
+          // Use API user_rank/user_score when provided; else find in list
+          if (userAddress && (response.user_rank != null || response.user_score != null)) {
+            setUserRank({
+              rank: response.user_rank ?? 0,
+              wallet_address: userAddress,
+              display_name: null,
+              avatar: '',
+              avatar_bg_color: '',
+              score: response.user_score ?? 0,
+              correct_count: 0,
+              time_taken_ms: 0,
+            });
+          } else if (userAddress && Array.isArray(data)) {
+            const userEntry = data.find(entry => entry.wallet_address === userAddress);
+            setUserRank(userEntry || null);
+          } else {
+            setUserRank(null);
+          }
+        } else if (userAddress && Array.isArray(data)) {
           const userEntry = data.find(entry => entry.wallet_address === userAddress);
           setUserRank(userEntry || null);
+        } else {
+          setUserRank(null);
         }
       } catch (error) {
         console.error('Error fetching leaderboard:', error);
-        setLeaderboardData([]); // Set empty array on error
+        setLeaderboardData([]);
         setTotalSolWon(0);
         setPlayerCount(0);
+        setUserRank(null);
       } finally {
         setLoading(false);
       }
