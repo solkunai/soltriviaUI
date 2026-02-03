@@ -139,14 +139,82 @@ const App: React.FC = () => {
     }
   }, [currentView]);
 
-  // Mock global state for profile
+  // Profile state
   const [profile, setProfile] = useState({
     username: 'Solana_Sage',
     avatar: 'https://picsum.photos/id/237/400/400?grayscale'
   });
+  const [profileLoading, setProfileLoading] = useState(false);
 
-  const handleUpdateProfile = (username: string, avatar: string) => {
+  // Fetch profile data when wallet connects
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!connected || !publicKey) {
+        // Reset to default when disconnected
+        setProfile({
+          username: 'Solana_Sage',
+          avatar: 'https://picsum.photos/id/237/400/400?grayscale'
+        });
+        return;
+      }
+
+      setProfileLoading(true);
+      const walletAddress = publicKey.toBase58();
+
+      try {
+        // Fetch from Supabase
+        const { data: profileData, error } = await supabase
+          .from('player_profiles')
+          .select('username, avatar_url')
+          .eq('wallet_address', walletAddress)
+          .single();
+
+        if (profileData && !error) {
+          setProfile({
+            username: profileData.username || 'Solana_Sage',
+            avatar: profileData.avatar_url || 'https://picsum.photos/id/237/400/400?grayscale'
+          });
+        } else if (error && error.code !== 'PGRST116') {
+          // Error other than "not found" - log it
+          console.error('Error fetching profile:', error);
+        }
+        // If no profile found (PGRST116), keep defaults
+      } catch (err) {
+        console.error('Failed to fetch profile:', err);
+      } finally {
+        setProfileLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, [connected, publicKey]);
+
+  const handleUpdateProfile = async (username: string, avatar: string) => {
+    if (!publicKey) return;
+
+    // Optimistically update UI
     setProfile({ username, avatar });
+
+    const walletAddress = publicKey.toBase58();
+
+    try {
+      // Update in Supabase
+      const { error } = await supabase
+        .from('player_profiles')
+        .update({
+          username,
+          avatar_url: avatar,
+          updated_at: new Date().toISOString()
+        })
+        .eq('wallet_address', walletAddress);
+
+      if (error) {
+        console.error('Failed to update profile:', error);
+        // You might want to show a toast notification here
+      }
+    } catch (err) {
+      console.error('Failed to update profile:', err);
+    }
   };
 
   const handleQuizFinish = (score: number, points: number, totalTime: number) => {

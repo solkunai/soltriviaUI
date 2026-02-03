@@ -67,24 +67,28 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, cu
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 backdrop-blur-3xl bg-black/90 animate-fade-in overflow-hidden">
-      <div className="relative w-full max-w-lg bg-[#0D0D0D] border border-white/10 shadow-[0_0_100px_rgba(0,0,0,1)] overflow-hidden flex flex-col rounded-2xl">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 backdrop-blur-3xl bg-black/90 animate-fade-in">
+      <div className="relative w-full max-w-lg max-h-[90vh] bg-[#0D0D0D] border border-white/10 shadow-[0_0_100px_rgba(0,0,0,1)] flex flex-col rounded-2xl overflow-hidden">
         {/* Color Strip */}
-        <div className="h-1.5 w-full bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#10b981]"></div>
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#10b981] flex-shrink-0"></div>
         
-        <div className="p-8">
-          <div className="flex justify-between items-start mb-8">
+        {/* Fixed Header */}
+        <div className="p-8 pb-6 flex-shrink-0">
+          <div className="flex justify-between items-start">
             <div>
               <span className="text-[#00FFA3] text-[10px] font-black tracking-[0.4em] uppercase mb-1 block italic">DISPLAY CONFIGURATION</span>
               <h2 className="text-3xl font-[1000] italic uppercase tracking-tighter text-white leading-none">PROFILE <span className="sol-gradient-text">DISPLAY</span></h2>
             </div>
-            <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors p-2">
+            <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors p-2 -mt-2 -mr-2">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
+        </div>
 
+        {/* Scrollable Content */}
+        <div className="px-8 pb-8 overflow-y-auto flex-1 custom-scrollbar">
           <div className="space-y-8">
             {/* Username Field */}
             <div>
