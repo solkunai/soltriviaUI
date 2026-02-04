@@ -23,7 +23,7 @@ interface LeaderboardViewProps {
 
 const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
   const [mainTab, setMainTab] = useState<MainLeaderboardTab>('LEADERBOARD');
-  const [period, setPeriod] = useState<RankPeriod>('WEEKLY');
+  const [period, setPeriod] = useState<RankPeriod>('DAILY'); // Default to current round (6-hour window)
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,13 +33,14 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
   const [roundsLoading, setRoundsLoading] = useState(false);
   const { publicKey } = useWallet();
 
-  // Fetch leaderboard data and refresh every 5 seconds
+  // Fetch leaderboard for current round; refresh every 2s so it updates as users earn XP
+  const periodApi = period === 'DAILY' ? 'daily' : period === 'WEEKLY' ? 'weekly' : 'monthly';
   useEffect(() => {
-    const fetchLeaderboard = async () => {
+    const fetchLeaderboard = async (showLoading: boolean) => {
       try {
-        setLoading(true);
+        if (showLoading) setLoading(true);
         const userAddress = publicKey?.toBase58();
-        const response = await getLeaderboard(undefined, userAddress || undefined);
+        const response = await getLeaderboard(undefined, userAddress || undefined, periodApi);
         
         // API returns { leaderboard: [...], period, pot_lamports, player_count, user_rank, user_score }
         const data = Array.isArray(response) ? response : (response.leaderboard || []);
@@ -83,14 +84,14 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
         setLoading(false);
       }
     };
-    
-    fetchLeaderboard();
-    
-    // Refresh every 5 seconds for real-time updates
-    const interval = setInterval(fetchLeaderboard, 5000);
-    
+
+    fetchLeaderboard(true);
+
+    // Refresh every 2 seconds so rankings update as users earn XP (silent refresh, no loading flash)
+    const interval = setInterval(() => fetchLeaderboard(false), 2000);
+
     return () => clearInterval(interval);
-  }, [publicKey, period]);
+  }, [publicKey, period, periodApi]);
 
   // Fetch round winners when Round Wins tab is selected
   useEffect(() => {
@@ -255,8 +256,11 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
           </div>
         </div>
 
-        {/* Period Tabs */}
-        <div className="flex justify-center mb-10 px-4">
+        {/* Period Tabs — DAILY = current 6-hour round, updates live */}
+        <div className="flex flex-col items-center gap-2 mb-10 px-4">
+          {period === 'DAILY' && (
+            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">Current round · updates as players earn XP</p>
+          )}
           <div className="flex w-full max-w-md items-center justify-between bg-black/40 p-1.5 rounded-full border border-white/10">
             {(['DAILY', 'WEEKLY', 'MONTHLY'] as RankPeriod[]).map((p) => (
               <button
