@@ -353,16 +353,30 @@ serve(async (req) => {
 
     console.log('✅ Lives updated successfully:', updatedLives);
 
-    // Quest: Healing Master (total lives purchased)
+    // Quest: Healing Master (total lives purchased); auto-claim when progress >= 15
     try {
-      const { data: quest } = await supabase.from('quests').select('id').eq('slug', 'healing_master').single();
+      const { data: quest } = await supabase.from('quests').select('id, reward_tp, requirement_config').eq('slug', 'healing_master').single();
       if (quest?.id) {
+        const progress = updatedLives.total_purchased || 0;
+        const maxProgress = (quest.requirement_config as { max?: number })?.max ?? 15;
+        const rewardTP = quest.reward_tp ?? 0;
         await supabase.from('user_quest_progress').upsert({
           wallet_address: walletAddress,
           quest_id: quest.id,
-          progress: updatedLives.total_purchased || 0,
+          progress,
+          ...(progress >= maxProgress && { completed_at: new Date().toISOString() }),
           updated_at: new Date().toISOString(),
         }, { onConflict: 'wallet_address,quest_id' });
+        if (progress >= maxProgress && rewardTP > 0) {
+          const { data: row } = await supabase.from('user_quest_progress').select('claimed_at').eq('wallet_address', walletAddress).eq('quest_id', quest.id).single();
+          if (row && !row.claimed_at) {
+            const now = new Date().toISOString();
+            await supabase.from('user_quest_progress').update({ claimed_at: now, updated_at: now }).eq('wallet_address', walletAddress).eq('quest_id', quest.id);
+            const { data: profile } = await supabase.from('player_profiles').select('total_points').eq('wallet_address', walletAddress).single();
+            const currentTP = profile?.total_points ?? 0;
+            await supabase.from('player_profiles').update({ total_points: currentTP + rewardTP, updated_at: now }).eq('wallet_address', walletAddress);
+          }
+        }
       }
     } catch (questErr) {
       console.error('Quest progress (healing_master) update failed:', questErr);

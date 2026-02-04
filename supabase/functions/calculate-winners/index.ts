@@ -169,6 +169,37 @@ serve(async (req) => {
           })
           .eq('wallet_address', entry.wallet_address);
       }
+
+      // Quest: Knowledge Bowl (win 3 games) — update winner's progress and auto-claim if >= 3
+      const winnerWallet = leaderboard[0].wallet_address;
+      try {
+        const { data: winnerProfile } = await supabase.from('player_profiles').select('total_wins').eq('wallet_address', winnerWallet).single();
+        const totalWins = (winnerProfile as any)?.total_wins ?? 0;
+        const { data: quest } = await supabase.from('quests').select('id, reward_tp, requirement_config').eq('slug', 'knowledge_bowl').single();
+        if (quest?.id) {
+          const maxProgress = (quest.requirement_config as { max?: number })?.max ?? 3;
+          const rewardTP = quest.reward_tp ?? 0;
+          await supabase.from('user_quest_progress').upsert({
+            wallet_address: winnerWallet,
+            quest_id: quest.id,
+            progress: totalWins,
+            ...(totalWins >= maxProgress && { completed_at: new Date().toISOString() }),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'wallet_address,quest_id' });
+          if (totalWins >= maxProgress && rewardTP > 0) {
+            const { data: row } = await supabase.from('user_quest_progress').select('claimed_at').eq('wallet_address', winnerWallet).eq('quest_id', quest.id).single();
+            if (row && !row.claimed_at) {
+              const now = new Date().toISOString();
+              await supabase.from('user_quest_progress').update({ claimed_at: now, updated_at: now }).eq('wallet_address', winnerWallet).eq('quest_id', quest.id);
+              const { data: pf } = await supabase.from('player_profiles').select('total_points').eq('wallet_address', winnerWallet).single();
+              const tp = (pf as any)?.total_points ?? 0;
+              await supabase.from('player_profiles').update({ total_points: tp + rewardTP, updated_at: now }).eq('wallet_address', winnerWallet);
+            }
+          }
+        }
+      } catch (questErr) {
+        console.error('Knowledge Bowl quest update failed:', questErr);
+      }
     }
 
     return new Response(

@@ -226,6 +226,15 @@ const App: React.FC = () => {
             username: profileData.username || 'Solana_Sage',
             avatar: profileData.avatar_url || DEFAULT_AVATAR,
           });
+          // Mark identity_sync quest complete if profile is set up (username or avatar)
+          const hasProfile = (profileData.username && String(profileData.username).trim() !== '') || (profileData.avatar_url && String(profileData.avatar_url).trim() !== '');
+          if (hasProfile) {
+            try {
+              await updateQuestProgress(walletAddress, 'identity_sync', 1);
+            } catch (_) {
+              // ignore
+            }
+          }
         } else if (error && error.code !== 'PGRST116') {
           console.error('Error fetching profile:', error);
         }

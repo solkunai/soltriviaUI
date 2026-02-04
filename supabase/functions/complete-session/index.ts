@@ -225,31 +225,65 @@ serve(async (req) => {
 
     const rank = rankError ? null : updatedSession?.rank;
 
-    // Quest progress: trivia_nerd (10/10 in one game), daily_quizzer (games today), trivia_genius (4 perfect in a day)
+    // Quest progress: trivia_nerd, daily_quizzer, trivia_genius, genesis_streak (7-day daily chain)
     try {
       const wallet = session.wallet_address;
       const { data: round } = await supabase.from('daily_rounds').select('date').eq('id', session.round_id).single();
       const roundDate = round?.date;
       if (wallet && roundDate) {
-        const { data: questRows } = await supabase.from('quests').select('id, slug').in('slug', ['trivia_nerd', 'daily_quizzer', 'trivia_genius']);
-        const bySlug: Record<string, string> = {};
-        (questRows || []).forEach((q: { id: string; slug: string }) => { bySlug[q.slug] = q.id; });
+        const { data: questRows } = await supabase.from('quests').select('id, slug, reward_tp, requirement_config').in('slug', ['trivia_nerd', 'daily_quizzer', 'trivia_genius', 'genesis_streak']);
+        const bySlug: Record<string, { id: string; reward_tp?: number; max?: number }> = {};
+        (questRows || []).forEach((q: any) => {
+          bySlug[q.slug] = { id: q.id, reward_tp: q.reward_tp, max: (q.requirement_config?.max ?? 1) };
+        });
 
         if (correct_count >= 10 && bySlug.trivia_nerd) {
-          await supabase.from('user_quest_progress').upsert({ wallet_address: wallet, quest_id: bySlug.trivia_nerd, progress: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'wallet_address,quest_id' });
+          await supabase.from('user_quest_progress').upsert({ wallet_address: wallet, quest_id: bySlug.trivia_nerd.id, progress: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'wallet_address,quest_id' });
         }
 
         const { data: roundsToday } = await supabase.from('daily_rounds').select('id').eq('date', roundDate);
         const roundIdsToday = (roundsToday || []).map((r: { id: string }) => r.id);
-        const { data: sessionsToday } = await supabase.from('game_sessions').select('round_id, correct_count').eq('wallet_address', wallet).not('finished_at', 'is', null).in('round_id', roundIdsToday);
+        const { data: sessionsToday } = await supabase.from('game_sessions').select('round_id, correct_count, correct_answers').eq('wallet_address', wallet).not('finished_at', 'is', null).in('round_id', roundIdsToday);
         const countToday = (sessionsToday || []).length;
-        const perfectToday = (sessionsToday || []).filter((s: any) => s.correct_count >= 10).length;
+        const correctPerSession = (s: any) => s.correct_count ?? s.correct_answers ?? 0;
+        const perfectToday = (sessionsToday || []).filter((s: any) => correctPerSession(s) >= 10).length;
 
         if (bySlug.daily_quizzer) {
-          await supabase.from('user_quest_progress').upsert({ wallet_address: wallet, quest_id: bySlug.daily_quizzer, progress: Math.min(countToday, 4), updated_at: new Date().toISOString() }, { onConflict: 'wallet_address,quest_id' });
+          const dailyProgress = Math.min(countToday, 4);
+          const completedAt = dailyProgress >= 4 ? new Date().toISOString() : undefined;
+          await supabase.from('user_quest_progress').upsert(
+            { wallet_address: wallet, quest_id: bySlug.daily_quizzer.id, progress: dailyProgress, ...(completedAt && { completed_at: completedAt }), updated_at: new Date().toISOString() },
+            { onConflict: 'wallet_address,quest_id' }
+          );
         }
         if (perfectToday >= 4 && bySlug.trivia_genius) {
-          await supabase.from('user_quest_progress').upsert({ wallet_address: wallet, quest_id: bySlug.trivia_genius, progress: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'wallet_address,quest_id' });
+          await supabase.from('user_quest_progress').upsert({ wallet_address: wallet, quest_id: bySlug.trivia_genius.id, progress: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'wallet_address,quest_id' });
+        }
+
+        // Genesis streak: from player_profiles.current_streak (updated by submit-answer)
+        const { data: profileForStreak } = await supabase.from('player_profiles').select('current_streak').eq('wallet_address', wallet).single();
+        const currentStreak = Math.min((profileForStreak as any)?.current_streak ?? 0, 7);
+        if (bySlug.genesis_streak && currentStreak > 0) {
+          const completedAt = currentStreak >= 7 ? new Date().toISOString() : undefined;
+          await supabase.from('user_quest_progress').upsert(
+            { wallet_address: wallet, quest_id: bySlug.genesis_streak.id, progress: currentStreak, ...(completedAt && { completed_at: completedAt }), updated_at: new Date().toISOString() },
+            { onConflict: 'wallet_address,quest_id' }
+          );
+        }
+
+        // Auto-claim: for any completed quest (progress >= max), set claimed_at and add TP if not already claimed
+        const now = new Date().toISOString();
+        for (const slug of ['trivia_nerd', 'daily_quizzer', 'trivia_genius', 'genesis_streak']) {
+          const q = bySlug[slug];
+          if (!q?.id || q.reward_tp == null || q.reward_tp <= 0) continue;
+          const max = q.max ?? 1;
+          const { data: prog } = await supabase.from('user_quest_progress').select('progress, claimed_at').eq('wallet_address', wallet).eq('quest_id', q.id).single();
+          if (prog && (prog as any).progress >= max && !(prog as any).claimed_at) {
+            await supabase.from('user_quest_progress').update({ claimed_at: now, updated_at: now }).eq('wallet_address', wallet).eq('quest_id', q.id);
+            const { data: pf } = await supabase.from('player_profiles').select('total_points').eq('wallet_address', wallet).single();
+            const tp = (pf as any)?.total_points ?? 0;
+            await supabase.from('player_profiles').update({ total_points: tp + q.reward_tp, updated_at: now }).eq('wallet_address', wallet);
+          }
         }
       }
     } catch (questErr) {

@@ -75,12 +75,12 @@ serve(async (req) => {
       );
     }
 
-    // Get quest details
+    // Get quest details (column is is_active per quests_schema)
     const { data: quest, error: questError } = await supabase
       .from('quests')
       .select('*')
       .eq('id', quest_id)
-      .eq('active', true)
+      .eq('is_active', true)
       .single();
 
     if (questError || !quest) {

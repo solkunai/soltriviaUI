@@ -45,21 +45,37 @@ serve(async (req) => {
     }
 
     const supabase = getSupabaseClient();
-    const { data: quest } = await supabase.from('quests').select('id').eq('slug', quest_slug).single();
+    const { data: quest } = await supabase.from('quests').select('id, reward_tp, requirement_config').eq('slug', quest_slug).eq('is_active', true).single();
     if (!quest?.id) {
       return new Response(JSON.stringify({ error: 'Quest not found' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
+    const progressNum = Number(progress) || 0;
+    const maxProgress = (quest.requirement_config as { max?: number })?.max ?? 1;
+    const rewardTP = quest.reward_tp ?? 0;
+
     const payload: Record<string, unknown> = {
       wallet_address,
       quest_id: quest.id,
-      progress: Number(progress) || 0,
+      progress: progressNum,
       updated_at: new Date().toISOString(),
     };
-    if (payload.progress >= 1) payload.completed_at = new Date().toISOString();
+    if (progressNum >= maxProgress) payload.completed_at = new Date().toISOString();
 
     const { error } = await supabase.from('user_quest_progress').upsert(payload, { onConflict: 'wallet_address,quest_id' });
     if (error) throw error;
+
+    // Auto-claim: if just completed and not yet claimed, set claimed_at and add TP
+    if (progressNum >= maxProgress && rewardTP > 0) {
+      const { data: row } = await supabase.from('user_quest_progress').select('claimed_at').eq('wallet_address', wallet_address).eq('quest_id', quest.id).single();
+      if (row && !row.claimed_at) {
+        const now = new Date().toISOString();
+        await supabase.from('user_quest_progress').update({ claimed_at: now, updated_at: now }).eq('wallet_address', wallet_address).eq('quest_id', quest.id);
+        const { data: profile } = await supabase.from('player_profiles').select('total_points').eq('wallet_address', wallet_address).single();
+        const currentTP = profile?.total_points ?? 0;
+        await supabase.from('player_profiles').update({ total_points: currentTP + rewardTP, updated_at: now }).eq('wallet_address', wallet_address);
+      }
+    }
 
     return new Response(JSON.stringify({ ok: true }), { headers: { ...cors, 'Content-Type': 'application/json' } });
   } catch (e) {

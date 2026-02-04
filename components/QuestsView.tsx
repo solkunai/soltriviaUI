@@ -84,6 +84,7 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
 
   const getProgress = (questId: string) => progressMap[questId]?.progress ?? 0;
   const getCompleted = (questId: string) => progressMap[questId]?.completed_at != null;
+  const getClaimed = (questId: string) => progressMap[questId]?.claimed_at != null;
 
   const questCategories = React.useMemo(() => {
     const byCategory: Record<string, Quest[]> = {};
@@ -155,6 +156,7 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
                       quest={quest}
                       progress={getProgress(quest.id)}
                       completed={getCompleted(quest.id)}
+                      claimed={getClaimed(quest.id)}
                       showInput={quest.slug === 'true_raider' && showRaiderInput}
                       inputValue={raiderUrl}
                       onInputChange={setRaiderUrl}
@@ -203,6 +205,7 @@ interface QuestCardProps {
   quest: Quest;
   progress: number;
   completed: boolean;
+  claimed?: boolean;
   showInput?: boolean;
   inputValue?: string;
   onInputChange?: (v: string) => void;
@@ -218,6 +221,7 @@ const QuestCard: React.FC<QuestCardProps> = ({
   quest,
   progress,
   completed,
+  claimed = false,
   showInput,
   inputValue,
   onInputChange,
@@ -245,7 +249,7 @@ const QuestCard: React.FC<QuestCardProps> = ({
     badgeLabel = 'SOCIAL MISSION';
   }
 
-  const statusText = quest.slug === 'true_raider' ? 'START RAID' : (isClaimable ? 'CLAIM' : 'ACTIVE');
+  const statusText = quest.slug === 'true_raider' ? 'START RAID' : (claimed ? 'CLAIMED' : isClaimable ? 'CLAIM' : 'ACTIVE');
   const rewardLabel = quest.reward_label || `${quest.reward_tp?.toLocaleString() ?? 0} TP`;
 
   const handleAction = async () => {
