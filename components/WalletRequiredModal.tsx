@@ -48,7 +48,7 @@ const WalletRequiredModal: React.FC<WalletRequiredModalProps> = ({ isOpen, onClo
 
         {/* Description */}
         <p className="text-zinc-400 text-center mb-8 text-sm md:text-base leading-relaxed">
-          Please connect your Solana wallet to access this feature. Your wallet is required to play games, view your profile, and participate in the trivia protocol.
+          Please connect your Solana wallet to access this feature. Your wallet is required to play games, view your profile, and participate in SOL Trivia.
         </p>
 
         {/* Connect Button */}

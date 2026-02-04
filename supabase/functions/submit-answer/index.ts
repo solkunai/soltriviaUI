@@ -78,6 +78,7 @@ interface SubmitAnswerBody {
   selected_index?: number;
   question_index?: number;
   time_taken_ms?: number;
+  time_expired?: boolean; // When true, no selection was made; record as wrong and advance
 }
 
 // Maximum allowed time to answer (16 seconds to allow for network latency)
@@ -117,13 +118,14 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    if (selectedIndex === undefined || selectedIndex === null) {
+    const timeExpired = body.time_expired === true;
+    if (!timeExpired && (selectedIndex === undefined || selectedIndex === null)) {
       return new Response(
         JSON.stringify({ error: 'Missing selected index (selectedIndex or selected_index)' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    if (selectedIndex < 0 || selectedIndex > 3) {
+    if (!timeExpired && (selectedIndex < 0 || selectedIndex > 3)) {
       return new Response(
         JSON.stringify({ error: 'Invalid selectedIndex (must be 0–3)' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -188,6 +190,51 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Session has no questions configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Frontend time-expired (e.g. 7s per question): record wrong and advance without a selected answer
+    if (timeExpired) {
+      const questionId = questionIds[session.current_question_index];
+      const timeTakenMs = Math.round(Number(body.time_taken_ms ?? 7000));
+      const timeoutAnswerRow: Record<string, unknown> = {
+        session_id: String(sessionId),
+        question_index: Number(session.current_question_index),
+        question_id: questionId == null ? null : String(questionId),
+        selected_index: 0,
+        is_correct: false,
+        points_earned: 0,
+        time_taken_ms: timeTakenMs,
+        token: session.current_question_token ?? null,
+        issued_at: session.current_question_issued_at,
+      };
+      const { error: insertErr } = await supabase.from('answers').insert(timeoutAnswerRow);
+      if (insertErr) {
+        console.error('Failed to record time-expired answer:', insertErr);
+        return new Response(
+          JSON.stringify({ error: 'Failed to record answer', details: insertErr.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      const nextIndex = session.current_question_index + 1;
+      const isLastQuestion = nextIndex >= 10;
+      const sessionUpdate: Record<string, unknown> = {
+        current_question_index: nextIndex,
+        current_question_token: null,
+        current_question_issued_at: null,
+        ...(isLastQuestion && { finished_at: new Date().toISOString() }),
+      };
+      await supabase.from('game_sessions').update(sessionUpdate).eq('id', sessionId);
+      return new Response(
+        JSON.stringify({
+          correct: false,
+          correctIndex: -1,
+          pointsEarned: 0,
+          timeMs: timeTakenMs,
+          timedOut: true,
+          isLastQuestion,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 

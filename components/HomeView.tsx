@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import WalletConnectButton from './WalletConnectButton';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { getBalanceSafely } from '../src/utils/balance';
-import { fetchCurrentRoundStats, subscribeCurrentRoundStats } from '../src/utils/api';
+import { fetchCurrentRoundStats, subscribeCurrentRoundStats, getCurrentRoundKey, getRoundLabel } from '../src/utils/api';
 
 interface HomeViewProps {
   lives: number;
@@ -214,6 +214,10 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               </button>
 
               <div className="bg-[#0A0A0A] border border-white/5 rounded-xl p-4 flex flex-col justify-center gap-2 min-w-[180px] shadow-xl">
+                <div className="mb-0.5">
+                   <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">CURRENT ROUND</span>
+                   <span className="text-zinc-400 text-[9px] font-bold italic leading-tight block">{getRoundLabel(getCurrentRoundKey().date, getCurrentRoundKey().roundNumber)}</span>
+                </div>
                 <div>
                    <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic leading-none block mb-1">TRIVIA POOL</span>
                    <div className="flex items-baseline gap-1">

@@ -2,6 +2,7 @@
 export enum View {
   HOME = 'HOME',
   LEADERBOARD = 'LEADERBOARD',
+  ROUND_WINNERS = 'ROUND_WINNERS',
   PLAY = 'PLAY',
   QUESTS = 'QUESTS',
   PROFILE = 'PROFILE',
