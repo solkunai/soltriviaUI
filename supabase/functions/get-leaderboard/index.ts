@@ -123,7 +123,7 @@ serve(async (req) => {
         potLamports = round.pot_lamports ?? 0;
         playerCount = round.player_count ?? 0;
 
-        // Get top scores for this round (support both score and total_points column names)
+        // Get all finished sessions for this round (no wallet filter – everyone sees the same full leaderboard)
         const { data: sessions } = await supabase
           .from('game_sessions')
           .select('wallet_address, score, total_points, correct_count, correct_answers, time_taken_ms')
@@ -139,6 +139,7 @@ serve(async (req) => {
             wallet_address: s.wallet_address,
             score: byScore(s),
             correct_count: s.correct_count ?? s.correct_answers ?? 0,
+            time_taken_ms: s.time_taken_ms != null ? Number(s.time_taken_ms) : (s.time_taken_seconds != null ? Number(s.time_taken_seconds) * 1000 : 0),
           }));
         }
 

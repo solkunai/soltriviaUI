@@ -1,6 +1,10 @@
 // Complete Session Edge Function
-// Called when a player finishes all 10 questions
-// Updates session with final results and calculates time taken
+// Called when a player finishes all 10 questions.
+// 1. Updates game_sessions with final score, correct_count, time_taken_ms, completed_at, finished_at (so leaderboard shows the session).
+// 2. Updates players.games_played if session has player_id.
+// 3. Upserts player_profiles (total_games_played, total_points, highest_score, last_activity_date) for profile/leaderboard stats.
+// 4. Calls calculate_rankings_and_winner for the round; returns rank to client.
+// 5. Updates quest progress (trivia_nerd, daily_quizzer, trivia_genius, genesis_streak) and auto-claims rewards.
 
 // @ts-ignore - Deno URL imports are valid at runtime
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
@@ -94,12 +98,41 @@ serve(async (req) => {
   try {
     const supabase = getSupabaseClient();
 
-    const { session_id, total_score, correct_count, time_taken_ms }: CompleteSessionRequest = await req.json();
+    let { session_id, total_score, correct_count, time_taken_ms }: CompleteSessionRequest = await req.json();
 
-    // Validate input
-    if (!session_id) {
+    // Validate and coerce input
+    if (!session_id || typeof session_id !== 'string') {
       return new Response(
-        JSON.stringify({ error: 'Missing session_id' }),
+        JSON.stringify({ error: 'Missing or invalid session_id' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    session_id = String(session_id).trim();
+    if (!isValidUUID(session_id)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid session_id format' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    total_score = Number(total_score);
+    correct_count = Number(correct_count);
+    time_taken_ms = Number(time_taken_ms);
+    if (!Number.isFinite(total_score) || total_score < 0) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid total_score' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (!Number.isFinite(correct_count) || correct_count < 0 || correct_count > 10) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid correct_count (must be 0–10)' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (!Number.isFinite(time_taken_ms) || time_taken_ms < 0) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid time_taken_ms' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -138,12 +171,11 @@ serve(async (req) => {
       correct_count: correct_count,
       correct_answers: correct_count,
     };
+    // Always keep completed_at and finished_at so session appears on leaderboard (get-leaderboard filters by finished_at IS NOT NULL)
     if (!('total_points' in sessionAny)) delete sessionUpdate.total_points;
     if (!('score' in sessionAny)) delete sessionUpdate.score;
     if (!('time_taken_seconds' in sessionAny)) delete sessionUpdate.time_taken_seconds;
     if (!('time_taken_ms' in sessionAny)) delete sessionUpdate.time_taken_ms;
-    if (!('completed_at' in sessionAny)) delete sessionUpdate.completed_at;
-    if (!('finished_at' in sessionAny)) delete sessionUpdate.finished_at;
     if (!('correct_count' in sessionAny)) delete sessionUpdate.correct_count;
     if (!('correct_answers' in sessionAny)) delete sessionUpdate.correct_answers;
 
@@ -188,7 +220,7 @@ serve(async (req) => {
         .from('player_profiles')
         .select('wallet_address, total_games_played, total_points, highest_score, last_activity_date')
         .eq('wallet_address', wallet)
-        .single();
+        .maybeSingle();
 
       const today = new Date().toISOString().split('T')[0];
       if (profile) {

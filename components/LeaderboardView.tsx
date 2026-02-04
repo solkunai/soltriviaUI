@@ -107,12 +107,12 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
   // Transform API data to display format
   const allPlayers: PlayerStats[] = leaderboardData.map((entry, index) => ({
     rank: entry.rank.toString(),
-    username: entry.display_name || `${entry.wallet_address.slice(0, 4)}...${entry.wallet_address.slice(-4)}`,
+    username: entry.display_name ?? `${entry.wallet_address.slice(0, 4)}...${entry.wallet_address.slice(-4)}`,
     winnings: '0.00 SOL', // TODO: Calculate from payouts
     avatar: entry.avatar || DEFAULT_AVATAR,
-    score: entry.score.toLocaleString(),
-    correct: `${entry.correct_count}/10`,
-    time: `${Math.floor(entry.time_taken_ms / 1000)}s`,
+    score: Number(entry.score).toLocaleString(),
+    correct: `${entry.correct_count ?? 0}/10`,
+    time: `${Math.floor((entry.time_taken_ms ?? 0) / 1000)}s`,
     gamesPlayed: '1', // Can be calculated from game_sessions if needed
   }));
 

@@ -1236,13 +1236,22 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
   const categories = ['solana', 'defi', 'nfts', 'bitcoin', 'memecoins', 'history'];
 
   const callManageQuestions = async (action: string, payload?: Record<string, unknown>) => {
+    if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.length < 20) {
+      throw new Error('Missing Supabase anon key. Add VITE_SUPABASE_ANON_KEY to your .env (and .env.local if used) so the Questions tab can call manage-questions.');
+    }
     const res = await fetch(`${functionsUrl}/manage-questions`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ action, payload: payload ?? {} }),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);
+    if (!res.ok) {
+      const errorMsg = json.error || `Request failed (${res.status})`;
+      const error = new Error(errorMsg);
+      (error as any).code = json.code;
+      (error as any).details = json.details;
+      throw error;
+    }
     return json;
   };
 
@@ -1313,7 +1322,11 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
       setShowForm(false);
       fetchQuestions();
     } catch (err: any) {
-      setError(err.message || 'Failed to save question');
+      const errorMsg = err.message || 'Failed to save question';
+      const details = err.details ? ` Details: ${err.details}` : '';
+      const code = err.code ? ` (${err.code})` : '';
+      setError(`${errorMsg}${code}${details}`);
+      console.error('Save question error:', err);
     } finally {
       setLoading(false);
     }
