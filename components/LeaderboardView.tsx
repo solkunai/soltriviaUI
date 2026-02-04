@@ -3,7 +3,7 @@ import { DEFAULT_AVATAR } from '../src/utils/constants';
 import { getLeaderboard, LeaderboardEntry, LeaderboardResponse, fetchRoundsWithWinners, type RoundWithWinner } from '../src/utils/api';
 import { useWallet } from '../src/contexts/WalletContext';
 
-type RankPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY';
+type RankPeriod = 'ALL_TIME' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
 type MainLeaderboardTab = 'LEADERBOARD' | 'ROUND_WINS';
 
 interface PlayerStats {
@@ -22,7 +22,7 @@ interface LeaderboardViewProps {
 
 const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
   const [mainTab, setMainTab] = useState<MainLeaderboardTab>('LEADERBOARD');
-  const [period, setPeriod] = useState<RankPeriod>('DAILY'); // Default to current round (6-hour window)
+  const [period, setPeriod] = useState<RankPeriod>('ALL_TIME'); // Default: highest score across all rounds
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,8 +32,8 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
   const [roundsLoading, setRoundsLoading] = useState(false);
   const { publicKey } = useWallet();
 
-  // Fetch leaderboard for current round; refresh every 2s so it updates as users earn XP
-  const periodApi = period === 'DAILY' ? 'daily' : period === 'WEEKLY' ? 'weekly' : 'monthly';
+  // Fetch leaderboard; refresh every 2s so it updates as rounds complete
+  const periodApi = period === 'ALL_TIME' ? 'all' : period === 'DAILY' ? 'daily' : period === 'WEEKLY' ? 'weekly' : 'monthly';
   useEffect(() => {
     const fetchLeaderboard = async (showLoading: boolean) => {
       try {
@@ -281,13 +281,16 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
           </div>
         </div>
 
-        {/* Period Tabs — DAILY = current 6-hour round, updates live */}
+        {/* Period Tabs — ALL_TIME = highest score across all rounds; DAILY = current 6h round */}
         <div className="flex flex-col items-center gap-2 mb-10 px-4">
+          {period === 'ALL_TIME' && (
+            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">Highest score ever · updates as rounds complete</p>
+          )}
           {period === 'DAILY' && (
             <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">Current round · updates as players earn XP</p>
           )}
           <div className="flex w-full max-w-md items-center justify-between bg-black/40 p-1.5 rounded-full border border-white/10">
-            {(['DAILY', 'WEEKLY', 'MONTHLY'] as RankPeriod[]).map((p) => (
+            {(['ALL_TIME', 'DAILY', 'WEEKLY', 'MONTHLY'] as RankPeriod[]).map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
@@ -297,7 +300,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
-                {p}
+                {p.replace('_', ' ')}
               </button>
             ))}
           </div>

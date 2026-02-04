@@ -105,7 +105,43 @@ serve(async (req) => {
     let potLamports = 0;
     let playerCount = 0;
 
-    if (period === 'daily') {
+    // All-time: rank by highest single-game score across all rounds (updates as rounds complete)
+    if (period === 'all') {
+      const { data: globalRows } = await supabase
+        .rpc('get_global_leaderboard_best_score', { p_limit: limit });
+
+      if (globalRows && globalRows.length > 0) {
+        leaderboard = globalRows.map((s: { rank: number; wallet_address: string; best_score: number; display_name: string | null; avatar_url: string | null }) => ({
+          rank: Number(s.rank),
+          wallet_address: s.wallet_address,
+          score: Number(s.best_score),
+          display_name: s.display_name ?? null,
+          avatar: s.avatar_url ?? '',
+          time_taken_ms: 0,
+        }));
+      }
+
+      if (wallet) {
+        const userEntry = leaderboard.find((e: { wallet_address: string }) => e.wallet_address === wallet);
+        if (userEntry) {
+          userRank = userEntry.rank;
+          userScore = userEntry.score;
+        } else {
+          const { data: userBest } = await supabase
+            .from('game_sessions')
+            .select('score, total_points')
+            .eq('wallet_address', wallet)
+            .or('finished_at.not.is.null,completed_at.not.is.null');
+          if (userBest && userBest.length > 0) {
+            const best = Math.max(...userBest.map((s: { score?: number; total_points?: number }) => Number(s.score ?? s.total_points ?? 0)));
+            userScore = best;
+            const { data: allBest } = await supabase.rpc('get_global_leaderboard_best_score', { p_limit: 1000 });
+            const higher = (allBest || []).filter((r: { best_score: number }) => Number(r.best_score) > best).length;
+            userRank = higher + 1;
+          }
+        }
+      }
+    } else if (period === 'daily') {
       // Use daily_rounds (same as start-game): current 6-hour window by date + round_number.
       // IMPORTANT: Leaderboard list is never filtered by wallet – all connected users see the same full list.
       const now = new Date();
@@ -122,7 +158,40 @@ serve(async (req) => {
         .maybeSingle();
       round = roundData;
 
-      // Fallback: if no round for current window, use the most recent round that has finished sessions (so everyone sees the same leaderboard)
+      // Ensure current round exists so everyone sees the leaderboard (even before anyone has played)
+      if (!round) {
+        const { data: questions } = await supabase
+          .from('questions')
+          .select('id')
+          .eq('active', true);
+        if (questions && questions.length >= 10) {
+          const shuffled = [...questions].sort(() => Math.random() - 0.5);
+          const questionIds = shuffled.slice(0, 10).map((q: { id: string }) => q.id);
+          const { data: newRound, error: createErr } = await supabase
+            .from('daily_rounds')
+            .insert({
+              date: today,
+              round_number: roundNumber,
+              question_ids: questionIds,
+            })
+            .select('id, pot_lamports, player_count')
+            .single();
+          if (!createErr && newRound) {
+            round = newRound;
+          } else if (createErr?.code === '23505') {
+            // Unique violation: another request created the round; fetch it
+            const { data: existing } = await supabase
+              .from('daily_rounds')
+              .select('id, pot_lamports, player_count')
+              .eq('date', today)
+              .eq('round_number', roundNumber)
+              .maybeSingle();
+            if (existing) round = existing;
+          }
+        }
+      }
+
+      // Fallback: if still no round (e.g. create failed), use most recent round with finished sessions
       if (!round) {
         const { data: recentRounds } = await supabase
           .from('daily_rounds')

@@ -214,7 +214,7 @@ export interface LeaderboardResponse {
   user_score: number | null;
 }
 
-export async function getLeaderboard(round_id?: string, wallet?: string, period?: 'daily' | 'weekly' | 'monthly'): Promise<LeaderboardResponse> {
+export async function getLeaderboard(round_id?: string, wallet?: string, period?: 'daily' | 'weekly' | 'monthly' | 'all'): Promise<LeaderboardResponse> {
   const body: { round_id?: string; wallet?: string; period?: string } = { round_id, wallet };
   if (period) body.period = period;
   const response = await fetch(`${FUNCTIONS_URL}/get-leaderboard`, {
