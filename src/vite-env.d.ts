@@ -20,6 +20,8 @@ interface ImportMetaEnv {
   readonly VITE_LIVES_PRICE_LAMPORTS?: string;
   readonly VITE_ADMIN_USERNAME?: string;
   readonly VITE_ADMIN_PASSWORD?: string;
+  /** Platform password gate; when set, users must enter this to access the app */
+  readonly VITE_GATE_PASSWORD?: string;
 }
 
 interface ImportMeta {

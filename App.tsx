@@ -283,10 +283,7 @@ const App: React.FC = () => {
 
   const handleQuizFinish = async (correctCount: number, points: number, totalTimeSeconds: number) => {
     const sessionIdToComplete = currentSessionId;
-    try {
-      sessionStorage.removeItem('quiz_session_id');
-    } catch (_) {}
-    setCurrentSessionId(null);
+    // Keep currentSessionId set until we switch view so QuizView doesn't see null and log an error
 
     let rank: number | undefined = undefined;
 
@@ -334,6 +331,10 @@ const App: React.FC = () => {
 
     setLastGameResults({ score: correctCount, points, time: totalTimeSeconds, rank, scoreSaveFailed });
     setCurrentView(View.RESULTS);
+    setCurrentSessionId(null);
+    try {
+      sessionStorage.removeItem('quiz_session_id');
+    } catch (_) {}
   };
 
   const handleStartQuiz = async () => {

@@ -5,6 +5,7 @@ import './src/index.css';
 import App from './App';
 import { WalletProvider } from './src/contexts/WalletContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import PasswordGate from './components/PasswordGate';
 
 // Buffer is provided via Vite alias (see index.html comment). Console.warn suppression runs in index.html inline script.
 
@@ -27,9 +28,11 @@ try {
   root.render(
     <React.StrictMode>
       <ErrorBoundary>
-        <WalletProvider>
-          <App />
-        </WalletProvider>
+        <PasswordGate>
+          <WalletProvider>
+            <App />
+          </WalletProvider>
+        </PasswordGate>
       </ErrorBoundary>
     </React.StrictMode>
   );
