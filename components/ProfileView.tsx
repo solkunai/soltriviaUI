@@ -67,36 +67,35 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
           console.log('✅ Profile data:', profileData);
         }
 
+        const initialStats: PlayerStats = profileData
+          ? {
+              total_games_played: profileData.total_games_played ?? 0,
+              total_wins: profileData.total_wins ?? 0,
+              total_points: profileData.total_points ?? 0,
+              highest_score: profileData.highest_score ?? 0,
+              current_streak: profileData.current_streak ?? 0,
+              best_streak: profileData.best_streak ?? 0,
+              total_sol_won: 0,
+            }
+          : {
+              total_games_played: 0,
+              total_wins: 0,
+              total_points: 0,
+              highest_score: 0,
+              current_streak: 0,
+              best_streak: 0,
+              total_sol_won: 0,
+            };
+
         if (profileData) {
           setCurrentUsername(profileData.username || username);
           const url = profileData.avatar_url || avatar;
           setCurrentAvatar(url && !String(url).includes('picsum.photos') ? url : DEFAULT_AVATAR);
-          
-          setStats({
-            total_games_played: profileData.total_games_played || 0,
-            total_wins: profileData.total_wins || 0,
-            total_points: profileData.total_points || 0,
-            highest_score: profileData.highest_score || 0,
-            current_streak: profileData.current_streak || 0,
-            best_streak: profileData.best_streak || 0,
-            total_sol_won: 0, // Calculate from game history
-          });
         } else {
-          // Use props as fallback
           setCurrentUsername(username);
           setCurrentAvatar(avatar);
-          
-          // Default stats if profile doesn't exist
-          setStats({
-            total_games_played: 0,
-            total_wins: 0,
-            total_points: 0,
-            highest_score: 0,
-            current_streak: 0,
-            best_streak: 0,
-            total_sol_won: 0,
-          });
         }
+        setStats(initialStats);
 
         // Fetch game history (last 10 games)
         console.log('🎮 Fetching game history for:', walletAddress);
@@ -177,8 +176,25 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
           
           const transformedHistory = await Promise.all(historyPromises);
           console.log('✅ Game history processed:', transformedHistory.length, 'games');
-          console.log('Sample game:', transformedHistory[0]);
           setHistory(transformedHistory);
+
+          // Fallback: if profile had 0 games/points (e.g. not synced yet), show from game_sessions
+          const derivedGames = gamesData.length;
+          const derivedPoints = gamesData.reduce(
+            (sum: number, g: any) => sum + (Number(g.score ?? g.total_points ?? 0) || 0),
+            0
+          );
+          setStats((prev) => ({
+            ...prev,
+            total_games_played: prev && prev.total_games_played > 0 ? prev.total_games_played : derivedGames,
+            total_points: prev && prev.total_points > 0 ? prev.total_points : derivedPoints,
+            highest_score:
+              prev && prev.highest_score > 0
+                ? prev.highest_score
+                : (gamesData.length
+                    ? Math.max(...gamesData.map((g: any) => Number(g.score ?? g.total_points ?? 0) || 0))
+                    : 0),
+          }));
         } else {
           console.log('ℹ️ No game history found');
           setHistory([]);
