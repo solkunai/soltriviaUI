@@ -12,7 +12,8 @@ interface QuizViewProps {
 
 const BASE_POINTS = 500;
 const MAX_SPEED_BONUS = 500;
-const SPEED_BONUS_DECAY_SEC = 7; // Match backend timer (7 seconds per question)
+const SPEED_BONUS_DECAY_SEC = 7; // Match per-question timer
+const SECONDS_PER_QUESTION = 7; // Timer shown to user; auto-submit wrong if no answer
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const; // Display labels; indices 0–3 sent to API
 
 const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
@@ -27,8 +28,11 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [lastGainedPoints, setLastGainedPoints] = useState<number | null>(null);
-  
+  const [questionTimeLeft, setQuestionTimeLeft] = useState(SECONDS_PER_QUESTION);
+  const [timedOut, setTimedOut] = useState(false);
+
   const timerRef = useRef<number | null>(null);
+  const questionTimerRef = useRef<number | null>(null);
 
   // Fetch questions from Supabase when component mounts
   useEffect(() => {
@@ -85,6 +89,71 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
       };
     }
   }, [questions]);
+
+  // Per-question 7-second countdown; on 0, submit as wrong and advance
+  useEffect(() => {
+    if (questions.length === 0 || selectedOption !== null || timedOut) return;
+    setQuestionTimeLeft(SECONDS_PER_QUESTION);
+    questionTimerRef.current = window.setInterval(() => {
+      setQuestionTimeLeft((prev) => {
+        if (prev <= 1) {
+          if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+          questionTimerRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => {
+      if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+      questionTimerRef.current = null;
+    };
+  }, [questions.length, currentIdx, selectedOption, timedOut]);
+
+  // When questionTimeLeft hits 0, submit time_expired and advance
+  const timeoutFiredRef = useRef(false);
+  useEffect(() => {
+    if (questionTimeLeft !== 0 || selectedOption !== null || timedOut || !sessionId || questions.length === 0) return;
+    if (timeoutFiredRef.current) return;
+    timeoutFiredRef.current = true;
+    setTimedOut(true);
+    const currentQuestion = questions[currentIdx];
+    const timeTaken = (Date.now() - questionStartTime) / 1000;
+    (async () => {
+      try {
+        await submitAnswer({
+          session_id: sessionId,
+          question_id: currentQuestion.id.toString(),
+          question_index: currentIdx,
+          time_taken_ms: Math.floor(timeTaken * 1000),
+          time_expired: true,
+        });
+        if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+        questionTimerRef.current = null;
+        HapticFeedback.error();
+        playWrongSound();
+        setTimeout(() => {
+          timeoutFiredRef.current = false;
+          setTimedOut(false);
+          if (currentIdx < questions.length - 1) {
+            setCurrentIdx((prev) => prev + 1);
+            setSelectedOption(null);
+            setIsCorrect(null);
+            setLastGainedPoints(null);
+            setQuestionStartTime(Date.now());
+            setQuestionTimeLeft(SECONDS_PER_QUESTION);
+          } else {
+            if (timerRef.current) clearInterval(timerRef.current);
+            onFinish(score, totalPoints, sessionTimer);
+          }
+        }, 800);
+      } catch (err) {
+        console.error('Timeout submit failed:', err);
+        timeoutFiredRef.current = false;
+        setTimedOut(false);
+      }
+    })();
+  }, [questionTimeLeft, selectedOption, timedOut, sessionId, questions, currentIdx, questionStartTime, score, totalPoints, sessionTimer, onFinish]);
 
   const handleOptionSelect = async (optionIdx: number) => {
     if (selectedOption !== null || !sessionId || questions.length === 0) return;
@@ -170,12 +239,15 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
     }
 
     setTimeout(() => {
+      if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+      questionTimerRef.current = null;
       if (currentIdx < questions.length - 1) {
         setCurrentIdx(prev => prev + 1);
         setSelectedOption(null);
         setIsCorrect(null);
         setLastGainedPoints(null);
         setQuestionStartTime(Date.now());
+        setQuestionTimeLeft(SECONDS_PER_QUESTION);
       } else {
         if (timerRef.current) clearInterval(timerRef.current);
         onFinish(score + (correct ? 1 : 0), totalPoints + pointsForThisQuestion, sessionTimer);
@@ -212,6 +284,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
   }
 
   const question = questions[currentIdx];
+  const showTimer = selectedOption === null && !timedOut;
 
   return (
     <div className="min-h-full flex flex-col bg-[#050505] p-4 sm:p-8 md:p-12 relative overflow-hidden">
@@ -248,6 +321,14 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
         <div className="w-full max-w-4xl mx-auto">
           <div className="flex justify-between items-end mb-4 px-2">
             <span className="text-[#00FFA3] text-xs font-black italic uppercase tracking-[0.2em]">Block {currentIdx + 1} / 10</span>
+            {showTimer && (
+              <span className={`text-sm font-[1000] italic tabular-nums ${questionTimeLeft <= 2 ? 'text-[#FF3131] animate-pulse' : 'text-[#14F195]'}`}>
+                {questionTimeLeft}s
+              </span>
+            )}
+            {timedOut && (
+              <span className="text-[#FF3131] text-sm font-[1000] italic uppercase">Time&apos;s up!</span>
+            )}
           </div>
 
           <div className="bg-[#0A0A0A] border border-white/5 p-6 sm:p-10 md:p-16 rounded-sm shadow-2xl relative overflow-hidden group mb-6 md:mb-10">
@@ -282,7 +363,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
               return (
                 <button
                   key={idx}
-                  disabled={selectedOption !== null}
+                  disabled={selectedOption !== null || timedOut}
                   onClick={() => handleOptionSelect(idx)}
                   className={`relative p-5 md:p-7 text-left border transition-all duration-300 group flex items-center gap-5 md:gap-8 active:scale-[0.99] ${stateClass} ${animationClass}`}
                 >

@@ -1,5 +1,5 @@
 {
-  "name": "Solana Trivia Protocol",
+  "name": "SOL Trivia",
   "description": "A high-fidelity web application for a crypto-themed trivia game on the Solana network, featuring leaderboards, quests, and user profiles.",
   "requestFramePermissions": []
 }

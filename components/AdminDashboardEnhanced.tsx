@@ -134,7 +134,7 @@ const AdminDashboardEnhanced: React.FC = () => {
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-4xl font-[1000] italic uppercase tracking-tighter mb-2">Admin Dashboard</h1>
-        <p className="text-zinc-500 text-sm">Manage your Solana Trivia Protocol</p>
+        <p className="text-zinc-500 text-sm">Manage your SOL Trivia</p>
       </div>
 
       {/* Tabs */}

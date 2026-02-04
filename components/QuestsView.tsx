@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '../src/contexts/WalletContext';
-import { fetchQuests, fetchUserQuestProgress, subscribeUserQuestProgress, subscribeQuests, submitQuestProof, type Quest, type UserQuestProgress } from '../src/utils/api';
+import { fetchQuests, fetchUserQuestProgress, subscribeUserQuestProgress, subscribeQuests, submitQuestProof, claimQuestReward, type Quest, type UserQuestProgress } from '../src/utils/api';
 
 interface QuestsViewProps {
   onGoToProfile?: () => void;
@@ -180,6 +180,11 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
                         }
                         setTimeout(() => setSubmitStatus('idle'), 4000);
                       } : undefined}
+                      onClaim={connected && publicKey ? async (q) => {
+                        const result = await claimQuestReward(publicKey.toBase58(), q.id);
+                        if (result.success) loadProgress();
+                        return result;
+                      } : undefined}
                       submitStatus={submitStatus}
                       submitMessage={submitMessage}
                     />
@@ -204,6 +209,7 @@ interface QuestCardProps {
   onGoToProfile?: () => void;
   onRaiderClick?: () => void;
   onVerifyRaider?: () => void;
+  onClaim?: (quest: Quest) => Promise<{ success: boolean; reward_tp?: number; error?: string }>;
   submitStatus?: 'idle' | 'submitting' | 'success' | 'error';
   submitMessage?: string;
 }
@@ -218,9 +224,12 @@ const QuestCard: React.FC<QuestCardProps> = ({
   onGoToProfile,
   onRaiderClick,
   onVerifyRaider,
+  onClaim,
   submitStatus = 'idle',
   submitMessage = '',
 }) => {
+  const [claimPopup, setClaimPopup] = React.useState<{ tp: number } | null>(null);
+  const [claiming, setClaiming] = React.useState(false);
   const max = quest.requirement_config?.max ?? 1;
   const isClaimable = progress >= max && !completed;
   const progressPercent = max > 0 ? Math.min(100, Math.floor((progress / max) * 100)) : 0;
@@ -239,8 +248,39 @@ const QuestCard: React.FC<QuestCardProps> = ({
   const statusText = quest.slug === 'true_raider' ? 'START RAID' : (isClaimable ? 'CLAIM' : 'ACTIVE');
   const rewardLabel = quest.reward_label || `${quest.reward_tp?.toLocaleString() ?? 0} TP`;
 
+  const handleAction = async () => {
+    if (isClaimable) {
+      if (!onClaim) {
+        alert('Please connect wallet to claim rewards');
+        return;
+      }
+      setClaiming(true);
+      try {
+        const result = await onClaim(quest);
+        if (result.success && result.reward_tp != null) {
+          setClaimPopup({ tp: result.reward_tp });
+          setTimeout(() => setClaimPopup(null), 1100);
+        } else if (result.error) {
+          alert(result.error);
+        }
+      } finally {
+        setClaiming(false);
+      }
+      return;
+    }
+    if (quest.slug === 'identity_sync') onGoToProfile?.();
+    if (quest.slug === 'true_raider') onRaiderClick?.();
+  };
+
   return (
     <div className={`relative bg-[#050505] border rounded-sm p-4 md:p-8 flex flex-col transition-all duration-300 ${isClaimable ? 'border-[#14F195] shadow-[0_0_30px_rgba(20,241,149,0.1)]' : 'border-white/5'}`}>
+      {claimPopup && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <span className="text-[#14F195] text-lg md:text-xl font-[1000] italic points-popup block">
+            +{claimPopup.tp.toLocaleString()} TP
+          </span>
+        </div>
+      )}
       <div className={`absolute top-0 right-0 px-2 md:px-3 py-0.5 md:py-1 ${badgeColor} text-black font-[1000] text-[7px] md:text-[8px] uppercase tracking-widest italic rounded-bl-sm shadow-md`}>
         {badgeLabel}
       </div>
@@ -301,63 +341,11 @@ const QuestCard: React.FC<QuestCardProps> = ({
           <span className="text-[#14F195] text-lg md:text-3xl font-[1000] italic leading-none">{rewardLabel}</span>
         </div>
         <button
-          onClick={async () => {
-            if (isClaimable) {
-              // Claim quest reward
-              if (!connected || !publicKey) {
-                alert('Please connect wallet to claim rewards');
-                return;
-              }
-              
-              try {
-                setSubmitStatus('submitting');
-                setSubmitMessage('Claiming reward...');
-                
-                // Call claim quest Edge Function
-                const response = await fetch(`${process.env.REACT_APP_FUNCTIONS_URL || 'https://uekqrkjiunezsytzyjmx.supabase.co/functions/v1'}/claim-quest-reward`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    wallet_address: publicKey.toBase58(),
-                    quest_id: quest.id,
-                  }),
-                });
-                
-                if (!response.ok) {
-                  throw new Error('Failed to claim reward');
-                }
-                
-                const data = await response.json();
-                setSubmitStatus('success');
-                setSubmitMessage(`✅ Claimed ${data.reward_tp || quest.reward_tp} TP!`);
-                
-                // Refresh progress
-                await loadProgress();
-                
-                setTimeout(() => {
-                  setSubmitStatus('idle');
-                  setSubmitMessage('');
-                }, 3000);
-              } catch (error) {
-                console.error('Claim error:', error);
-                setSubmitStatus('error');
-                setSubmitMessage('❌ Failed to claim. Try again.');
-                setTimeout(() => {
-                  setSubmitStatus('idle');
-                  setSubmitMessage('');
-                }, 3000);
-              }
-              return;
-            }
-            
-            if (quest.slug === 'identity_sync') onGoToProfile?.();
-            if (quest.slug === 'true_raider') onRaiderClick?.();
-          }}
-          className={`px-4 md:px-8 py-2 md:py-3 font-[1000] uppercase text-[9px] md:text-xs italic shadow-lg active:scale-95 transition-all rounded-sm ${isClaimable ? 'bg-[#14F195] text-black' : quest.slug === 'true_raider' ? 'bg-[#3b82f6] text-white' : 'bg-white/5 text-zinc-600'}`}
+          onClick={handleAction}
+          disabled={isClaimable && claiming}
+          className={`px-4 md:px-8 py-2 md:py-3 font-[1000] uppercase text-[9px] md:text-xs italic shadow-lg active:scale-95 transition-all rounded-sm disabled:opacity-70 ${isClaimable ? 'bg-[#14F195] text-black' : quest.slug === 'true_raider' ? 'bg-[#3b82f6] text-white' : 'bg-white/5 text-zinc-600'}`}
         >
-          {statusText}
+          {isClaimable && claiming ? '…' : statusText}
         </button>
       </div>
     </div>

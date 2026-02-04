@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { DEFAULT_AVATAR } from '../src/utils/constants';
-import { getLeaderboard, LeaderboardEntry, LeaderboardResponse } from '../src/utils/api';
+import { getLeaderboard, LeaderboardEntry, LeaderboardResponse, fetchRoundsWithWinners, type RoundWithWinner } from '../src/utils/api';
 import { useWallet } from '../src/contexts/WalletContext';
 
 type RankPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY';
+type MainLeaderboardTab = 'LEADERBOARD' | 'ROUND_WINS';
 
 interface PlayerStats {
   rank: string;
@@ -21,12 +22,15 @@ interface LeaderboardViewProps {
 }
 
 const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
+  const [mainTab, setMainTab] = useState<MainLeaderboardTab>('LEADERBOARD');
   const [period, setPeriod] = useState<RankPeriod>('WEEKLY');
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [totalSolWon, setTotalSolWon] = useState(0);
   const [playerCount, setPlayerCount] = useState(0);
+  const [roundsWithWinners, setRoundsWithWinners] = useState<RoundWithWinner[]>([]);
+  const [roundsLoading, setRoundsLoading] = useState(false);
   const { publicKey } = useWallet();
 
   // Fetch leaderboard data and refresh every 5 seconds
@@ -88,6 +92,17 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
     return () => clearInterval(interval);
   }, [publicKey, period]);
 
+  // Fetch round winners when Round Wins tab is selected
+  useEffect(() => {
+    if (mainTab !== 'ROUND_WINS') return;
+    let mounted = true;
+    setRoundsLoading(true);
+    fetchRoundsWithWinners(50)
+      .then((data) => { if (mounted) setRoundsWithWinners(data); })
+      .finally(() => { if (mounted) setRoundsLoading(false); });
+    return () => { mounted = false; };
+  }, [mainTab]);
+
   // Transform API data to display format
   const allPlayers: PlayerStats[] = leaderboardData.map((entry, index) => ({
     rank: entry.rank.toString(),
@@ -121,6 +136,99 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
       </div>
 
       <div className="p-6 md:p-12 lg:p-20 max-w-[1400px] mx-auto w-full">
+        {/* Main tabs: Leaderboard | Round Wins */}
+        <div className="flex justify-center mb-8 px-4">
+          <div className="flex w-full max-w-sm items-center bg-black/40 p-1.5 rounded-full border border-white/10">
+            <button
+              onClick={() => setMainTab('LEADERBOARD')}
+              className={`flex-1 text-[11px] font-black uppercase tracking-[0.2em] py-3.5 rounded-full transition-all ${
+                mainTab === 'LEADERBOARD'
+                  ? 'bg-[#14F195] text-black active-tab-shadow shadow-xl shadow-[#14F195]/20'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              LEADERBOARD
+            </button>
+            <button
+              onClick={() => setMainTab('ROUND_WINS')}
+              className={`flex-1 text-[11px] font-black uppercase tracking-[0.2em] py-3.5 rounded-full transition-all ${
+                mainTab === 'ROUND_WINS'
+                  ? 'bg-[#14F195] text-black active-tab-shadow shadow-xl shadow-[#14F195]/20'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              ROUND WINS
+            </button>
+          </div>
+        </div>
+
+        {mainTab === 'ROUND_WINS' ? (
+          /* Round Wins tab content */
+          <div className="max-w-[1000px] mx-auto">
+            <div className="mb-8">
+              <h1 className="text-4xl md:text-6xl font-[1000] italic uppercase tracking-tighter leading-[0.85]">
+                ROUND <span className="sol-gradient-text">HALL OF FAME</span>
+              </h1>
+              <div className="h-1 w-16 bg-[#14F195] mt-4 shadow-[0_0_15px_#14F195]" />
+              <p className="text-zinc-500 text-[10px] md:text-xs font-black uppercase tracking-widest italic mt-4 max-w-md">
+                Each 6-hour round has one top scorer. Winners tracked by round.
+              </p>
+            </div>
+            {roundsLoading && (
+              <div className="text-center py-20">
+                <p className="text-zinc-500 font-black uppercase tracking-widest italic animate-pulse">Loading rounds...</p>
+              </div>
+            )}
+            {!roundsLoading && roundsWithWinners.length === 0 && (
+              <div className="text-center py-20">
+                <p className="text-zinc-400 text-lg font-bold italic">No completed rounds yet.</p>
+                <p className="text-zinc-600 text-sm mt-2">Winners will appear here after each round ends.</p>
+              </div>
+            )}
+            {!roundsLoading && roundsWithWinners.length > 0 && (
+              <div className="space-y-4 pb-24">
+                {roundsWithWinners.map((r) => (
+                  <div
+                    key={r.round_id}
+                    className="bg-[#0A0A0A] border border-white/5 rounded-xl p-4 md:p-6 flex flex-col md:flex-row md:items-center gap-4 hover:border-[#14F195]/20 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[#14F195] text-[10px] md:text-xs font-black uppercase tracking-widest italic mb-1">ROUND</div>
+                      <div className="text-white font-[1000] italic text-base md:text-lg leading-tight truncate">{r.round_title}</div>
+                      <div className="flex items-center gap-3 mt-2 text-zinc-500 text-[10px] font-black uppercase tracking-wider">
+                        <span>{r.player_count} players</span>
+                        <span>·</span>
+                        <span>{(r.pot_lamports / 1_000_000_000).toFixed(2)} SOL pool</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 md:gap-6 md:min-w-[280px]">
+                      {r.winner_wallet ? (
+                        <>
+                          <div className="w-12 h-12 rounded-full border-2 border-[#14F195]/50 overflow-hidden flex-shrink-0 bg-zinc-900">
+                            <img src={r.winner_avatar || DEFAULT_AVATAR} alt="" className="w-full h-full object-cover" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">WINNER</div>
+                            <div className="text-white font-[1000] italic truncate">
+                              {r.winner_display_name || `${r.winner_wallet.slice(0, 4)}...${r.winner_wallet.slice(-4)}`}
+                            </div>
+                            {r.winner_display_name && (
+                              <div className="text-zinc-500 text-[9px] font-mono">{r.winner_wallet.slice(0, 4)}...{r.winner_wallet.slice(-4)}</div>
+                            )}
+                            <div className="text-[#14F195] text-sm font-black italic mt-0.5">{r.winner_score.toLocaleString()} XP</div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-zinc-600 text-sm font-bold italic">No winner (round in progress or no finishers)</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
         {/* Title & Stats Section */}
         <div className="flex justify-between items-start mb-16">
           <div>
@@ -401,6 +509,8 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
             })}
           </div>
         </div>
+        )}
+          </>
         )}
       </div>
     </div>

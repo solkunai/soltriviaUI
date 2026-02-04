@@ -40,8 +40,9 @@ export interface SubmitAnswerParams {
   session_id: string;
   question_id: string;
   question_index: number;
-  selected_index: number;
+  selected_index?: number;
   time_taken_ms: number;
+  time_expired?: boolean; // When true, no selection; backend records wrong and advances
 }
 
 export interface SubmitAnswerResponse {
@@ -481,7 +482,31 @@ export async function submitQuestProof(walletAddress: string, questSlug: string,
   return { ok: true };
 }
 
-// ─── Current round stats (trivia pool + players entered) ───────────────────
+/** Claim completed quest reward. Returns reward_tp on success. */
+export async function claimQuestReward(walletAddress: string, questId: string): Promise<{ success: boolean; reward_tp?: number; error?: string }> {
+  const url = `${FUNCTIONS_URL}/claim-quest-reward`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ wallet_address: walletAddress, quest_id: questId }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { success: false, error: json.error || 'Claim failed' };
+  return { success: true, reward_tp: json.reward_tp };
+}
+
+// ─── Round labels and current round stats ─────────────────────────────────
+/** Human-readable title for a 6-hour round (e.g. "Feb 4, 2025 · 00:00–06:00 UTC"). */
+export function getRoundLabel(dateStr: string, roundNumber: number): string {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const dateFormatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  const startHour = roundNumber * 6;
+  const endHour = startHour + 6;
+  const start = `${String(startHour).padStart(2, '0')}:00`;
+  const end = endHour === 24 ? '00:00' : `${String(endHour).padStart(2, '0')}:00`;
+  return `${dateFormatted} · ${start}–${end} UTC`;
+}
+
 export function getCurrentRoundKey(): { date: string; roundNumber: number } {
   const now = new Date();
   const date = now.toISOString().split('T')[0];
@@ -510,6 +535,95 @@ export async function fetchCurrentRoundStats(): Promise<CurrentRoundStats> {
     prizePoolSol: pot / 1_000_000_000,
     playersEntered: players,
   };
+}
+
+/** Round with winner info for the Round Winners page. */
+export interface RoundWithWinner {
+  round_id: string;
+  date: string;
+  round_number: number;
+  round_title: string;
+  pot_lamports: number;
+  player_count: number;
+  winner_wallet: string | null;
+  winner_display_name: string | null;
+  winner_avatar: string | null;
+  winner_score: number;
+}
+
+/** Fetch past rounds with winner (top scorer) per round. Ordered by date desc, round_number desc. */
+export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinner[]> {
+  const { data: rounds, error: roundsError } = await supabase
+    .from('daily_rounds')
+    .select('id, date, round_number, pot_lamports, player_count')
+    .order('date', { ascending: false })
+    .order('round_number', { ascending: false })
+    .limit(limit);
+
+  if (roundsError || !rounds?.length) return [];
+
+  const roundIds = rounds.map((r) => r.id);
+
+  const { data: sessions, error: sessionsError } = await supabase
+    .from('game_sessions')
+    .select('round_id, wallet_address, score, total_points, time_taken_ms')
+    .in('round_id', roundIds)
+    .not('finished_at', 'is', null);
+
+  if (sessionsError || !sessions?.length) {
+    return rounds.map((r) => ({
+      round_id: r.id,
+      date: r.date,
+      round_number: r.round_number,
+      round_title: getRoundLabel(r.date, r.round_number),
+      pot_lamports: r.pot_lamports ?? 0,
+      player_count: r.player_count ?? 0,
+      winner_wallet: null,
+      winner_display_name: null,
+      winner_avatar: null,
+      winner_score: 0,
+    }));
+  }
+
+  const byScore = (s: { score?: number; total_points?: number }) => Number(s.score ?? s.total_points ?? 0);
+  const sorted = [...sessions].sort((a, b) => {
+    const diff = byScore(b) - byScore(a);
+    if (diff !== 0) return diff;
+    return (a.time_taken_ms ?? 999999) - (b.time_taken_ms ?? 999999);
+  });
+
+  const bestByRound = new Map<string, (typeof sorted)[0]>();
+  for (const s of sorted) {
+    if (!bestByRound.has(s.round_id)) bestByRound.set(s.round_id, s);
+  }
+
+  const winnerWallets = [...new Set(bestByRound.values().map((s) => s.wallet_address))];
+  let profiles: { wallet_address: string; display_name: string | null; avatar_url: string | null }[] = [];
+  if (winnerWallets.length > 0) {
+    const { data: prof } = await supabase
+      .from('player_profiles')
+      .select('wallet_address, display_name, avatar_url')
+      .in('wallet_address', winnerWallets);
+    profiles = prof ?? [];
+  }
+  const profileByWallet = Object.fromEntries(profiles.map((p) => [p.wallet_address, p]));
+
+  return rounds.map((r) => {
+    const best = bestByRound.get(r.id);
+    const profile = best ? profileByWallet[best.wallet_address] : null;
+    return {
+      round_id: r.id,
+      date: r.date,
+      round_number: r.round_number,
+      round_title: getRoundLabel(r.date, r.round_number),
+      pot_lamports: r.pot_lamports ?? 0,
+      player_count: r.player_count ?? 0,
+      winner_wallet: best?.wallet_address ?? null,
+      winner_display_name: profile?.display_name ?? null,
+      winner_avatar: profile?.avatar_url ?? null,
+      winner_score: best ? byScore(best) : 0,
+    };
+  });
 }
 
 /** Realtime subscription: pool and players update when someone enters. Uses polling when Realtime disabled. */
