@@ -127,16 +127,25 @@ serve(async (req) => {
     }
 
     const completedAt = new Date().toISOString();
+    const timeTakenSeconds = Math.round(time_taken_ms / 1000);
     const sessionUpdate: Record<string, unknown> = {
       completed_at: completedAt,
       finished_at: completedAt,
+      total_points: total_score,
+      score: total_score,
+      time_taken_seconds: timeTakenSeconds,
+      time_taken_ms: time_taken_ms,
+      correct_count: correct_count,
+      correct_answers: correct_count,
     };
-    if ('score' in sessionAny) sessionUpdate.score = total_score;
-    if ('total_points' in sessionAny) sessionUpdate.total_points = total_score;
-    if ('correct_count' in sessionAny) sessionUpdate.correct_count = correct_count;
-    if ('correct_answers' in sessionAny) sessionUpdate.correct_answers = correct_count;
-    if ('time_taken_ms' in sessionAny) sessionUpdate.time_taken_ms = time_taken_ms;
-    if ('time_taken_seconds' in sessionAny) sessionUpdate.time_taken_seconds = Math.round(time_taken_ms / 1000);
+    if (!('total_points' in sessionAny)) delete sessionUpdate.total_points;
+    if (!('score' in sessionAny)) delete sessionUpdate.score;
+    if (!('time_taken_seconds' in sessionAny)) delete sessionUpdate.time_taken_seconds;
+    if (!('time_taken_ms' in sessionAny)) delete sessionUpdate.time_taken_ms;
+    if (!('completed_at' in sessionAny)) delete sessionUpdate.completed_at;
+    if (!('finished_at' in sessionAny)) delete sessionUpdate.finished_at;
+    if (!('correct_count' in sessionAny)) delete sessionUpdate.correct_count;
+    if (!('correct_answers' in sessionAny)) delete sessionUpdate.correct_answers;
 
     const { error: updateError } = await supabase
       .from('game_sessions')
