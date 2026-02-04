@@ -38,8 +38,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
   useEffect(() => {
     const fetchQuestions = async () => {
       if (!sessionId) {
-        console.error('❌ No session ID provided to QuizView');
-        setError('No session ID provided');
+        // Parent may have cleared session after quiz finished; avoid error state and noisy log
         setLoading(false);
         return;
       }

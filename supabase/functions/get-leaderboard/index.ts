@@ -106,27 +106,51 @@ serve(async (req) => {
     let playerCount = 0;
 
     if (period === 'daily') {
-      // Use daily_rounds (same as start-game): current 6-hour window by date + round_number
+      // Use daily_rounds (same as start-game): current 6-hour window by date + round_number.
+      // IMPORTANT: Leaderboard list is never filtered by wallet – all connected users see the same full list.
       const now = new Date();
       const today = now.toISOString().split('T')[0];
       const currentHour = now.getUTCHours();
       const roundNumber = Math.floor(currentHour / 6);
 
-      const { data: round } = await supabase
+      let round: { id: string; pot_lamports?: number; player_count?: number } | null = null;
+      const { data: roundData } = await supabase
         .from('daily_rounds')
         .select('id, pot_lamports, player_count')
         .eq('date', today)
         .eq('round_number', roundNumber)
-        .single();
+        .maybeSingle();
+      round = roundData;
+
+      // Fallback: if no round for current window, use the most recent round that has finished sessions (so everyone sees the same leaderboard)
+      if (!round) {
+        const { data: recentRounds } = await supabase
+          .from('daily_rounds')
+          .select('id, pot_lamports, player_count')
+          .order('date', { ascending: false })
+          .order('round_number', { ascending: false })
+          .limit(10);
+        for (const r of recentRounds || []) {
+          const { count } = await supabase
+            .from('game_sessions')
+            .select('*', { count: 'exact', head: true })
+            .eq('round_id', r.id)
+            .not('finished_at', 'is', null);
+          if (count && count > 0) {
+            round = r;
+            break;
+          }
+        }
+      }
 
       if (round) {
         potLamports = round.pot_lamports ?? 0;
         playerCount = round.player_count ?? 0;
 
-        // Get all finished sessions for this round (no wallet filter – everyone sees the same full leaderboard)
+        // All finished sessions for this round – no wallet filter; same list for every user
         const { data: sessions } = await supabase
           .from('game_sessions')
-          .select('wallet_address, score, total_points, correct_count, correct_answers, time_taken_ms')
+          .select('wallet_address, score, total_points, correct_count, correct_answers, time_taken_ms, time_taken_seconds')
           .eq('round_id', round.id)
           .not('finished_at', 'is', null)
           .limit(limit * 2);
@@ -143,21 +167,20 @@ serve(async (req) => {
           }));
         }
 
-        // Get user's rank if wallet provided
+        // Wallet is only used to compute user_rank / user_score for the requesting user
         if (wallet) {
           const userEntry = leaderboard.find((e: any) => e.wallet_address === wallet);
           if (userEntry) {
             userRank = userEntry.rank;
             userScore = userEntry.score;
           } else {
-            // User not in top N: fetch their session for this round to get score and compute rank
             const { data: userSession } = await supabase
               .from('game_sessions')
               .select('score, total_points')
               .eq('round_id', round.id)
               .eq('wallet_address', wallet)
               .not('finished_at', 'is', null)
-              .single();
+              .maybeSingle();
             if (userSession) {
               const uScore = Number((userSession as any).score ?? (userSession as any).total_points ?? 0);
               userScore = uScore;
