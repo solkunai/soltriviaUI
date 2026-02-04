@@ -142,14 +142,20 @@ body {
   }
 }
 
-/* Wallet Modal Styles */
-.wallet-adapter-modal {
-  background: #0a0a0a !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+/* Wallet Modal Styles — black background, green text, green outline */
+.wallet-adapter-modal,
+.wallet-adapter-modal-overlay {
+  background: rgba(0, 0, 0, 0.85) !important;
+}
+
+.wallet-adapter-modal-wrapper {
+  background: #000000 !important;
+  border: 2px solid #14F195 !important;
+  box-shadow: 0 0 24px rgba(20, 241, 149, 0.15) !important;
 }
 
 .wallet-adapter-modal-title {
-  color: #fff !important;
+  color: #14F195 !important;
   font-weight: 900 !important;
   text-transform: uppercase !important;
 }
@@ -159,22 +165,49 @@ body {
   padding: 0 !important;
 }
 
-.wallet-adapter-modal-list-item {
-  background: rgba(255, 255, 255, 0.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+.wallet-adapter-modal-list-item,
+.wallet-adapter-modal-list .wallet-adapter-button {
+  background: rgba(20, 241, 149, 0.06) !important;
+  border: 1px solid rgba(20, 241, 149, 0.2) !important;
   border-radius: 0.75rem !important;
   margin-bottom: 0.5rem !important;
   transition: all 0.2s !important;
+  color: #14F195 !important;
+  font-weight: 700 !important;
 }
 
-.wallet-adapter-modal-list-item:hover {
-  background: rgba(255, 255, 255, 0.1) !important;
+.wallet-adapter-modal-list-item:hover,
+.wallet-adapter-modal-list .wallet-adapter-button:hover {
+  background: rgba(20, 241, 149, 0.12) !important;
   border-color: #14F195 !important;
 }
 
-.wallet-adapter-modal-list-item button {
-  color: #fff !important;
+.wallet-adapter-modal-list-item button,
+.wallet-adapter-modal-list .wallet-adapter-button,
+.wallet-adapter-modal-list .wallet-adapter-button span {
+  color: #14F195 !important;
   font-weight: 700 !important;
+}
+
+.wallet-adapter-modal-list-more {
+  color: #14F195 !important;
+}
+
+.wallet-adapter-modal-list-more svg {
+  fill: #14F195 !important;
+}
+
+.wallet-adapter-modal-button-close {
+  background: rgba(20, 241, 149, 0.1) !important;
+}
+
+.wallet-adapter-modal-button-close svg {
+  fill: #14F195 !important;
+}
+
+.wallet-adapter-modal-button-close:hover svg {
+  fill: #14F195 !important;
+  opacity: 1;
 }
 
 /* Quiz Answer Animations */
