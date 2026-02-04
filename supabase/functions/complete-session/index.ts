@@ -251,10 +251,18 @@ serve(async (req) => {
     }
 
     // Recalculate ranks for the round and set daily_rounds.winner_wallet/winner_score to current #1
+    const roundId = (session as Record<string, unknown>).round_id as string;
     try {
-      await supabase.rpc('calculate_rankings_and_winner', { p_round_id: (session as Record<string, unknown>).round_id });
+      await supabase.rpc('calculate_rankings_and_winner', { p_round_id: roundId });
     } catch (_) {
       // RPC might not exist yet (run migration leaderboard_and_round_winners.sql); rank/winner computed on read
+    }
+
+    // Refresh dedicated round_leaderboard table so all users see the same list in real time
+    try {
+      await supabase.rpc('refresh_round_leaderboard', { p_round_id: roundId });
+    } catch (_) {
+      // Migration round_leaderboard_table.sql adds this; non-fatal if not yet run
     }
 
     // Get the player's rank after calculation

@@ -147,24 +147,43 @@ serve(async (req) => {
         potLamports = round.pot_lamports ?? 0;
         playerCount = round.player_count ?? 0;
 
-        // All finished sessions for this round – no wallet filter; same list for every user
-        const { data: sessions } = await supabase
-          .from('game_sessions')
-          .select('wallet_address, score, total_points, correct_count, correct_answers, time_taken_ms, time_taken_seconds')
+        // Read from dedicated round_leaderboard table so all users see the same list in real time
+        const { data: snapshot } = await supabase
+          .from('round_leaderboard')
+          .select('wallet_address, rank, score, display_name, avatar_url, time_taken_ms')
           .eq('round_id', round.id)
-          .not('finished_at', 'is', null)
-          .limit(limit * 2);
+          .order('rank', { ascending: true })
+          .limit(limit);
 
-        if (sessions && sessions.length > 0) {
-          const byScore = (s: any) => Number(s.score ?? s.total_points ?? 0);
-          const sorted = [...sessions].sort((a, b) => byScore(b) - byScore(a)).slice(0, limit);
-          leaderboard = sorted.map((s: any, i: number) => ({
-            rank: i + 1,
+        if (snapshot && snapshot.length > 0) {
+          leaderboard = snapshot.map((s: any) => ({
+            rank: Number(s.rank),
             wallet_address: s.wallet_address,
-            score: byScore(s),
-            correct_count: s.correct_count ?? s.correct_answers ?? 0,
-            time_taken_ms: s.time_taken_ms != null ? Number(s.time_taken_ms) : (s.time_taken_seconds != null ? Number(s.time_taken_seconds) * 1000 : 0),
+            score: Number(s.score),
+            display_name: s.display_name ?? null,
+            avatar: s.avatar_url ?? '',
+            time_taken_ms: Number(s.time_taken_ms ?? 0),
           }));
+        } else {
+          // Fallback: build from game_sessions if round_leaderboard not yet populated
+          const { data: sessions } = await supabase
+            .from('game_sessions')
+            .select('wallet_address, score, total_points, time_taken_ms, time_taken_seconds')
+            .eq('round_id', round.id)
+            .not('finished_at', 'is', null)
+            .limit(limit * 2);
+
+          if (sessions && sessions.length > 0) {
+            const byScore = (s: any) => Number(s.score ?? s.total_points ?? 0);
+            const sorted = [...sessions].sort((a, b) => byScore(b) - byScore(a)).slice(0, limit);
+            leaderboard = sorted.map((s: any, i: number) => ({
+              rank: i + 1,
+              wallet_address: s.wallet_address,
+              score: byScore(s),
+              display_name: null,
+              avatar: '',
+            }));
+          }
         }
 
         // Wallet is only used to compute user_rank / user_score for the requesting user
@@ -184,7 +203,12 @@ serve(async (req) => {
             if (userSession) {
               const uScore = Number((userSession as any).score ?? (userSession as any).total_points ?? 0);
               userScore = uScore;
-              const higher = (sessions || []).filter((s: any) => (Number(s.score ?? s.total_points ?? 0)) > uScore).length;
+              const { data: allSessions } = await supabase
+                .from('game_sessions')
+                .select('score, total_points')
+                .eq('round_id', round.id)
+                .not('finished_at', 'is', null);
+              const higher = (allSessions || []).filter((s: any) => (Number(s.score ?? s.total_points ?? 0)) > uScore).length;
               userRank = higher + 1;
             }
           }
