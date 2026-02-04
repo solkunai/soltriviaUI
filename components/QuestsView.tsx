@@ -18,6 +18,7 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
   const [showRaiderInput, setShowRaiderInput] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [submitMessage, setSubmitMessage] = useState('');
+  const [rewardToast, setRewardToast] = useState<{ tp: number } | null>(null);
 
   const loadQuests = useCallback(async () => {
     try {
@@ -107,6 +108,12 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
 
   return (
     <div className="min-h-full bg-[#050505] overflow-x-hidden safe-top relative flex flex-col">
+      {rewardToast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-xl bg-[#14F195]/20 border border-[#14F195]/50 shadow-lg animate-fade-in">
+          <p className="text-[#14F195] font-black text-sm md:text-base uppercase tracking-wide">Success!</p>
+          <p className="text-white font-bold text-lg md:text-xl">+{rewardToast.tp.toLocaleString()} TP</p>
+        </div>
+      )}
       <div className="flex items-center justify-between px-6 py-6 border-b border-white/5 bg-[#050505] sticky top-0 z-[60]">
         <h2 className="text-2xl font-[1000] italic uppercase tracking-tighter text-white">QUESTS</h2>
         <button
@@ -157,25 +164,30 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
                       progress={getProgress(quest.id)}
                       completed={getCompleted(quest.id)}
                       claimed={getClaimed(quest.id)}
-                      showInput={quest.slug === 'true_raider' && showRaiderInput}
+                      showInput={quest.slug === 'true_raider' && showRaiderInput && !getClaimed(quest.id)}
                       inputValue={raiderUrl}
                       onInputChange={setRaiderUrl}
                       onGoToProfile={quest.slug === 'identity_sync' ? onGoToProfile : undefined}
-                      onRaiderClick={quest.slug === 'true_raider' ? () => {
-                        window.open('https://x.com/solana', '_blank');
-                        setShowRaiderInput(true);
+                      onRaiderClick={quest.quest_type === 'SOCIAL' && !getClaimed(quest.id) ? () => {
+                        const link = (quest.requirement_config as { link?: string })?.link || (quest.slug === 'true_raider' ? 'https://x.com/soltrivia_app' : '');
+                        if (link) window.open(link, '_blank');
+                        if (quest.slug === 'true_raider') setShowRaiderInput(true);
                       } : undefined}
                       onVerifyRaider={quest.slug === 'true_raider' ? async () => {
                         if (!publicKey || !raiderUrl.trim()) return;
                         setSubmitStatus('submitting');
                         setSubmitMessage('');
-                        const { ok, error, message, auto_claimed } = await submitQuestProof(publicKey.toBase58(), 'true_raider', raiderUrl.trim());
+                        const { ok, error, message, auto_claimed, reward_tp } = await submitQuestProof(publicKey.toBase58(), 'true_raider', raiderUrl.trim());
                         if (ok) {
                           setSubmitStatus('success');
                           setSubmitMessage(auto_claimed ? (message || 'Quest completed! Your reward has been added.') : (message || 'Submitted for review. You’ll get TP once approved.'));
                           setRaiderUrl('');
                           setShowRaiderInput(false);
                           loadProgress();
+                          if (auto_claimed && reward_tp != null) {
+                            setRewardToast({ tp: reward_tp });
+                            setTimeout(() => setRewardToast(null), 4000);
+                          }
                         } else {
                           setSubmitStatus('error');
                           setSubmitMessage(error || 'Submit failed');
@@ -184,7 +196,13 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
                       } : undefined}
                       onClaim={connected && publicKey ? async (q) => {
                         const result = await claimQuestReward(publicKey.toBase58(), q.id);
-                        if (result.success) loadProgress();
+                        if (result.success) {
+                          loadProgress();
+                          if (result.reward_tp != null) {
+                            setRewardToast({ tp: result.reward_tp });
+                            setTimeout(() => setRewardToast(null), 4000);
+                          }
+                        }
                         return result;
                       } : undefined}
                       submitStatus={submitStatus}
@@ -249,10 +267,11 @@ const QuestCard: React.FC<QuestCardProps> = ({
     badgeLabel = 'SOCIAL MISSION';
   }
 
-  const statusText = quest.slug === 'true_raider' ? 'START RAID' : (claimed ? 'CLAIMED' : isClaimable ? 'CLAIM' : 'ACTIVE');
+  const statusText = quest.slug === 'true_raider' ? (claimed ? 'CLAIMED' : 'START RAID') : (claimed ? 'CLAIMED' : isClaimable ? 'CLAIM' : 'ACTIVE');
   const rewardLabel = quest.reward_label || `${quest.reward_tp?.toLocaleString() ?? 0} TP`;
 
   const handleAction = async () => {
+    if (claimed) return;
     if (isClaimable) {
       if (!onClaim) {
         alert('Please connect wallet to claim rewards');
@@ -273,7 +292,7 @@ const QuestCard: React.FC<QuestCardProps> = ({
       return;
     }
     if (quest.slug === 'identity_sync') onGoToProfile?.();
-    if (quest.slug === 'true_raider') onRaiderClick?.();
+    if (quest.slug === 'true_raider' && !claimed) onRaiderClick?.();
   };
 
   return (
@@ -346,8 +365,8 @@ const QuestCard: React.FC<QuestCardProps> = ({
         </div>
         <button
           onClick={handleAction}
-          disabled={isClaimable && claiming}
-          className={`px-4 md:px-8 py-2 md:py-3 font-[1000] uppercase text-[9px] md:text-xs italic shadow-lg active:scale-95 transition-all rounded-sm disabled:opacity-70 ${isClaimable ? 'bg-[#14F195] text-black' : quest.slug === 'true_raider' ? 'bg-[#3b82f6] text-white' : 'bg-white/5 text-zinc-600'}`}
+          disabled={(isClaimable && claiming) || claimed}
+          className={`px-4 md:px-8 py-2 md:py-3 font-[1000] uppercase text-[9px] md:text-xs italic shadow-lg active:scale-95 transition-all rounded-sm disabled:opacity-70 ${isClaimable ? 'bg-[#14F195] text-black' : claimed ? 'bg-white/5 text-zinc-500 cursor-default' : quest.slug === 'true_raider' ? 'bg-[#3b82f6] text-white' : 'bg-white/5 text-zinc-600'}`}
         >
           {isClaimable && claiming ? '…' : statusText}
         </button>

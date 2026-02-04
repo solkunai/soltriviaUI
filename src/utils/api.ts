@@ -106,7 +106,7 @@ export interface Quest {
   reward_tp: number;
   reward_label: string | null;
   requirement_type: string;
-  requirement_config: { max?: number };
+  requirement_config: { max?: number; link?: string };
   sort_order: number;
   quest_type: string;
   is_active?: boolean;

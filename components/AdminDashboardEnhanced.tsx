@@ -649,7 +649,7 @@ interface AdminQuest {
   reward_tp: number;
   reward_label: string | null;
   requirement_type: string;
-  requirement_config: { max?: number };
+  requirement_config: { max?: number; link?: string };
   sort_order: number;
   quest_type: string;
   is_active: boolean;
@@ -677,6 +677,7 @@ const QuestsManagementView: React.FC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingQuest, setEditingQuest] = useState<AdminQuest | null>(null);
   const [newQuest, setNewQuest] = useState({
     slug: '',
     title: '',
@@ -685,10 +686,11 @@ const QuestsManagementView: React.FC = () => {
     reward_tp: 250,
     reward_label: '250 TP',
     requirement_type: 'manual',
-    requirement_config: { max: 1 },
+    requirement_config: { max: 1, link: '' as string },
     sort_order: 0,
     quest_type: 'STANDARD' as string,
     is_active: true,
+    link: '', // Link URL for SOCIAL quests (stored in requirement_config.link)
   });
 
   const fetchQuests = async () => {
@@ -747,7 +749,7 @@ const QuestsManagementView: React.FC = () => {
   const callManage = async (action: string, payload?: Record<string, unknown>) => {
     const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-quests`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ action, payload: payload ?? {} }),
     });
     const json = await res.json().catch(() => ({}));
@@ -812,6 +814,10 @@ const QuestsManagementView: React.FC = () => {
     setError('');
     setSuccess('');
     try {
+      const requirementConfig: { max: number; link?: string } = {
+        max: newQuest.requirement_config?.max ?? 1,
+        ...(newQuest.quest_type === 'SOCIAL' && newQuest.link?.trim() ? { link: newQuest.link.trim() } : {}),
+      };
       await callManage('create', {
         slug: newQuest.slug.trim().toLowerCase().replace(/\s+/g, '_'),
         title: newQuest.title.trim(),
@@ -820,14 +826,14 @@ const QuestsManagementView: React.FC = () => {
         reward_tp: newQuest.reward_tp,
         reward_label: newQuest.reward_label || `${newQuest.reward_tp} TP`,
         requirement_type: newQuest.requirement_type,
-        requirement_config: newQuest.requirement_config,
+        requirement_config: requirementConfig,
         sort_order: newQuest.sort_order,
         quest_type: newQuest.quest_type,
         is_active: newQuest.is_active,
       });
       setSuccess('Quest created');
       setShowAddForm(false);
-      setNewQuest({ slug: '', title: '', description: '', category: 'Active Operations', reward_tp: 250, reward_label: '250 TP', requirement_type: 'manual', requirement_config: { max: 1 }, sort_order: 0, quest_type: 'STANDARD', is_active: true });
+      setNewQuest({ slug: '', title: '', description: '', category: 'Active Operations', reward_tp: 250, reward_label: '250 TP', requirement_type: 'manual', requirement_config: { max: 1, link: '' }, sort_order: 0, quest_type: 'STANDARD', is_active: true, link: '' });
       fetchQuests();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Create failed');
@@ -896,6 +902,13 @@ const QuestsManagementView: React.FC = () => {
                 {QUEST_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
+            {newQuest.quest_type === 'SOCIAL' && (
+              <div className="md:col-span-2">
+                <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Link URL (e.g. tweet, Discord)</label>
+                <input className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" placeholder="https://x.com/..." value={newQuest.link} onChange={(e) => setNewQuest((q) => ({ ...q, link: e.target.value }))} />
+                <p className="text-zinc-500 text-xs mt-1">Players open this link when they tap the quest action. Required for social quests.</p>
+              </div>
+            )}
             <div>
               <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Reward (TP)</label>
               <input type="number" className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" value={newQuest.reward_tp} onChange={(e) => setNewQuest((q) => ({ ...q, reward_tp: parseInt(e.target.value, 10) || 0, reward_label: `${parseInt(e.target.value, 10) || 0} TP` }))} />
@@ -964,6 +977,7 @@ const QuestsManagementView: React.FC = () => {
                     />
                   </td>
                   <td className="py-3 px-4 text-right space-x-2">
+                    <button onClick={() => setEditingQuest({ ...q, requirement_config: { ...q.requirement_config } })} className="px-2 py-1 text-xs font-bold uppercase rounded bg-white/10 text-white hover:bg-white/20">Edit</button>
                     <select
                       className="bg-black/40 border border-white/10 px-2 py-1 rounded text-xs text-white"
                       value={q.category}
@@ -983,6 +997,64 @@ const QuestsManagementView: React.FC = () => {
           </table>
         </div>
       </section>
+
+      {/* Edit quest modal */}
+      {editingQuest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={() => setEditingQuest(null)}>
+          <div className="bg-[#0D0D0D] border border-white/20 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <h3 className="text-lg font-black text-[#14F195] mb-4">Edit quest: {editingQuest.title}</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Title</label>
+                  <input className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" value={editingQuest.title} onChange={(e) => setEditingQuest((p) => p ? { ...p, title: e.target.value } : null)} />
+                </div>
+                <div>
+                  <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Description</label>
+                  <textarea className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" rows={2} value={editingQuest.description} onChange={(e) => setEditingQuest((p) => p ? { ...p, description: e.target.value } : null)} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Category</label>
+                    <select className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" value={editingQuest.category} onChange={(e) => setEditingQuest((p) => p ? { ...p, category: e.target.value } : null)}>
+                      {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Reward (TP)</label>
+                    <input type="number" className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" value={editingQuest.reward_tp} onChange={(e) => setEditingQuest((p) => p ? { ...p, reward_tp: parseInt(e.target.value, 10) || 0, reward_label: `${parseInt(e.target.value, 10) || 0} TP` } : null)} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Reward label (e.g. &quot;2,500 TP&quot;)</label>
+                  <input className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" value={editingQuest.reward_label || ''} onChange={(e) => setEditingQuest((p) => p ? { ...p, reward_label: e.target.value || null } : null)} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Requirement type</label>
+                    <input className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" value={editingQuest.requirement_type} onChange={(e) => setEditingQuest((p) => p ? { ...p, requirement_type: e.target.value } : null)} />
+                  </div>
+                  <div>
+                    <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Max (completion threshold)</label>
+                    <input type="number" className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" value={editingQuest.requirement_config?.max ?? 1} onChange={(e) => setEditingQuest((p) => p ? { ...p, requirement_config: { ...p.requirement_config, max: parseInt(e.target.value, 10) || 1 } } : null)} />
+                  </div>
+                </div>
+                {editingQuest.quest_type === 'SOCIAL' && (
+                  <div>
+                    <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Link URL (tweet, Discord, etc.)</label>
+                    <input className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" placeholder="https://x.com/..." value={editingQuest.requirement_config?.link ?? ''} onChange={(e) => setEditingQuest((p) => p ? { ...p, requirement_config: { ...p.requirement_config, link: e.target.value.trim() || undefined } } : null)} />
+                    <p className="text-zinc-500 text-xs mt-1">Players open this link when they tap the quest. Edit TRUE RAIDER’s tweet link here.</p>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2 mt-6">
+                <button onClick={() => setEditingQuest(null)} className="px-4 py-2 border border-white/20 text-white text-sm font-bold rounded hover:bg-white/10">Cancel</button>
+                <button onClick={() => { if (editingQuest) { handleUpdate(editingQuest); setEditingQuest(null); } }} className="px-4 py-2 bg-[#14F195] text-black font-black text-sm rounded hover:opacity-90">Save changes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Pending submissions (manual-review quests only; TRUE RAIDER is auto-approved) */}
       <section className="pt-6 border-t border-white/10">
