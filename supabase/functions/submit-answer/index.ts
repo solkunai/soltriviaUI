@@ -401,7 +401,7 @@ serve(async (req) => {
       .update(sessionUpdate)
       .eq('id', sessionId);
 
-    // If game is finished, update player stats
+    // If game is finished, update player stats (player_stats) and sync streak to player_profiles for profile page
     if (isLastQuestion) {
       const { data: existingStats } = await supabase
         .from('player_stats')
@@ -410,17 +410,16 @@ serve(async (req) => {
         .single();
 
       const today = new Date().toISOString().split('T')[0];
+      let currentStreak = 1;
+      let bestStreak = 1;
 
       if (existingStats) {
-        // Update existing stats
         const lastPlayedDate = existingStats.last_played_date;
         const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-
-        // Check if streak continues
-        let newStreak = 1;
         if (lastPlayedDate === yesterday) {
-          newStreak = existingStats.current_streak + 1;
+          currentStreak = existingStats.current_streak + 1;
         }
+        bestStreak = Math.max(existingStats.longest_streak ?? 0, currentStreak);
 
         await supabase
           .from('player_stats')
@@ -428,14 +427,13 @@ serve(async (req) => {
             games_played: existingStats.games_played + 1,
             total_score: existingStats.total_score + newScore,
             best_score: Math.max(existingStats.best_score, newScore),
-            current_streak: newStreak,
-            longest_streak: Math.max(existingStats.longest_streak, newStreak),
+            current_streak: currentStreak,
+            longest_streak: bestStreak,
             last_played_date: today,
             updated_at: new Date().toISOString(),
           })
           .eq('wallet_address', session.wallet_address);
       } else {
-        // Create new stats
         await supabase.from('player_stats').insert({
           wallet_address: session.wallet_address,
           games_played: 1,
@@ -445,6 +443,22 @@ serve(async (req) => {
           longest_streak: 1,
           last_played_date: today,
         });
+      }
+
+      // Sync streak to player_profiles so Profile page STREAK shows correct values
+      const { error: profileErr } = await supabase
+        .from('player_profiles')
+        .upsert(
+          {
+            wallet_address: session.wallet_address,
+            current_streak: currentStreak,
+            best_streak: bestStreak,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'wallet_address' }
+        );
+      if (profileErr) {
+        // player_profiles may not exist in some setups; non-fatal
       }
     }
 
