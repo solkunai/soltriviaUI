@@ -213,6 +213,16 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
       </div>
 
       <div className="p-4 md:p-12 lg:p-20 max-w-[1400px] mx-auto w-full pb-32 md:pb-48 relative">
+        {/* XP at top */}
+        <div className="mb-6 md:mb-10 flex justify-center md:justify-start">
+          <div className="inline-flex items-baseline gap-2 px-6 py-4 md:px-8 md:py-5 bg-[#0A0A0A] border border-[#14F195]/20 rounded-2xl shadow-[0_0_20px_rgba(20,241,149,0.08)]">
+            <span className="text-zinc-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] italic">TOTAL XP</span>
+            <span className="text-[#14F195] text-3xl md:text-5xl font-[1000] italic tabular-nums leading-none">
+              {loading ? '—' : (stats?.total_points ?? 0).toLocaleString()}
+            </span>
+          </div>
+        </div>
+
         {/* Profile Hero Section - Optimized for Mobile */}
         <div className="flex flex-col md:flex-row items-center md:items-start gap-4 md:gap-14 mb-8 md:mb-20 relative z-10 pt-2 md:pt-0">
           <div className="relative flex-shrink-0">

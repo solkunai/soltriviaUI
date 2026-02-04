@@ -348,12 +348,16 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
               let animationClass = "";
               
               if (selectedOption === idx) {
-                if (isCorrect) {
+                if (isCorrect === true) {
                   stateClass = "border-[#00FFA3] bg-[#00FFA3]/10 text-[#00FFA3] shadow-[0_0_20px_rgba(0,255,163,0.1)]";
                   animationClass = "answer-correct";
-                } else {
+                } else if (isCorrect === false) {
                   stateClass = "border-[#FF3131] bg-[#FF3131]/10 text-[#FF3131]";
                   animationClass = "answer-wrong";
+                } else {
+                  // Pending: answer submitted, waiting for result — show neutral so we don't flash red
+                  stateClass = "border-[#00FFA3]/40 bg-[#00FFA3]/5 text-white";
+                  animationClass = "";
                 }
               } else if (selectedOption !== null && idx === question.correctAnswer) {
                 stateClass = "border-[#00FFA3] bg-[#00FFA3]/5 text-[#00FFA3]/60";
