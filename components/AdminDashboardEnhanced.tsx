@@ -183,24 +183,149 @@ const AdminDashboardEnhanced: React.FC = () => {
 };
 
 // Stub tabs (coming soon) — fix missing component errors
-const RankingsView: React.FC = () => (
-  <div className="py-12 text-center text-zinc-400">
-    <h2 className="text-xl font-black text-white mb-2">Rankings</h2>
-    <p>Coming soon. View leaderboard and player rankings here.</p>
-  </div>
-);
-const UsersView: React.FC = () => (
-  <div className="py-12 text-center text-zinc-400">
-    <h2 className="text-xl font-black text-white mb-2">Users</h2>
-    <p>Coming soon. Manage players and profiles here.</p>
-  </div>
-);
-const RoundsView: React.FC = () => (
-  <div className="py-12 text-center text-zinc-400">
-    <h2 className="text-xl font-black text-white mb-2">Rounds</h2>
-    <p>Coming soon. View daily rounds and pots here.</p>
-  </div>
-);
+const RankingsView: React.FC = () => {
+  const [list, setList] = useState<PlayerStats[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    supabase
+      .from('player_profiles')
+      .select('wallet_address, username, total_games_played, total_points, current_streak')
+      .order('total_points', { ascending: false })
+      .limit(100)
+      .then(({ data }) => {
+        setList((data as PlayerStats[]) || []);
+        setLoading(false);
+      });
+  }, []);
+  if (loading) return <div className="py-12 text-center text-zinc-400">Loading rankings...</div>;
+  return (
+    <div className="py-6">
+      <h2 className="text-xl font-black text-white mb-4">Player Rankings (by total points)</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-white/10">
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">#</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Wallet</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Username</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Games</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Points</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Streak</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((p, i) => (
+              <tr key={p.wallet_address} className="border-b border-white/5">
+                <td className="py-2 px-2 text-zinc-400">{i + 1}</td>
+                <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 8)}...{p.wallet_address.slice(-4)}</td>
+                <td className="py-2 px-2 text-white text-sm">{p.username || '—'}</td>
+                <td className="py-2 px-2 text-[#14F195]">{p.total_games_played ?? 0}</td>
+                <td className="py-2 px-2 text-[#14F195] font-bold">{(p.total_points ?? 0).toLocaleString()}</td>
+                <td className="py-2 px-2 text-zinc-400">{p.current_streak ?? 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {list.length === 0 && <p className="text-zinc-500 mt-4">No players yet.</p>}
+    </div>
+  );
+};
+
+const UsersView: React.FC = () => {
+  const [list, setList] = useState<PlayerStats[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    supabase
+      .from('player_profiles')
+      .select('wallet_address, username, total_games_played, total_points, current_streak')
+      .order('updated_at', { ascending: false })
+      .limit(100)
+      .then(({ data }) => {
+        setList((data as PlayerStats[]) || []);
+        setLoading(false);
+      });
+  }, []);
+  if (loading) return <div className="py-12 text-center text-zinc-400">Loading users...</div>;
+  return (
+    <div className="py-6">
+      <h2 className="text-xl font-black text-white mb-4">Users (player profiles)</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-white/10">
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Wallet</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Username</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Games</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Points</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Streak</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((p) => (
+              <tr key={p.wallet_address} className="border-b border-white/5">
+                <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address}</td>
+                <td className="py-2 px-2 text-white text-sm">{p.username || '—'}</td>
+                <td className="py-2 px-2 text-[#14F195]">{p.total_games_played ?? 0}</td>
+                <td className="py-2 px-2 text-[#14F195]">{(p.total_points ?? 0).toLocaleString()}</td>
+                <td className="py-2 px-2 text-zinc-400">{p.current_streak ?? 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {list.length === 0 && <p className="text-zinc-500 mt-4">No users yet.</p>}
+    </div>
+  );
+};
+
+const RoundsView: React.FC = () => {
+  const [list, setList] = useState<RoundData[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    supabase
+      .from('daily_rounds')
+      .select('id, date, round_number, pot_lamports, player_count, status')
+      .order('date', { ascending: false })
+      .order('round_number', { ascending: false })
+      .limit(80)
+      .then(({ data }) => {
+        setList((data as RoundData[]) || []);
+        setLoading(false);
+      });
+  }, []);
+  if (loading) return <div className="py-12 text-center text-zinc-400">Loading rounds...</div>;
+  return (
+    <div className="py-6">
+      <h2 className="text-xl font-black text-white mb-4">Daily Rounds</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-white/10">
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Date</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Round</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Pot (SOL)</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Players</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((r) => (
+              <tr key={r.id} className="border-b border-white/5">
+                <td className="py-2 px-2 text-white text-sm">{r.date}</td>
+                <td className="py-2 px-2 text-zinc-400">#{r.round_number ?? 0}</td>
+                <td className="py-2 px-2 text-[#14F195] font-bold">{((r.pot_lamports ?? 0) / 1_000_000_000).toFixed(4)}</td>
+                <td className="py-2 px-2 text-zinc-400">{r.player_count ?? 0}</td>
+                <td className="py-2 px-2 text-zinc-500 text-xs">{r.status ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {list.length === 0 && <p className="text-zinc-500 mt-4">No rounds yet.</p>}
+    </div>
+  );
+};
 
 function getRoundLabel(date: string, roundNumber: number): string {
   const d = new Date(date + 'Z');
@@ -362,12 +487,78 @@ const RoundWinnersAdminView: React.FC = () => {
     </div>
   );
 };
-const LivesView: React.FC = () => (
-  <div className="py-12 text-center text-zinc-400">
-    <h2 className="text-xl font-black text-white mb-2">Lives</h2>
-    <p>Coming soon. View lives purchases and usage here.</p>
-  </div>
-);
+const LivesView: React.FC = () => {
+  const [lives, setLives] = useState<Array<{ wallet_address: string; lives_count: number; total_purchased: number; total_used: number }>>([]);
+  const [purchases, setPurchases] = useState<Array<{ wallet_address: string; lives_purchased: number; amount_lamports: number; created_at?: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    Promise.all([
+      supabase.from('player_lives').select('wallet_address, lives_count, total_purchased, total_used').order('total_purchased', { ascending: false }).limit(100),
+      supabase.from('lives_purchases').select('wallet_address, lives_purchased, amount_lamports, created_at').order('created_at', { ascending: false }).limit(100),
+    ]).then(([lRes, pRes]) => {
+      setLives((lRes.data as typeof lives) || []);
+      setPurchases((pRes.data as typeof purchases) || []);
+      setLoading(false);
+    });
+  }, []);
+  if (loading) return <div className="py-12 text-center text-zinc-400">Loading lives...</div>;
+  return (
+    <div className="py-6 space-y-8">
+      <div>
+        <h2 className="text-xl font-black text-white mb-4">Player Lives (current balance)</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-white/10">
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Wallet</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Lives</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Total purchased</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Total used</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lives.map((r) => (
+                <tr key={r.wallet_address} className="border-b border-white/5">
+                  <td className="py-2 px-2 font-mono text-xs text-zinc-300">{r.wallet_address.slice(0, 8)}...{r.wallet_address.slice(-4)}</td>
+                  <td className="py-2 px-2 text-[#14F195] font-bold">{r.lives_count ?? 0}</td>
+                  <td className="py-2 px-2 text-zinc-400">{r.total_purchased ?? 0}</td>
+                  <td className="py-2 px-2 text-zinc-400">{r.total_used ?? 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {lives.length === 0 && <p className="text-zinc-500 mt-4">No player_lives rows yet.</p>}
+      </div>
+      <div>
+        <h2 className="text-xl font-black text-white mb-4">Recent Lives Purchases</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-white/10">
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Wallet</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Lives</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Amount (SOL)</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchases.map((p, i) => (
+                <tr key={i} className="border-b border-white/5">
+                  <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 8)}...{p.wallet_address.slice(-4)}</td>
+                  <td className="py-2 px-2 text-[#14F195]">{p.lives_purchased ?? 0}</td>
+                  <td className="py-2 px-2 text-white">{(p.amount_lamports / 1_000_000_000).toFixed(4)}</td>
+                  <td className="py-2 px-2 text-zinc-500 text-xs">{(p as any).created_at ? new Date((p as any).created_at).toLocaleString() : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {purchases.length === 0 && <p className="text-zinc-500 mt-4">No purchases yet.</p>}
+      </div>
+    </div>
+  );
+};
 
 // Stats Overview Tab
 const StatsView: React.FC<{ stats: any; loading: boolean }> = ({ stats, loading }) => {
