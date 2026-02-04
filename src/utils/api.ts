@@ -557,7 +557,7 @@ export interface RoundWithWinner {
 export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinner[]> {
   const { data: rounds, error: roundsError } = await supabase
     .from('daily_rounds')
-    .select('id, date, round_number, pot_lamports, player_count')
+    .select('id, date, round_number, pot_lamports, player_count, winner_wallet, winner_score')
     .order('date', { ascending: false })
     .order('round_number', { ascending: false })
     .limit(limit);
@@ -565,6 +565,8 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
   if (roundsError || !rounds?.length) return [];
 
   const roundIds = rounds.map((r) => r.id);
+  const roundsWithStoredWinner = rounds.filter((r) => r.winner_wallet != null && (r.winner_wallet as string).length > 0);
+  const winnerWalletsFromRounds = [...new Set(roundsWithStoredWinner.map((r) => r.winner_wallet as string))];
 
   const { data: sessions, error: sessionsError } = await supabase
     .from('game_sessions')
@@ -572,47 +574,37 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
     .in('round_id', roundIds)
     .not('finished_at', 'is', null);
 
-  if (sessionsError || !sessions?.length) {
-    return rounds.map((r) => ({
-      round_id: r.id,
-      date: r.date,
-      round_number: r.round_number,
-      round_title: getRoundLabel(r.date, r.round_number),
-      pot_lamports: r.pot_lamports ?? 0,
-      player_count: r.player_count ?? 0,
-      winner_wallet: null,
-      winner_display_name: null,
-      winner_avatar: null,
-      winner_score: 0,
-    }));
-  }
-
   const byScore = (s: { score?: number; total_points?: number }) => Number(s.score ?? s.total_points ?? 0);
-  const sorted = [...sessions].sort((a, b) => {
-    const diff = byScore(b) - byScore(a);
-    if (diff !== 0) return diff;
-    return (a.time_taken_ms ?? 999999) - (b.time_taken_ms ?? 999999);
-  });
+  let bestByRound = new Map<string, { wallet_address: string; score: number; time_taken_ms?: number }>();
 
-  const bestByRound = new Map<string, (typeof sorted)[0]>();
-  for (const s of sorted) {
-    if (!bestByRound.has(s.round_id)) bestByRound.set(s.round_id, s);
+  if (!sessionsError && sessions?.length) {
+    const sorted = [...sessions].sort((a, b) => {
+      const diff = byScore(b) - byScore(a);
+      if (diff !== 0) return diff;
+      return (a.time_taken_ms ?? 999999) - (b.time_taken_ms ?? 999999);
+    });
+    for (const s of sorted) {
+      if (!bestByRound.has(s.round_id)) bestByRound.set(s.round_id, { wallet_address: s.wallet_address, score: byScore(s), time_taken_ms: s.time_taken_ms });
+    }
   }
 
-  const winnerWallets = [...new Set(bestByRound.values().map((s) => s.wallet_address))];
+  const allWinnerWallets = new Set(winnerWalletsFromRounds);
+  bestByRound.forEach((v) => allWinnerWallets.add(v.wallet_address));
   let profiles: { wallet_address: string; display_name: string | null; avatar_url: string | null }[] = [];
-  if (winnerWallets.length > 0) {
+  if (allWinnerWallets.size > 0) {
     const { data: prof } = await supabase
       .from('player_profiles')
       .select('wallet_address, display_name, avatar_url')
-      .in('wallet_address', winnerWallets);
+      .in('wallet_address', [...allWinnerWallets]);
     profiles = prof ?? [];
   }
   const profileByWallet = Object.fromEntries(profiles.map((p) => [p.wallet_address, p]));
 
   return rounds.map((r) => {
-    const best = bestByRound.get(r.id);
-    const profile = best ? profileByWallet[best.wallet_address] : null;
+    const storedWinner = r.winner_wallet && String(r.winner_wallet).length > 0;
+    const winnerWallet = storedWinner ? (r.winner_wallet as string) : bestByRound.get(r.id)?.wallet_address ?? null;
+    const winnerScore = storedWinner ? Number(r.winner_score ?? 0) : (bestByRound.get(r.id)?.score ?? 0);
+    const profile = winnerWallet ? profileByWallet[winnerWallet] : null;
     return {
       round_id: r.id,
       date: r.date,
@@ -620,10 +612,10 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
       round_title: getRoundLabel(r.date, r.round_number),
       pot_lamports: r.pot_lamports ?? 0,
       player_count: r.player_count ?? 0,
-      winner_wallet: best?.wallet_address ?? null,
+      winner_wallet: winnerWallet,
       winner_display_name: profile?.display_name ?? null,
       winner_avatar: profile?.avatar_url ?? null,
-      winner_score: best ? byScore(best) : 0,
+      winner_score: winnerScore,
     };
   });
 }

@@ -209,11 +209,11 @@ serve(async (req) => {
       console.error('Player profile sync failed (non-fatal):', profileErr);
     }
 
-    // Calculate rankings for the round (only count completed sessions); RPC may not exist in all schemas
+    // Recalculate ranks for the round and set daily_rounds.winner_wallet/winner_score to current #1
     try {
-      await supabase.rpc('calculate_rankings', { p_round_id: (session as Record<string, unknown>).round_id });
+      await supabase.rpc('calculate_rankings_and_winner', { p_round_id: (session as Record<string, unknown>).round_id });
     } catch (_) {
-      // RPC might not exist; rank will be computed on read
+      // RPC might not exist yet (run migration leaderboard_and_round_winners.sql); rank/winner computed on read
     }
 
     // Get the player's rank after calculation
