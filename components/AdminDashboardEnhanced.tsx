@@ -3,12 +3,19 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../src/utils/supabase';
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, SUPABASE_FUNCTIONS_URL } from '../src/utils/constants';
-import { getAuthHeaders } from '../src/utils/api';
+import { getAuthHeaders, fetchRoundPayouts, markPayoutPaid, type RoundPayout } from '../src/utils/api';
 import { getSolanaRpcEndpoint } from '../src/utils/rpc';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
 
-type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'answer_debug';
+function getAdminCreds(): { u: string; p: string } {
+  return {
+    u: import.meta.env.VITE_ADMIN_USERNAME || '',
+    p: import.meta.env.VITE_ADMIN_PASSWORD || '',
+  };
+}
+
+type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'answer_debug';
 
 interface Question {
   id?: string;
@@ -124,11 +131,6 @@ const AdminDashboardEnhanced: React.FC = () => {
     }
   };
 
-  const getCreds = (): { u: string; p: string } => ({
-    u: import.meta.env.VITE_ADMIN_USERNAME || '',
-    p: import.meta.env.VITE_ADMIN_PASSWORD || '',
-  });
-
   return (
     <div className="min-h-screen bg-[#050505] text-white p-8">
       {/* Header */}
@@ -142,6 +144,7 @@ const AdminDashboardEnhanced: React.FC = () => {
         {[
           { id: 'stats', label: '📊 Stats', icon: '📊' },
           { id: 'rankings', label: '🏆 Rankings', icon: '🏆' },
+          { id: 'round_winners', label: '🏅 Round Winners', icon: '🏅' },
           { id: 'questions', label: '❓ Questions', icon: '❓' },
           { id: 'quests', label: '📋 Quests', icon: '📋' },
           { id: 'users', label: '👥 Users', icon: '👥' },
@@ -167,6 +170,7 @@ const AdminDashboardEnhanced: React.FC = () => {
       <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-8">
         {activeTab === 'stats' && <StatsView stats={stats} loading={loading} />}
         {activeTab === 'rankings' && <RankingsView />}
+        {activeTab === 'round_winners' && <RoundWinnersAdminView />}
         {activeTab === 'questions' && <QuestionsView functionsUrl={SUPABASE_FUNCTIONS_URL} />}
         {activeTab === 'quests' && <QuestsManagementView />}
         {activeTab === 'users' && <UsersView />}
@@ -197,6 +201,167 @@ const RoundsView: React.FC = () => (
     <p>Coming soon. View daily rounds and pots here.</p>
   </div>
 );
+
+function getRoundLabel(date: string, roundNumber: number): string {
+  const d = new Date(date + 'Z');
+  const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const start = roundNumber * 6;
+  const end = start + 6;
+  return `${day} ${start}:00–${end}:00 UTC`;
+}
+
+const RoundWinnersAdminView: React.FC = () => {
+  const [rounds, setRounds] = useState<Array<{ id: string; date: string; round_number: number; pot_lamports: number; player_count: number }>>([]);
+  const [payouts, setPayouts] = useState<RoundPayout[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [marking, setMarking] = useState<string | null>(null);
+  const [paidInput, setPaidInput] = useState<{ roundId: string; rank: number; value: string } | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  const creds = getAdminCreds();
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    (async () => {
+      const { data: roundsData, error: roundsErr } = await supabase
+        .from('daily_rounds')
+        .select('id, date, round_number, pot_lamports, player_count')
+        .order('date', { ascending: false })
+        .order('round_number', { ascending: false })
+        .limit(50);
+      if (roundsErr || !roundsData?.length) {
+        if (mounted) setRounds([]);
+        if (mounted) setPayouts([]);
+        setLoading(false);
+        return;
+      }
+      if (mounted) setRounds(roundsData as typeof rounds);
+      const ids = roundsData.map((r: { id: string }) => r.id);
+      const list = await fetchRoundPayouts(ids);
+      if (mounted) setPayouts(list);
+      setLoading(false);
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const copyWallet = (wallet: string) => {
+    navigator.clipboard.writeText(wallet).then(() => {
+      setCopyFeedback(wallet);
+      setTimeout(() => setCopyFeedback(null), 1500);
+    });
+  };
+
+  const handleMarkPaid = async (roundId: string, rank: number, paidLamports: number) => {
+    setMarking(`${roundId}-${rank}`);
+    const result = await markPayoutPaid(roundId, rank, paidLamports, creds.u, creds.p);
+    setMarking(null);
+    setPaidInput(null);
+    if (result.success) {
+      setPayouts((prev) => prev.map((p) => (p.round_id === roundId && p.rank === rank ? { ...p, paid_at: new Date().toISOString(), paid_lamports: paidLamports } : p)));
+    } else {
+      alert(result.error || 'Failed to mark paid');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="py-12 text-center text-zinc-400">
+        <p className="font-black uppercase tracking-widest">Loading round winners...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="py-6">
+      <h2 className="text-xl font-black text-white mb-2">Round Winners (Top 5, 80% pot)</h2>
+      <p className="text-zinc-500 text-sm mb-6">Copy wallet, mark as paid, and set prize amount paid. 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5% of 80%.</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-white/10">
+              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Round</th>
+              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Rank</th>
+              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Wallet</th>
+              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Score</th>
+              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Prize (SOL)</th>
+              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Paid</th>
+              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Paid amount</th>
+              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payouts.map((p) => {
+              const round = rounds.find((r) => r.id === p.round_id);
+              const roundLabel = round ? getRoundLabel(round.date, round.round_number) : p.round_id.slice(0, 8);
+              const isMarking = marking === `${p.round_id}-${p.rank}`;
+              const isInputOpen = paidInput?.roundId === p.round_id && paidInput?.rank === p.rank;
+              return (
+                <tr key={`${p.round_id}-${p.rank}`} className="border-b border-white/5 hover:bg-white/5">
+                  <td className="py-2 px-2 text-white text-sm font-mono">{roundLabel}</td>
+                  <td className="py-2 px-2 text-zinc-400 font-black">#{p.rank}</td>
+                  <td className="py-2 px-2">
+                    <span className="font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 6)}...{p.wallet_address.slice(-4)}</span>
+                    <button
+                      type="button"
+                      onClick={() => copyWallet(p.wallet_address)}
+                      className="ml-2 px-2 py-0.5 bg-white/10 hover:bg-[#14F195]/20 text-[10px] font-bold rounded"
+                    >
+                      {copyFeedback === p.wallet_address ? 'Copied!' : 'Copy'}
+                    </button>
+                  </td>
+                  <td className="py-2 px-2 text-[#14F195] text-sm font-bold">{p.score.toLocaleString()}</td>
+                  <td className="py-2 px-2 text-white text-sm">{(p.prize_lamports / 1_000_000_000).toFixed(4)}</td>
+                  <td className="py-2 px-2">{p.paid_at ? <span className="text-[#14F195] font-bold text-xs">Yes</span> : <span className="text-zinc-500 text-xs">No</span>}</td>
+                  <td className="py-2 px-2">
+                    {p.paid_lamports != null ? (p.paid_lamports / 1_000_000_000).toFixed(4) + ' SOL' : '—'}
+                  </td>
+                  <td className="py-2 px-2">
+                    {isInputOpen ? (
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="SOL"
+                          value={paidInput.value}
+                          onChange={(e) => setPaidInput((prev) => prev ? { ...prev, value: e.target.value } : null)}
+                          className="w-24 px-2 py-1 bg-black border border-white/20 rounded text-white text-xs"
+                        />
+                        <button
+                          type="button"
+                          disabled={isMarking}
+                          onClick={() => {
+                            const lamports = Math.round(parseFloat(paidInput.value || '0') * 1_000_000_000);
+                            if (lamports >= 0) handleMarkPaid(p.round_id, p.rank, lamports);
+                          }}
+                          className="px-2 py-1 bg-[#14F195] text-black text-xs font-bold rounded disabled:opacity-50"
+                        >
+                          {isMarking ? '…' : 'Save'}
+                        </button>
+                        <button type="button" onClick={() => setPaidInput(null)} className="px-2 py-1 text-zinc-400 text-xs">Cancel</button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setPaidInput({ roundId: p.round_id, rank: p.rank, value: p.paid_lamports != null ? String(p.paid_lamports / 1_000_000_000) : '' })}
+                        className="px-2 py-1 bg-white/10 hover:bg-[#14F195]/20 text-[10px] font-bold rounded"
+                      >
+                        Mark paid
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {rounds.length > 0 && payouts.length === 0 && (
+        <p className="text-zinc-500 text-sm mt-4">No payouts yet. Top 5 are populated when players complete games (calculate_rankings_and_winner).</p>
+      )}
+    </div>
+  );
+};
 const LivesView: React.FC = () => (
   <div className="py-12 text-center text-zinc-400">
     <h2 className="text-xl font-black text-white mb-2">Lives</h2>

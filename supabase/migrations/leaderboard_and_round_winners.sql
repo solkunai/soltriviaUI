@@ -14,7 +14,9 @@
 ALTER TABLE public.game_sessions
   ADD COLUMN IF NOT EXISTS rank INTEGER;
 
--- Add winner_score to daily_rounds (so we store #1's score with the round)
+-- Ensure winner_wallet and winner_score exist on daily_rounds (winner_wallet may be missing in some setups)
+ALTER TABLE public.daily_rounds
+  ADD COLUMN IF NOT EXISTS winner_wallet TEXT;
 ALTER TABLE public.daily_rounds
   ADD COLUMN IF NOT EXISTS winner_score BIGINT DEFAULT 0;
 

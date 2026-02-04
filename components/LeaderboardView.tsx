@@ -172,7 +172,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
               </h1>
               <div className="h-1 w-16 bg-[#14F195] mt-4 shadow-[0_0_15px_#14F195]" />
               <p className="text-zinc-500 text-[10px] md:text-xs font-black uppercase tracking-widest italic mt-4 max-w-md">
-                Each 6-hour round has one top scorer. Winners tracked by round.
+                Top 5 share 80% of the pot: 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.
               </p>
             </div>
             {roundsLoading && (
@@ -187,42 +187,69 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
               </div>
             )}
             {!roundsLoading && roundsWithWinners.length > 0 && (
-              <div className="space-y-4 pb-24">
+              <div className="space-y-6 pb-24">
                 {roundsWithWinners.map((r) => (
                   <div
                     key={r.round_id}
-                    className="bg-[#0A0A0A] border border-white/5 rounded-xl p-4 md:p-6 flex flex-col md:flex-row md:items-center gap-4 hover:border-[#14F195]/20 transition-colors"
+                    className="bg-[#0A0A0A] border border-white/5 rounded-xl p-4 md:p-6 hover:border-[#14F195]/20 transition-colors"
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[#14F195] text-[10px] md:text-xs font-black uppercase tracking-widest italic mb-1">ROUND</div>
-                      <div className="text-white font-[1000] italic text-base md:text-lg leading-tight truncate">{r.round_title}</div>
-                      <div className="flex items-center gap-3 mt-2 text-zinc-500 text-[10px] font-black uppercase tracking-wider">
-                        <span>{r.player_count} players</span>
-                        <span>·</span>
-                        <span>{(r.pot_lamports / 1_000_000_000).toFixed(2)} SOL pool</span>
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                      <div>
+                        <div className="text-[#14F195] text-[10px] md:text-xs font-black uppercase tracking-widest italic mb-1">ROUND</div>
+                        <div className="text-white font-[1000] italic text-base md:text-lg leading-tight">{r.round_title}</div>
+                        <div className="flex items-center gap-3 mt-2 text-zinc-500 text-[10px] font-black uppercase tracking-wider">
+                          <span>{r.player_count} players</span>
+                          <span>·</span>
+                          <span>{(r.pot_lamports / 1_000_000_000).toFixed(2)} SOL pool</span>
+                          <span>·</span>
+                          <span>80% to top 5</span>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 md:gap-6 md:min-w-[280px]">
-                      {r.winner_wallet ? (
-                        <>
-                          <div className="w-12 h-12 rounded-full border-2 border-[#14F195]/50 overflow-hidden flex-shrink-0 bg-zinc-900">
-                            <img src={r.winner_avatar || DEFAULT_AVATAR} alt="" className="w-full h-full object-cover" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">WINNER</div>
-                            <div className="text-white font-[1000] italic truncate">
-                              {r.winner_display_name || `${r.winner_wallet.slice(0, 4)}...${r.winner_wallet.slice(-4)}`}
+                    {r.payouts && r.payouts.length > 0 ? (
+                      <div className="space-y-2">
+                        {r.payouts.map((p) => (
+                          <div
+                            key={`${p.round_id}-${p.rank}`}
+                            className="flex items-center gap-3 py-2 px-3 rounded-lg bg-black/30 border border-white/5"
+                          >
+                            <span className="w-6 text-center text-zinc-500 font-black text-xs italic">#{p.rank}</span>
+                            <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-zinc-800 border border-white/10">
+                              <img src={p.winner_avatar || DEFAULT_AVATAR} alt="" className="w-full h-full object-cover" />
                             </div>
-                            {r.winner_display_name && (
-                              <div className="text-zinc-500 text-[9px] font-mono">{r.winner_wallet.slice(0, 4)}...{r.winner_wallet.slice(-4)}</div>
-                            )}
-                            <div className="text-[#14F195] text-sm font-black italic mt-0.5">{r.winner_score.toLocaleString()} XP</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-white font-bold text-sm truncate">
+                                {p.winner_display_name || `${p.wallet_address.slice(0, 4)}...${p.wallet_address.slice(-4)}`}
+                              </div>
+                              <div className="text-zinc-500 text-[10px] font-mono">{p.wallet_address.slice(0, 4)}...{p.wallet_address.slice(-4)}</div>
+                            </div>
+                            <div className="text-[#14F195] text-xs font-black italic">{p.score.toLocaleString()} XP</div>
+                            <div className="text-white text-xs font-bold">{(p.prize_lamports / 1_000_000_000).toFixed(4)} SOL</div>
+                            {p.paid_at ? (
+                              <span className="text-[10px] font-black uppercase tracking-wider text-[#14F195] bg-[#14F195]/10 px-2 py-0.5 rounded">Paid</span>
+                            ) : null}
                           </div>
-                        </>
-                      ) : (
-                        <div className="text-zinc-600 text-sm font-bold italic">No winner (round in progress or no finishers)</div>
-                      )}
-                    </div>
+                        ))}
+                      </div>
+                    ) : r.winner_wallet ? (
+                      <div className="flex items-center gap-4 md:gap-6">
+                        <div className="w-12 h-12 rounded-full border-2 border-[#14F195]/50 overflow-hidden flex-shrink-0 bg-zinc-900">
+                          <img src={r.winner_avatar || DEFAULT_AVATAR} alt="" className="w-full h-full object-cover" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">WINNER</div>
+                          <div className="text-white font-[1000] italic truncate">
+                            {r.winner_display_name || `${r.winner_wallet.slice(0, 4)}...${r.winner_wallet.slice(-4)}`}
+                          </div>
+                          {r.winner_display_name && (
+                            <div className="text-zinc-500 text-[9px] font-mono">{r.winner_wallet.slice(0, 4)}...{r.winner_wallet.slice(-4)}</div>
+                          )}
+                          <div className="text-[#14F195] text-sm font-black italic mt-0.5">{r.winner_score.toLocaleString()} XP</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-zinc-600 text-sm font-bold italic">No finishers yet (round in progress)</div>
+                    )}
                   </div>
                 ))}
               </div>
