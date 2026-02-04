@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 interface ResultsViewProps {
-  results: { score: number, points: number, time: number, rank?: number };
+  results: { score: number, points: number, time: number, rank?: number; scoreSaveFailed?: boolean };
   lives: number;
   onRestart: () => void;
   onGoHome: () => void;
@@ -32,6 +32,13 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, onRestart, on
         <div className="h-2 w-full bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#00FFA3]"></div>
 
         <div className="p-8 md:p-12 text-center">
+          {/* Score save failed warning */}
+          {results.scoreSaveFailed && (
+            <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-left">
+              <p className="text-sm font-bold uppercase tracking-wide">Score may not be saved</p>
+              <p className="text-xs mt-1 opacity-90">We couldn’t sync your score to the leaderboard. Your result is still correct here; try again later or check your connection.</p>
+            </div>
+          )}
           {/* Mascot Decoration */}
           <div className="flex justify-center mb-8">
               <div className="relative">
