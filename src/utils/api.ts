@@ -539,6 +539,19 @@ export async function fetchCurrentRoundStats(): Promise<CurrentRoundStats> {
   };
 }
 
+/** Single payout row (top 5 per round, 80% pot share). */
+export interface RoundPayout {
+  round_id: string;
+  rank: number;
+  wallet_address: string;
+  score: number;
+  prize_lamports: number;
+  paid_at: string | null;
+  paid_lamports: number | null;
+  winner_display_name?: string | null;
+  winner_avatar?: string | null;
+}
+
 /** Round with winner info for the Round Winners page. */
 export interface RoundWithWinner {
   round_id: string;
@@ -551,13 +564,15 @@ export interface RoundWithWinner {
   winner_display_name: string | null;
   winner_avatar: string | null;
   winner_score: number;
+  /** Top 5 payouts (80% of pot: 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%). */
+  payouts?: RoundPayout[];
 }
 
-/** Fetch past rounds with winner (top scorer) per round. Ordered by date desc, round_number desc. */
+/** Fetch past rounds with winner from dedicated round_winners table (fixed schema; no game_sessions query). */
 export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinner[]> {
   const { data: rounds, error: roundsError } = await supabase
     .from('daily_rounds')
-    .select('id, date, round_number, pot_lamports, player_count, winner_wallet, winner_score')
+    .select('id, date, round_number, pot_lamports, player_count')
     .order('date', { ascending: false })
     .order('round_number', { ascending: false })
     .limit(limit);
@@ -565,46 +580,49 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
   if (roundsError || !rounds?.length) return [];
 
   const roundIds = rounds.map((r) => r.id);
-  const roundsWithStoredWinner = rounds.filter((r) => r.winner_wallet != null && (r.winner_wallet as string).length > 0);
-  const winnerWalletsFromRounds = [...new Set(roundsWithStoredWinner.map((r) => r.winner_wallet as string))];
+  const { data: winners, error: winnersError } = await supabase
+    .from('round_winners')
+    .select('round_id, winner_wallet, winner_score')
+    .in('round_id', roundIds);
 
-  const { data: sessions, error: sessionsError } = await supabase
-    .from('game_sessions')
-    .select('round_id, wallet_address, score, total_points, time_taken_ms')
-    .in('round_id', roundIds)
-    .not('finished_at', 'is', null);
-
-  const byScore = (s: { score?: number; total_points?: number }) => Number(s.score ?? s.total_points ?? 0);
-  let bestByRound = new Map<string, { wallet_address: string; score: number; time_taken_ms?: number }>();
-
-  if (!sessionsError && sessions?.length) {
-    const sorted = [...sessions].sort((a, b) => {
-      const diff = byScore(b) - byScore(a);
-      if (diff !== 0) return diff;
-      return (a.time_taken_ms ?? 999999) - (b.time_taken_ms ?? 999999);
+  const winnerByRoundId = new Map<string, { winner_wallet: string | null; winner_score: number }>();
+  if (!winnersError && winners?.length) {
+    winners.forEach((w: { round_id: string; winner_wallet: string | null; winner_score: number }) => {
+      winnerByRoundId.set(w.round_id, { winner_wallet: w.winner_wallet ?? null, winner_score: Number(w.winner_score ?? 0) });
     });
-    for (const s of sorted) {
-      if (!bestByRound.has(s.round_id)) bestByRound.set(s.round_id, { wallet_address: s.wallet_address, score: byScore(s), time_taken_ms: s.time_taken_ms });
-    }
   }
 
-  const allWinnerWallets = new Set(winnerWalletsFromRounds);
-  bestByRound.forEach((v) => allWinnerWallets.add(v.wallet_address));
+  const winnerWallets = [...new Set([...winnerByRoundId.values()].map((v) => v.winner_wallet).filter(Boolean) as string[])];
   let profiles: { wallet_address: string; display_name: string | null; avatar_url: string | null }[] = [];
-  if (allWinnerWallets.size > 0) {
+  if (winnerWallets.length > 0) {
     const { data: prof } = await supabase
       .from('player_profiles')
       .select('wallet_address, display_name, avatar_url')
-      .in('wallet_address', [...allWinnerWallets]);
+      .in('wallet_address', winnerWallets);
     profiles = prof ?? [];
   }
   const profileByWallet = Object.fromEntries(profiles.map((p) => [p.wallet_address, p]));
 
+  const payoutsByRound = await fetchRoundPayouts(roundIds);
+  const allPayoutWallets = new Set<string>();
+  payoutsByRound.forEach((p) => allPayoutWallets.add(p.wallet_address));
+  let payoutProfiles: { wallet_address: string; display_name: string | null; avatar_url: string | null }[] = [];
+  if (allPayoutWallets.size > 0) {
+    const { data: pp } = await supabase.from('player_profiles').select('wallet_address, display_name, avatar_url').in('wallet_address', [...allPayoutWallets]);
+    payoutProfiles = pp ?? [];
+  }
+  const payoutProfileByWallet = Object.fromEntries(payoutProfiles.map((p) => [p.wallet_address, p]));
+
   return rounds.map((r) => {
-    const storedWinner = r.winner_wallet && String(r.winner_wallet).length > 0;
-    const winnerWallet = storedWinner ? (r.winner_wallet as string) : bestByRound.get(r.id)?.wallet_address ?? null;
-    const winnerScore = storedWinner ? Number(r.winner_score ?? 0) : (bestByRound.get(r.id)?.score ?? 0);
+    const w = winnerByRoundId.get(r.id);
+    const winnerWallet = w?.winner_wallet ?? null;
+    const winnerScore = w?.winner_score ?? 0;
     const profile = winnerWallet ? profileByWallet[winnerWallet] : null;
+    const payouts: RoundPayout[] = (payoutsByRound.filter((p) => p.round_id === r.id) as RoundPayout[]).map((p) => ({
+      ...p,
+      winner_display_name: payoutProfileByWallet[p.wallet_address]?.display_name ?? null,
+      winner_avatar: payoutProfileByWallet[p.wallet_address]?.avatar_url ?? null,
+    }));
     return {
       round_id: r.id,
       date: r.date,
@@ -616,8 +634,46 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
       winner_display_name: profile?.display_name ?? null,
       winner_avatar: profile?.avatar_url ?? null,
       winner_score: winnerScore,
+      payouts,
     };
   });
+}
+
+/** Fetch top 5 payouts for given round ids (from round_payouts). */
+export async function fetchRoundPayouts(roundIds: string[]): Promise<RoundPayout[]> {
+  if (roundIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('round_payouts')
+    .select('round_id, rank, wallet_address, score, prize_lamports, paid_at, paid_lamports')
+    .in('round_id', roundIds)
+    .order('rank', { ascending: true });
+  if (error) return [];
+  return (data ?? []) as RoundPayout[];
+}
+
+/** Mark a round payout as paid (admin). Calls Edge Function. */
+export async function markPayoutPaid(
+  roundId: string,
+  rank: number,
+  paidLamports: number,
+  adminUsername?: string,
+  adminPassword?: string
+): Promise<{ success: boolean; error?: string }> {
+  const url = `${FUNCTIONS_URL}/mark-payout-paid`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      round_id: roundId,
+      rank,
+      paid_lamports: paidLamports,
+      ...(adminUsername != null && { admin_username: adminUsername }),
+      ...(adminPassword != null && { admin_password: adminPassword }),
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { success: false, error: (json as { error?: string }).error || 'Failed to mark paid' };
+  return { success: true };
 }
 
 /** Realtime subscription: pool and players update when someone enters. Uses polling when Realtime disabled. */
