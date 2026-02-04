@@ -472,7 +472,11 @@ export function subscribeQuests(onQuests: (quests: Quest[]) => void): { unsubscr
 }
 
 /** Submit proof URL for verification quests (e.g. TRUE RAIDER). Admin approves later; then user is rewarded automatically. */
-export async function submitQuestProof(walletAddress: string, questSlug: string, proofUrl: string): Promise<{ ok: boolean; error?: string }> {
+export async function submitQuestProof(
+  walletAddress: string,
+  questSlug: string,
+  proofUrl: string
+): Promise<{ ok: boolean; error?: string; message?: string; auto_claimed?: boolean; reward_tp?: number }> {
   const url = `${FUNCTIONS_URL}/submit-quest-proof`;
   const res = await fetch(url, {
     method: 'POST',
@@ -481,7 +485,7 @@ export async function submitQuestProof(walletAddress: string, questSlug: string,
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) return { ok: false, error: json.error || 'Submit failed' };
-  return { ok: true };
+  return { ok: true, message: json.message, auto_claimed: json.auto_claimed, reward_tp: json.reward_tp };
 }
 
 /** Claim completed quest reward. Returns reward_tp on success. */

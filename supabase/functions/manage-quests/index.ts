@@ -38,8 +38,17 @@ serve(async (req) => {
 
     switch (action) {
       case 'list': {
-        const { data, error } = await supabase.from('quests').select('*').order('category').order('sort_order');
+        const { data: quests, error } = await supabase.from('quests').select('*').order('category').order('sort_order');
         if (error) throw error;
+        const { data: claimedRows } = await supabase.from('user_quest_progress').select('quest_id').not('claimed_at', 'is', null);
+        const completionByQuest: Record<string, number> = {};
+        (claimedRows || []).forEach((r: { quest_id: string }) => {
+          completionByQuest[r.quest_id] = (completionByQuest[r.quest_id] || 0) + 1;
+        });
+        const data = (quests || []).map((q: { id: string }) => ({
+          ...q,
+          completion_count: completionByQuest[q.id] || 0,
+        }));
         return new Response(JSON.stringify({ data }), { headers: { ...cors, 'Content-Type': 'application/json' } });
       }
       case 'create': {
@@ -77,15 +86,23 @@ serve(async (req) => {
         if (sub.status !== 'pending') return new Response(JSON.stringify({ error: 'Already reviewed' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
         const now = new Date().toISOString();
         if (decision === 'approve') {
-          const quest = sub.quest as { id: string; requirement_config?: { max?: number } } | null;
+          const quest = sub.quest as { id: string; requirement_config?: { max?: number }; reward_tp?: number } | null;
           const max = quest?.requirement_config?.max ?? 1;
+          const rewardTp = quest?.reward_tp ?? 0;
           await supabase.from('user_quest_progress').upsert({
             wallet_address: sub.wallet_address,
             quest_id: sub.quest_id,
             progress: max,
             completed_at: now,
+            claimed_at: now,
             updated_at: now,
           }, { onConflict: 'wallet_address,quest_id' });
+          const { data: profile } = await supabase.from('player_profiles').select('total_points').eq('wallet_address', sub.wallet_address).single();
+          const currentTP = (profile as { total_points?: number } | null)?.total_points ?? 0;
+          await supabase.from('player_profiles').update({
+            total_points: currentTP + rewardTp,
+            updated_at: now,
+          }).eq('wallet_address', sub.wallet_address);
         }
         const { error: upErr } = await supabase.from('quest_submissions').update({
           status: decision === 'approve' ? 'approved' : 'rejected',

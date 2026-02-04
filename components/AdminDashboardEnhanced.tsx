@@ -653,6 +653,7 @@ interface AdminQuest {
   sort_order: number;
   quest_type: string;
   is_active: boolean;
+  completion_count?: number;
 }
 
 interface QuestSubmission {
@@ -734,12 +735,9 @@ const QuestsManagementView: React.FC = () => {
   useEffect(() => {
     const channel = supabase
       .channel('admin-quests-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'quests' }, () => {
-        fetchQuests();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'quest_submissions' }, () => {
-        fetchSubmissions();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quests' }, () => fetchQuests())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quest_submissions' }, () => fetchSubmissions())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_quest_progress' }, () => fetchQuests())
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -848,83 +846,148 @@ const QuestsManagementView: React.FC = () => {
     }
   };
 
-  if (loading) return <div className="text-center py-20">Loading quests...</div>;
+  if (loading) return <div className="text-center py-20 text-zinc-400">Loading quests...</div>;
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <h2 className="text-2xl font-black">Quests Management ({quests.length})</h2>
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-black text-white">Quest management</h2>
+          <p className="text-zinc-500 text-sm mt-1">Edit quests, track completions, and review proof submissions. Paused quests are hidden from players.</p>
+        </div>
         <button
           onClick={() => { setShowAddForm(!showAddForm); setError(''); }}
-          className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded"
+          className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded hover:opacity-90"
         >
-          {showAddForm ? 'Cancel' : '+ Add Quest'}
+          {showAddForm ? 'Cancel' : '+ Add quest'}
         </button>
       </div>
-      {error && <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm">{error}</div>}
-      {success && <div className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-lg text-green-400 text-sm">{success}</div>}
 
+      {error && <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm">{error}</div>}
+      {success && <div className="p-3 bg-green-500/20 border border-green-500/30 rounded-lg text-green-400 text-sm">{success}</div>}
+
+      {/* Add new quest (collapsible) */}
       {showAddForm && (
-        <div className="mb-6 p-6 bg-white/5 border border-white/10 rounded-xl space-y-3">
-          <h3 className="font-black text-[#14F195]">New Quest</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" placeholder="Slug (e.g. my_quest)" value={newQuest.slug} onChange={(e) => setNewQuest((q) => ({ ...q, slug: e.target.value }))} />
-            <input className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" placeholder="Title" value={newQuest.title} onChange={(e) => setNewQuest((q) => ({ ...q, title: e.target.value }))} />
-            <textarea className="md:col-span-2 bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" placeholder="Description" value={newQuest.description} onChange={(e) => setNewQuest((q) => ({ ...q, description: e.target.value }))} rows={2} />
-            <select className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" value={newQuest.category} onChange={(e) => setNewQuest((q) => ({ ...q, category: e.target.value }))}>
-              {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" value={newQuest.quest_type} onChange={(e) => setNewQuest((q) => ({ ...q, quest_type: e.target.value }))}>
-              {QUEST_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <input type="number" className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" placeholder="Reward TP" value={newQuest.reward_tp} onChange={(e) => setNewQuest((q) => ({ ...q, reward_tp: parseInt(e.target.value, 10) || 0, reward_label: `${parseInt(e.target.value, 10) || 0} TP` }))} />
-            <input type="number" className="bg-black/40 border border-white/10 px-3 py-2 rounded text-sm" placeholder="Sort order" value={newQuest.sort_order} onChange={(e) => setNewQuest((q) => ({ ...q, sort_order: parseInt(e.target.value, 10) || 0 }))} />
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={newQuest.is_active} onChange={(e) => setNewQuest((q) => ({ ...q, is_active: e.target.checked }))} />
-              Active
-            </label>
+        <section className="p-6 bg-white/5 border border-white/10 rounded-xl">
+          <h3 className="text-lg font-black text-[#14F195] mb-4">Add new quest</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Slug</label>
+              <input className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" placeholder="e.g. my_quest" value={newQuest.slug} onChange={(e) => setNewQuest((q) => ({ ...q, slug: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Title</label>
+              <input className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" placeholder="Quest title" value={newQuest.title} onChange={(e) => setNewQuest((q) => ({ ...q, title: e.target.value }))} />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Description</label>
+              <textarea className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" placeholder="What the player must do" value={newQuest.description} onChange={(e) => setNewQuest((q) => ({ ...q, description: e.target.value }))} rows={2} />
+            </div>
+            <div>
+              <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Category</label>
+              <select className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" value={newQuest.category} onChange={(e) => setNewQuest((q) => ({ ...q, category: e.target.value }))}>
+                {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Type</label>
+              <select className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" value={newQuest.quest_type} onChange={(e) => setNewQuest((q) => ({ ...q, quest_type: e.target.value }))}>
+                {QUEST_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Reward (TP)</label>
+              <input type="number" className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" value={newQuest.reward_tp} onChange={(e) => setNewQuest((q) => ({ ...q, reward_tp: parseInt(e.target.value, 10) || 0, reward_label: `${parseInt(e.target.value, 10) || 0} TP` }))} />
+            </div>
+            <div>
+              <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">Sort order</label>
+              <input type="number" className="w-full bg-black/40 border border-white/10 px-3 py-2 rounded text-sm text-white" value={newQuest.sort_order} onChange={(e) => setNewQuest((q) => ({ ...q, sort_order: parseInt(e.target.value, 10) || 0 }))} />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 text-sm text-zinc-400">
+                <input type="checkbox" checked={newQuest.is_active} onChange={(e) => setNewQuest((q) => ({ ...q, is_active: e.target.checked }))} className="rounded" />
+                Active (visible to players)
+              </label>
+            </div>
           </div>
-          <button onClick={handleCreate} className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded">Create Quest</button>
-        </div>
+          <button onClick={handleCreate} className="mt-4 px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded hover:opacity-90">Create quest</button>
+        </section>
       )}
 
-      <p className="text-zinc-500 text-sm mb-4">Changes (add/delete/pause) sync in real time to the app. Paused quests are hidden from players.</p>
-      <div className="space-y-4">
-        {quests.map((q) => (
-          <div key={q.id} className={`bg-white/5 border p-4 rounded-xl flex flex-wrap items-center gap-4 ${q.is_active ? 'border-white/10' : 'border-amber-500/30 opacity-80'}`}>
-            <div className="flex-1 min-w-[200px]">
-              <div className="flex items-center gap-2">
-                <span className="font-black text-[#14F195]">{q.title}</span>
-                {!q.is_active && <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 uppercase">Paused</span>}
-              </div>
-              <div className="text-zinc-500 text-xs">{q.description}</div>
-              <div className="text-zinc-600 text-[10px] mt-1">{q.category} · {q.reward_label || `${q.reward_tp} TP`}</div>
-            </div>
-            <input
-              className="bg-black/40 border border-white/10 px-3 py-1 rounded text-sm w-24"
-              type="number"
-              value={q.sort_order}
-              onChange={(e) => setQuests((prev) => prev.map((x) => x.id === q.id ? { ...x, sort_order: parseInt(e.target.value, 10) || 0 } : x))}
-            />
-            <select
-              className="bg-black/40 border border-white/10 px-3 py-1 rounded text-sm"
-              value={q.category}
-              onChange={(e) => setQuests((prev) => prev.map((x) => x.id === q.id ? { ...x, category: e.target.value } : x))}
-            >
-              {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <button onClick={() => handleTogglePause(q)} className="px-3 py-1.5 text-xs font-black uppercase rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30">
-              {q.is_active ? 'Pause' : 'Resume'}
-            </button>
-            <button onClick={() => handleUpdate(quests.find((x) => x.id === q.id)!)} className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded">Save</button>
-            <button onClick={() => handleDelete(q)} className="px-3 py-1.5 text-xs font-black uppercase rounded bg-red-500/20 text-red-400 hover:bg-red-500/30">Delete</button>
-          </div>
-        ))}
-      </div>
+      {/* Quest list with completion counts */}
+      <section>
+        <h3 className="text-lg font-black text-white mb-3">All quests ({quests.length})</h3>
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-white/5 border-b border-white/10">
+                <th className="py-3 px-4 text-zinc-400 text-xs font-bold uppercase tracking-wider">Title</th>
+                <th className="py-3 px-4 text-zinc-400 text-xs font-bold uppercase tracking-wider">Slug</th>
+                <th className="py-3 px-4 text-zinc-400 text-xs font-bold uppercase tracking-wider">Category</th>
+                <th className="py-3 px-4 text-zinc-400 text-xs font-bold uppercase tracking-wider">Reward</th>
+                <th className="py-3 px-4 text-zinc-400 text-xs font-bold uppercase tracking-wider text-center">Completed</th>
+                <th className="py-3 px-4 text-zinc-400 text-xs font-bold uppercase tracking-wider">Status</th>
+                <th className="py-3 px-4 text-zinc-400 text-xs font-bold uppercase tracking-wider w-20">Sort</th>
+                <th className="py-3 px-4 text-zinc-400 text-xs font-bold uppercase tracking-wider text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {quests.map((q) => (
+                <tr key={q.id} className={`border-b border-white/5 hover:bg-white/5 ${!q.is_active ? 'opacity-70' : ''}`}>
+                  <td className="py-3 px-4">
+                    <span className="font-bold text-white">{q.title}</span>
+                    {q.description && <p className="text-zinc-500 text-xs mt-0.5 line-clamp-1">{q.description}</p>}
+                  </td>
+                  <td className="py-3 px-4 font-mono text-zinc-500 text-xs">{q.slug}</td>
+                  <td className="py-3 px-4 text-zinc-400 text-sm">{q.category}</td>
+                  <td className="py-3 px-4 text-[#14F195] font-medium">{q.reward_label || `${q.reward_tp} TP`}</td>
+                  <td className="py-3 px-4 text-center">
+                    <span className="inline-flex items-center justify-center min-w-[3rem] px-2 py-1 rounded bg-[#14F195]/10 text-[#14F195] font-bold text-sm">
+                      {q.completion_count ?? 0}
+                    </span>
+                    <span className="text-zinc-500 text-xs block mt-0.5">users</span>
+                  </td>
+                  <td className="py-3 px-4">
+                    {q.is_active ? (
+                      <span className="text-[#14F195] text-xs font-bold uppercase">Active</span>
+                    ) : (
+                      <span className="text-amber-400 text-xs font-bold uppercase px-2 py-0.5 rounded bg-amber-500/20">Paused</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4">
+                    <input
+                      className="w-14 bg-black/40 border border-white/10 px-2 py-1 rounded text-sm text-white"
+                      type="number"
+                      value={q.sort_order}
+                      onChange={(e) => setQuests((prev) => prev.map((x) => x.id === q.id ? { ...x, sort_order: parseInt(e.target.value, 10) || 0 } : x))}
+                    />
+                  </td>
+                  <td className="py-3 px-4 text-right space-x-2">
+                    <select
+                      className="bg-black/40 border border-white/10 px-2 py-1 rounded text-xs text-white"
+                      value={q.category}
+                      onChange={(e) => setQuests((prev) => prev.map((x) => x.id === q.id ? { ...x, category: e.target.value } : x))}
+                    >
+                      {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <button onClick={() => handleTogglePause(q)} className="px-2 py-1 text-xs font-bold uppercase rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30">
+                      {q.is_active ? 'Pause' : 'Resume'}
+                    </button>
+                    <button onClick={() => handleUpdate(quests.find((x) => x.id === q.id)!)} className="px-3 py-1 text-xs font-bold uppercase rounded bg-[#14F195] text-black hover:opacity-90">Save</button>
+                    <button onClick={() => handleDelete(q)} className="px-2 py-1 text-xs font-bold uppercase rounded bg-red-500/20 text-red-400 hover:bg-red-500/30">Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-      <div className="mt-10 pt-8 border-t border-white/10">
-        <h3 className="text-xl font-black mb-4">Pending proof submissions (e.g. TRUE RAIDER)</h3>
-        <p className="text-zinc-500 text-sm mb-4">Approve to grant the user the quest reward (TP) automatically. Reject to let them submit again.</p>
+      {/* Pending submissions (manual-review quests only; TRUE RAIDER is auto-approved) */}
+      <section className="pt-6 border-t border-white/10">
+        <h3 className="text-lg font-black text-white mb-1">Pending proof submissions</h3>
+        <p className="text-zinc-500 text-sm mb-4">Quests that require manual review (e.g. custom proof quests). TRUE RAIDER is auto-approved when users submit, so it won’t appear here.</p>
         {submissionsLoading ? (
           <p className="text-zinc-500 text-sm">Loading...</p>
         ) : submissions.length === 0 ? (
@@ -932,21 +995,21 @@ const QuestsManagementView: React.FC = () => {
         ) : (
           <div className="space-y-3">
             {submissions.map((s) => (
-              <div key={s.id} className="bg-white/5 border border-white/10 p-4 rounded-xl flex flex-wrap items-center gap-4">
-                <div className="flex-1 min-w-[180px]">
-                  <p className="font-mono text-xs text-[#14F195]">{s.wallet_address.slice(0, 8)}...{s.wallet_address.slice(-6)}</p>
+              <div key={s.id} className="bg-white/5 border border-white/10 p-4 rounded-xl flex flex-wrap items-center justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="font-mono text-sm text-[#14F195]">{s.wallet_address.slice(0, 8)}…{s.wallet_address.slice(-6)}</p>
                   <p className="text-zinc-500 text-xs mt-1">{(s.quest as { title?: string })?.title || s.quest_id}</p>
-                  <a href={s.proof_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline break-all">{s.proof_url}</a>
+                  <a href={s.proof_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline break-all">Proof: {s.proof_url}</a>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => handleReviewSubmission(s.id, 'approve')} className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded">Approve</button>
-                  <button onClick={() => handleReviewSubmission(s.id, 'reject')} className="px-4 py-2 bg-red-500/20 text-red-400 font-black text-xs uppercase rounded">Reject</button>
+                <div className="flex gap-2 shrink-0">
+                  <button onClick={() => handleReviewSubmission(s.id, 'approve')} className="px-4 py-2 bg-[#14F195] text-black font-black text-xs uppercase rounded hover:opacity-90">Approve</button>
+                  <button onClick={() => handleReviewSubmission(s.id, 'reject')} className="px-4 py-2 bg-red-500/20 text-red-400 font-black text-xs uppercase rounded hover:bg-red-500/30">Reject</button>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 };

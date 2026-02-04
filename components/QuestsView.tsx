@@ -169,10 +169,10 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
                         if (!publicKey || !raiderUrl.trim()) return;
                         setSubmitStatus('submitting');
                         setSubmitMessage('');
-                        const { ok, error } = await submitQuestProof(publicKey.toBase58(), 'true_raider', raiderUrl.trim());
+                        const { ok, error, message, auto_claimed } = await submitQuestProof(publicKey.toBase58(), 'true_raider', raiderUrl.trim());
                         if (ok) {
                           setSubmitStatus('success');
-                          setSubmitMessage('Submitted for review. You’ll get TP once approved.');
+                          setSubmitMessage(auto_claimed ? (message || 'Quest completed! Your reward has been added.') : (message || 'Submitted for review. You’ll get TP once approved.'));
                           setRaiderUrl('');
                           setShowRaiderInput(false);
                           loadProgress();
