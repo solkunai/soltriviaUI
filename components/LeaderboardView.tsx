@@ -12,7 +12,6 @@ interface PlayerStats {
   winnings: string;
   avatar: string;
   score: string;
-  correct: string;
   time: string;
   gamesPlayed: string;
 }
@@ -104,16 +103,15 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
     return () => { mounted = false; };
   }, [mainTab]);
 
-  // Transform API data to display format
-  const allPlayers: PlayerStats[] = leaderboardData.map((entry, index) => ({
+  // Transform API data to display format (correct score removed from cards)
+  const allPlayers: PlayerStats[] = leaderboardData.map((entry) => ({
     rank: entry.rank.toString(),
     username: entry.display_name ?? `${entry.wallet_address.slice(0, 4)}...${entry.wallet_address.slice(-4)}`,
     winnings: '0.00 SOL', // TODO: Calculate from payouts
     avatar: entry.avatar || DEFAULT_AVATAR,
     score: Number(entry.score).toLocaleString(),
-    correct: `${entry.correct_count ?? 0}/10`,
     time: `${Math.floor((entry.time_taken_ms ?? 0) / 1000)}s`,
-    gamesPlayed: '1', // Can be calculated from game_sessions if needed
+    gamesPlayed: '1',
   }));
 
   return (
@@ -319,10 +317,6 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                         <span className="text-zinc-500 text-[8px] font-black uppercase">XP:</span>
                         <span className="text-[#14F195] text-sm font-black italic">{userRank.score.toLocaleString()}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-zinc-500 text-[8px] font-black uppercase">Correct:</span>
-                        <span className="text-white text-sm font-black italic">{userRank.correct_count}/10</span>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -452,7 +446,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                      <div className="flex items-center justify-center gap-3 mt-3">
                         <span className="text-zinc-500 font-black italic text-[10px] uppercase">{player.winnings}</span>
                         <div className="w-1 h-1 bg-zinc-700 rounded-full"></div>
-                        <span className="text-zinc-500 font-black italic text-[10px] uppercase">{player.correct}</span>
+                        <span className="text-zinc-500 font-black italic text-[10px] uppercase">{player.time}</span>
                      </div>
                    </div>
                 </div>
@@ -471,8 +465,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                 <span className="w-12 text-center">Rank</span>
                 <span className="w-20">Avatar</span>
                 <span className="flex-1">Identity</span>
-                <span className="w-32 text-center">Accuracy</span>
-                <span className="w-32 text-center">Time Taken</span>
+                <span className="w-32 text-center">Time</span>
                 <span className="w-40 text-right">XP Earned</span>
               </div>
               {allPlayers.slice(5).map((player, idx) => (
@@ -485,7 +478,6 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                         <p className="font-[1000] italic text-2xl uppercase text-white truncate tracking-tight">{player.username}</p>
                         <p className="text-xs font-bold text-zinc-500 mt-1 uppercase">Sol Won: {player.winnings}</p>
                     </div>
-                    <div className="w-32 text-center font-black italic text-xl text-white">{player.correct}</div>
                     <div className="w-32 text-center font-black italic text-xl text-[#14F195]">{player.time}</div>
                     <div className="w-40 text-right">
                         <p className="text-white font-[1000] italic text-4xl leading-none tabular-nums group-hover:text-[#14F195] transition-colors">{player.score}</p>
@@ -523,8 +515,6 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                   <div className="flex-1 min-w-0">
                       <p className="font-[1000] italic text-[13px] uppercase text-white truncate tracking-tight leading-tight mb-0.5">{player.username}</p>
                       <div className="flex items-center gap-2">
-                         <span className="text-zinc-500 text-[7px] font-black uppercase italic tracking-tighter">{player.correct}</span>
-                         <span className="w-0.5 h-0.5 rounded-full bg-zinc-700"></span>
                          <span className="text-[#14F195]/60 text-[7px] font-black uppercase italic tracking-tighter">{player.time}</span>
                          <span className="w-0.5 h-0.5 rounded-full bg-zinc-700"></span>
                          <span className="text-zinc-500 text-[7px] font-black uppercase italic tracking-tighter truncate max-w-[50px]">{player.winnings}</span>
