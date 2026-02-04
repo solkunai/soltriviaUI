@@ -260,7 +260,7 @@ serve(async (req) => {
     // Query for round with date and round_number
     let { data: round, error: roundError } = await supabase
       .from('daily_rounds')
-      .select('id, question_ids, status, player_count, pot_lamports, round_number')
+      .select('id, question_ids, status, player_count, pot_lamports, round_number, question_ids_updated_at')
       .eq('date', today)
       .eq('round_number', roundNumber)
       .single();
@@ -279,18 +279,18 @@ serve(async (req) => {
         );
       }
 
-      // Shuffle and pick 10 random questions
-      const shuffled = questions.sort(() => Math.random() - 0.5);
-      const questionIds = shuffled.slice(0, 10).map((q) => q.id);
+      const questionIds = selectRandomQuestions(questions.map((q) => q.id), 10);
+      const nowIso = new Date().toISOString();
 
       const { data: newRound, error: createError } = await supabase
         .from('daily_rounds')
-        .insert({ 
-          date: today, 
+        .insert({
+          date: today,
           round_number: roundNumber,
-          question_ids: questionIds 
+          question_ids: questionIds,
+          question_ids_updated_at: nowIso,
         })
-        .select('id, question_ids, status, player_count, pot_lamports, round_number')
+        .select('id, question_ids, status, player_count, pot_lamports, round_number, question_ids_updated_at')
         .single();
 
       if (createError) {
@@ -301,6 +301,36 @@ serve(async (req) => {
       }
 
       round = newRound;
+    }
+
+    // Full pool of active question ids: used for 2-min rotation and per-session random 10
+    let fullPoolIds: string[] = [];
+    const { data: activeQuestions, error: activeQError } = await supabase
+      .from('questions')
+      .select('id')
+      .eq('active', true);
+
+    if (activeQError || !activeQuestions || activeQuestions.length < 10) {
+      return new Response(
+        JSON.stringify({ error: 'Not enough questions available' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    fullPoolIds = activeQuestions.map((q) => q.id);
+
+    // Rotate round question pool every 2 minutes (so the round's default pool stays fresh)
+    const TWO_MINS_MS = 2 * 60 * 1000;
+    const updatedAt = round.question_ids_updated_at ? new Date(round.question_ids_updated_at).getTime() : 0;
+    if (Date.now() - updatedAt > TWO_MINS_MS) {
+      const newRoundQuestionIds = selectRandomQuestions([...fullPoolIds], 10);
+      await supabase
+        .from('daily_rounds')
+        .update({
+          question_ids: newRoundQuestionIds,
+          question_ids_updated_at: new Date().toISOString(),
+        })
+        .eq('id', round.id);
+      round = { ...round, question_ids: newRoundQuestionIds, question_ids_updated_at: new Date().toISOString() };
     }
 
     if (round.status !== 'active') {
@@ -406,9 +436,8 @@ serve(async (req) => {
           );
         }
 
-        // Create session with life_used flag; question_order randomizes questions per user
-        // Select 10 random questions from the round's pool (prevents same questions on replay)
-        const questionOrder = selectRandomQuestions(Array.isArray(round.question_ids) ? [...round.question_ids] : [], 10);
+        // Create session with life_used flag; each user gets 10 random questions from full pool
+        const questionOrder = selectRandomQuestions(fullPoolIds, 10);
         const { data: session, error: sessionError } = await supabase
           .from('game_sessions')
           .insert({
@@ -525,9 +554,8 @@ serve(async (req) => {
 
     console.log('✅ Life deducted successfully. Remaining:', currentLivesCount - 1);
 
-    // Create new game session; question_order randomizes questions per user
-    // Select 10 random questions from the round's pool (prevents same questions on replay)
-    const questionOrder = selectRandomQuestions(Array.isArray(round.question_ids) ? [...round.question_ids] : [], 10);
+    // Create new game session; each user gets 10 random questions from full pool
+    const questionOrder = selectRandomQuestions(fullPoolIds, 10);
     const { data: session, error: sessionError } = await supabase
       .from('game_sessions')
       .insert({
