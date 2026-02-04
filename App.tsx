@@ -63,7 +63,7 @@ const App: React.FC = () => {
   const [lives, setLives] = useState(1);
   
   // Quiz results state
-  const [lastGameResults, setLastGameResults] = useState<{ score: number, points: number, time: number, rank?: number } | null>(null);
+  const [lastGameResults, setLastGameResults] = useState<{ score: number, points: number, time: number, rank?: number; scoreSaveFailed?: boolean } | null>(null);
   
   // Current game session ID
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -290,19 +290,31 @@ const App: React.FC = () => {
 
     let rank: number | undefined = undefined;
 
-    // Store final score in Supabase via complete-session (so profile + leaderboard show it)
+    // Store final score in Supabase via complete-session (so profile + leaderboard show it), with retry
+    let scoreSaveFailed = false;
     if (sessionIdToComplete) {
-      try {
-        const completeRes = await completeSession({
-          session_id: sessionIdToComplete,
-          total_score: points,
-          correct_count: correctCount,
-          time_taken_ms: Math.round(totalTimeSeconds * 1000),
-        });
-        rank = completeRes.rank ?? undefined;
-        console.log('✅ Session completed, rank:', rank);
-      } catch (err) {
-        console.error('Failed to complete session (score may not be saved):', err);
+      const payload = {
+        session_id: sessionIdToComplete,
+        total_score: points,
+        correct_count: correctCount,
+        time_taken_ms: Math.round(totalTimeSeconds * 1000),
+      };
+      const maxAttempts = 3;
+      const delayMs = 500;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const completeRes = await completeSession(payload);
+          rank = completeRes.rank ?? undefined;
+          console.log('✅ Session completed, rank:', rank);
+          break;
+        } catch (err) {
+          console.error(`Complete session attempt ${attempt}/${maxAttempts} failed:`, err);
+          if (attempt < maxAttempts) {
+            await new Promise((r) => setTimeout(r, delayMs));
+          } else {
+            scoreSaveFailed = true;
+          }
+        }
       }
     }
 
@@ -320,7 +332,7 @@ const App: React.FC = () => {
       }
     }
 
-    setLastGameResults({ score: correctCount, points, time: totalTimeSeconds, rank });
+    setLastGameResults({ score: correctCount, points, time: totalTimeSeconds, rank, scoreSaveFailed });
     setCurrentView(View.RESULTS);
   };
 
