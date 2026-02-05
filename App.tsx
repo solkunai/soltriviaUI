@@ -44,7 +44,7 @@ import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
 import { getPlayerLives, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard } from './src/utils/api';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR } from './src/utils/constants';
-import { getRecentBlockhashWithRetry } from './src/utils/rpc';
+
 import { supabase } from './src/utils/supabase';
 import { useKeepAlive } from './src/hooks/useKeepAlive';
 
@@ -368,22 +368,12 @@ const App: React.FC = () => {
         })
       );
 
-      // Always set feePayer so the wallet knows which key signs
+      // Set feePayer so the wallet knows which key signs
       transaction.feePayer = publicKey;
 
-      // Get recent blockhash
-      try {
-        const { blockhash } = await getRecentBlockhashWithRetry(connection);
-        transaction.recentBlockhash = blockhash;
-      } catch (blockhashError) {
-        console.warn('Could not get blockhash, wallet will handle it:', blockhashError);
-      }
-
-      // Send transaction - this will trigger wallet to sign
-      const signature = await sendTransaction(transaction, connection, {
-        skipPreflight: false,
-        maxRetries: 3,
-      });
+      // Send transaction immediately - wallet adapter handles blockhash and signing
+      // No async calls before this to preserve Chrome's user gesture chain for MWA intents
+      const signature = await sendTransaction(transaction, connection);
 
       // Wait for confirmation
       const confirmationPromise = connection.confirmTransaction(signature, 'confirmed');
