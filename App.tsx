@@ -368,11 +368,11 @@ const App: React.FC = () => {
         })
       );
 
-      // Set feePayer so the wallet knows which key signs
+      // Set feePayer and blockhash — single fast RPC call preserves Chrome's gesture chain
       transaction.feePayer = publicKey;
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
 
-      // Send transaction immediately - wallet adapter handles blockhash and signing
-      // No async calls before this to preserve Chrome's user gesture chain for MWA intents
       const signature = await sendTransaction(transaction, connection);
 
       // Wait for confirmation
