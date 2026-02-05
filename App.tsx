@@ -26,7 +26,7 @@ function pathForView(view: View): string {
   return '/' + view.toLowerCase();
 }
 import { useWallet, useConnection } from './src/contexts/WalletContext';
-import { Transaction, SystemProgram, PublicKey } from '@solana/web3.js';
+import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import Sidebar from './components/Sidebar';
 import HomeView from './components/HomeView';
 import LeaderboardView from './components/LeaderboardView';
@@ -350,28 +350,33 @@ const App: React.FC = () => {
     }
 
     try {
-      // Create entry fee transaction with two transfers:
-      // 1. 0.02 SOL to PRIZE_POOL_WALLET (entry fee)
-      // 2. 0.0025 SOL to REVENUE_WALLET (transaction fee)
-      const transaction = new Transaction().add(
-        // Entry fee to prize pool
+      // Get blockhash first for VersionedTransaction
+      const { blockhash } = await connection.getLatestBlockhash();
+
+      // Create entry fee transaction with two transfers using VersionedTransaction (V0)
+      // This format is better supported by modern wallets like Seed Vault for simulation
+      const instructions = [
+        // Entry fee to prize pool (0.02 SOL)
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(PRIZE_POOL_WALLET),
           lamports: ENTRY_FEE_LAMPORTS,
         }),
-        // Transaction fee to revenue wallet
+        // Transaction fee to revenue wallet (0.0025 SOL)
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(REVENUE_WALLET),
           lamports: TXN_FEE_LAMPORTS,
-        })
-      );
+        }),
+      ];
 
-      // Set feePayer and blockhash for transaction simulation
-      transaction.feePayer = publicKey;
-      const { blockhash } = await connection.getLatestBlockhash();
-      transaction.recentBlockhash = blockhash;
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions,
+      }).compileToV0Message();
+
+      const transaction = new VersionedTransaction(messageV0);
 
       // Use sendTransaction which internally uses MWA's signAndSendTransactions
       const signature = await sendTransaction(transaction, connection);
