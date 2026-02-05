@@ -51,7 +51,7 @@ import { useKeepAlive } from './src/hooks/useKeepAlive';
 const App: React.FC = () => {
   // Keep Render free tier service alive (pings every 2 minutes)
   useKeepAlive(true);
-  const { connected, publicKey, sendTransaction } = useWallet();
+  const { connected, publicKey, signTransaction } = useWallet();
   const { connection } = useConnection();
   const [currentView, setCurrentView] = useState<View>(viewFromPath);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
@@ -368,12 +368,14 @@ const App: React.FC = () => {
         })
       );
 
-      // Set feePayer and blockhash — single fast RPC call preserves Chrome's gesture chain
+      // Set feePayer and blockhash
       transaction.feePayer = publicKey;
       const { blockhash } = await connection.getLatestBlockhash();
       transaction.recentBlockhash = blockhash;
 
-      const signature = await sendTransaction(transaction, connection);
+      // Sign with wallet (MWA requires signTransaction + sendRawTransaction pattern)
+      const signedTx = await signTransaction!(transaction);
+      const signature = await connection.sendRawTransaction(signedTx.serialize());
 
       // Wait for confirmation
       const confirmationPromise = connection.confirmTransaction(signature, 'confirmed');

@@ -12,7 +12,7 @@ interface BuyLivesModalProps {
 }
 
 const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuccess }) => {
-  const { publicKey, sendTransaction, connected } = useWallet();
+  const { publicKey, signTransaction, connected } = useWallet();
   const { connection } = useConnection();
   const [purchasing, setPurchasing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,12 +47,14 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         })
       );
 
-      // Set feePayer and blockhash — single fast RPC call preserves Chrome's gesture chain
+      // Set feePayer and blockhash
       transaction.feePayer = publicKey;
       const { blockhash } = await connection.getLatestBlockhash();
       transaction.recentBlockhash = blockhash;
 
-      const signature = await sendTransaction(transaction, connection);
+      // Sign with wallet (MWA requires signTransaction + sendRawTransaction pattern)
+      const signedTx = await signTransaction!(transaction);
+      const signature = await connection.sendRawTransaction(signedTx.serialize());
 
       // Wait for confirmation with timeout
       const confirmationPromise = connection.confirmTransaction(signature, 'confirmed');
