@@ -3,7 +3,7 @@ import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { purchaseLives } from '../src/utils/api';
 import { REVENUE_WALLET, LIVES_PRICE_LAMPORTS } from '../src/utils/constants';
-import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
+
 
 interface BuyLivesModalProps {
   isOpen: boolean;
@@ -47,26 +47,12 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         })
       );
 
-      // Always set feePayer so the wallet knows which key signs
+      // Set feePayer so the wallet knows which key signs
       transaction.feePayer = publicKey;
 
-      // Try to get blockhash, but if it fails, let sendTransaction handle it
-      // The wallet adapter will automatically get blockhash if not set
-      try {
-        const { blockhash } = await getRecentBlockhashWithRetry(connection);
-        transaction.recentBlockhash = blockhash;
-      } catch (blockhashError) {
-        // If blockhash fails, let sendTransaction handle it automatically
-        // The wallet adapter will fetch it using the wallet's RPC
-        console.warn('Could not get blockhash, wallet will handle it:', blockhashError);
-      }
-
-      // Send transaction - this will trigger wallet to sign
-      // The wallet adapter handles getting blockhash if not set
-      const signature = await sendTransaction(transaction, connection, {
-        skipPreflight: false,
-        maxRetries: 3,
-      });
+      // Send transaction immediately - wallet adapter handles blockhash and signing
+      // No async calls before this to preserve Chrome's user gesture chain for MWA intents
+      const signature = await sendTransaction(transaction, connection);
 
       // Wait for confirmation with timeout
       const confirmationPromise = connection.confirmTransaction(signature, 'confirmed');
