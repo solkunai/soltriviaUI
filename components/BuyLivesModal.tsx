@@ -12,7 +12,7 @@ interface BuyLivesModalProps {
 }
 
 const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuccess }) => {
-  const { publicKey, signTransaction, connected } = useWallet();
+  const { publicKey, sendTransaction, connected } = useWallet();
   const { connection } = useConnection();
   const [purchasing, setPurchasing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,14 +47,11 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         })
       );
 
-      // Set feePayer and blockhash
+      // Set feePayer - wallet adapter handles blockhash and uses signAndSendTransactions for MWA
       transaction.feePayer = publicKey;
-      const { blockhash } = await connection.getLatestBlockhash();
-      transaction.recentBlockhash = blockhash;
 
-      // Sign with wallet (MWA requires signTransaction + sendRawTransaction pattern)
-      const signedTx = await signTransaction!(transaction);
-      const signature = await connection.sendRawTransaction(signedTx.serialize());
+      // Use sendTransaction which internally uses MWA's signAndSendTransactions (preferred over deprecated signTransactions)
+      const signature = await sendTransaction(transaction, connection);
 
       // Wait for confirmation with timeout
       const confirmationPromise = connection.confirmTransaction(signature, 'confirmed');
