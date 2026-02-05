@@ -1,21 +1,11 @@
-import React, { useMemo, ReactNode } from 'react';
-import { 
-  ConnectionProvider, 
+import { useMemo, ReactNode } from 'react';
+import {
+  ConnectionProvider,
   WalletProvider as SolanaWalletProvider,
   useWallet as useSolanaWallet,
   useConnection as useSolanaConnection
 } from '@solana/wallet-adapter-react';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
-import {
-  PhantomWalletAdapter,
-  SolflareWalletAdapter
-} from '@solana/wallet-adapter-wallets';
-import {
-  SolanaMobileWalletAdapter,
-  createDefaultAddressSelector,
-  createDefaultAuthorizationResultCache,
-  createDefaultWalletNotFoundHandler,
-} from '@solana-mobile/wallet-adapter-mobile';
 import { WalletModalProvider, WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { clusterApiUrl } from '@solana/web3.js';
 import { SOLANA_NETWORK } from '../utils/constants';
@@ -25,8 +15,8 @@ import { getSolanaRpcEndpoint } from '../utils/rpc';
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const network = SOLANA_NETWORK === 'mainnet-beta' 
-    ? WalletAdapterNetwork.Mainnet 
+  const network = SOLANA_NETWORK === 'mainnet-beta'
+    ? WalletAdapterNetwork.Mainnet
     : WalletAdapterNetwork.Devnet;
 
   const endpoint = useMemo(() => {
@@ -37,24 +27,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return clusterApiUrl(network);
   }, [network]);
 
-  const wallets = useMemo(
-    () => [
-      new SolanaMobileWalletAdapter({
-        addressSelector: createDefaultAddressSelector(),
-        appIdentity: {
-          name: 'SOL Trivia',
-          uri: 'https://soltrivia.app',
-          icon: '/favicon.png',
-        },
-        authorizationResultCache: createDefaultAuthorizationResultCache(),
-        cluster: network,
-        onWalletNotFound: createDefaultWalletNotFoundHandler(),
-      }),
-      new PhantomWalletAdapter(),
-      new SolflareWalletAdapter(),
-    ],
-    [network]
-  );
+  // MWA is now registered via registerMwa() in main.tsx using @solana-mobile/wallet-standard-mobile
+  // This automatically detects Wallet Standard wallets including Seed Vault, Phantom, Solflare, etc.
+  const wallets = useMemo(() => [], []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>

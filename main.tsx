@@ -7,6 +7,29 @@ import { WalletProvider } from './src/contexts/WalletContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import PasswordGate from './components/PasswordGate';
 
+// Register Mobile Wallet Adapter as a Wallet Standard wallet (must be called before React renders)
+import {
+  registerMwa,
+  createDefaultAuthorizationCache,
+  createDefaultChainSelector,
+  createDefaultWalletNotFoundHandler,
+} from '@solana-mobile/wallet-standard-mobile';
+
+// Only register on client-side (not SSR)
+if (typeof window !== 'undefined') {
+  registerMwa({
+    appIdentity: {
+      name: 'SOL Trivia',
+      uri: 'https://soltrivia.app',
+      icon: '/favicon.png',
+    },
+    authorizationCache: createDefaultAuthorizationCache(),
+    chains: ['solana:mainnet'],
+    chainSelector: createDefaultChainSelector(),
+    onWalletNotFound: createDefaultWalletNotFoundHandler(),
+  });
+}
+
 // Buffer is provided via Vite alias (see index.html comment). Console.warn suppression runs in index.html inline script.
 
 const rootElement = document.getElementById('root');
