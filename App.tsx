@@ -368,11 +368,13 @@ const App: React.FC = () => {
         })
       );
 
+      // Always set feePayer so the wallet knows which key signs
+      transaction.feePayer = publicKey;
+
       // Get recent blockhash
       try {
         const { blockhash } = await getRecentBlockhashWithRetry(connection);
         transaction.recentBlockhash = blockhash;
-        transaction.feePayer = publicKey;
       } catch (blockhashError) {
         console.warn('Could not get blockhash, wallet will handle it:', blockhashError);
       }

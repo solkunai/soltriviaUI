@@ -6,10 +6,16 @@ import {
   useConnection as useSolanaConnection
 } from '@solana/wallet-adapter-react';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
-import { 
-  PhantomWalletAdapter, 
+import {
+  PhantomWalletAdapter,
   SolflareWalletAdapter
 } from '@solana/wallet-adapter-wallets';
+import {
+  SolanaMobileWalletAdapter,
+  createDefaultAddressSelector,
+  createDefaultAuthorizationResultCache,
+  createDefaultWalletNotFoundHandler,
+} from '@solana-mobile/wallet-adapter-mobile';
 import { WalletModalProvider, WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { clusterApiUrl } from '@solana/web3.js';
 import { SOLANA_NETWORK } from '../utils/constants';
@@ -33,10 +39,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const wallets = useMemo(
     () => [
+      new SolanaMobileWalletAdapter({
+        addressSelector: createDefaultAddressSelector(),
+        appIdentity: {
+          name: 'SOL Trivia',
+          uri: 'https://soltrivia.app',
+          icon: '/favicon.png',
+        },
+        authorizationResultCache: createDefaultAuthorizationResultCache(),
+        cluster: network,
+        onWalletNotFound: createDefaultWalletNotFoundHandler(),
+      }),
       new PhantomWalletAdapter(),
       new SolflareWalletAdapter(),
     ],
-    []
+    [network]
   );
 
   return (

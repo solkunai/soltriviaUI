@@ -47,12 +47,14 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         })
       );
 
+      // Always set feePayer so the wallet knows which key signs
+      transaction.feePayer = publicKey;
+
       // Try to get blockhash, but if it fails, let sendTransaction handle it
       // The wallet adapter will automatically get blockhash if not set
       try {
         const { blockhash } = await getRecentBlockhashWithRetry(connection);
         transaction.recentBlockhash = blockhash;
-        transaction.feePayer = publicKey;
       } catch (blockhashError) {
         // If blockhash fails, let sendTransaction handle it automatically
         // The wallet adapter will fetch it using the wallet's RPC
