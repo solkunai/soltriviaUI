@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
-import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { purchaseLives } from '../src/utils/api';
 import { REVENUE_WALLET, LIVES_PRICE_LAMPORTS } from '../src/utils/constants';
 
@@ -38,19 +38,26 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         lamports: LIVES_PRICE_LAMPORTS,
         sol: LIVES_PRICE_LAMPORTS / 1_000_000_000,
       });
-      
-      const transaction = new Transaction().add(
+
+      // Get blockhash first for VersionedTransaction
+      const { blockhash } = await connection.getLatestBlockhash();
+
+      // Use VersionedTransaction (V0) for better Seed Vault simulation support
+      const instructions = [
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(REVENUE_WALLET),
           lamports: LIVES_PRICE_LAMPORTS,
-        })
-      );
+        }),
+      ];
 
-      // Set feePayer and blockhash for transaction simulation
-      transaction.feePayer = publicKey;
-      const { blockhash } = await connection.getLatestBlockhash();
-      transaction.recentBlockhash = blockhash;
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions,
+      }).compileToV0Message();
+
+      const transaction = new VersionedTransaction(messageV0);
 
       // Use sendTransaction which internally uses MWA's signAndSendTransactions
       const signature = await sendTransaction(transaction, connection);
