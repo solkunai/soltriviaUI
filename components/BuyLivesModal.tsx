@@ -47,10 +47,12 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         })
       );
 
-      // Set feePayer - wallet adapter handles blockhash and uses signAndSendTransactions for MWA
+      // Set feePayer and blockhash for transaction simulation
       transaction.feePayer = publicKey;
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
 
-      // Use sendTransaction which internally uses MWA's signAndSendTransactions (preferred over deprecated signTransactions)
+      // Use sendTransaction which internally uses MWA's signAndSendTransactions
       const signature = await sendTransaction(transaction, connection);
 
       // Wait for confirmation with timeout
