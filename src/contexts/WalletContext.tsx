@@ -7,6 +7,7 @@ import {
 } from '@solana/wallet-adapter-react';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { WalletModalProvider, WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { LedgerWalletAdapter } from '@solana/wallet-adapter-wallets';
 import { clusterApiUrl } from '@solana/web3.js';
 import { SOLANA_NETWORK } from '../utils/constants';
 import { getSolanaRpcEndpoint } from '../utils/rpc';
@@ -27,9 +28,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return clusterApiUrl(network);
   }, [network]);
 
-  // MWA is now registered via registerMwa() in main.tsx using @solana-mobile/wallet-standard-mobile
-  // This automatically detects Wallet Standard wallets including Seed Vault, Phantom, Solflare, etc.
-  const wallets = useMemo(() => [], []);
+  // Wallet adapters:
+  // - LedgerWalletAdapter: Direct hardware wallet connection via WebHID (no browser extension needed)
+  // - MWA is registered via registerMwa() in main.tsx for Solana mobile (Seed Vault, etc.)
+  // - Phantom, Solflare, Backpack, Magic Eden, Jupiter use Wallet Standard and auto-detect
+  const wallets = useMemo(() => [
+    new LedgerWalletAdapter(),
+  ], []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
