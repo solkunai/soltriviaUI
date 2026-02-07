@@ -31,3 +31,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Bubblewrap/TWA generated files
+seeker-app/android/
+seeker-app/app-release-signed.apk
+seeker-app/android.keystore
+seeker-app/*.keystore
+seeker-app/assetlinks.json

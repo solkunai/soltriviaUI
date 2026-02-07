@@ -1,0 +1,38 @@
+{
+  "packageId": "com.soltrivia.app",
+  "host": "soltrivia.app",
+  "name": "SOL Trivia",
+  "launcherName": "SolTrivia",
+  "display": "standalone",
+  "themeColor": "#00FFA3",
+  "navigationColor": "#050505",
+  "backgroundColor": "#050505",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://soltrivia.app/android-chrome-512x512.png",
+  "maskableIconUrl": "https://soltrivia.app/android-chrome-512x512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "android"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://soltrivia.app/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {
+    "playBilling": false,
+    "locationDelegation": false
+  },
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "shareTarget": null,
+  "orientation": "portrait",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "appVersion": "1.0.0"
+}

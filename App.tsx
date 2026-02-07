@@ -39,6 +39,7 @@ import EditProfileModal from './components/EditProfileModal';
 import QuizView from './components/QuizView';
 import ResultsView from './components/ResultsView';
 import WalletRequiredModal from './components/WalletRequiredModal';
+import PwaInstallPrompt from './components/PwaInstallPrompt';
 import AdminRoute from './components/AdminRoute';
 import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
@@ -570,6 +571,7 @@ const App: React.FC = () => {
         isOpen={showWalletRequired} 
         onClose={() => setShowWalletRequired(false)} 
       />
+      <PwaInstallPrompt />
     </div>
   );
 };
