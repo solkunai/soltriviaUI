@@ -32,6 +32,20 @@ if (typeof window !== 'undefined') {
 
 // Buffer is provided via Vite alias (see index.html comment). Console.warn suppression runs in index.html inline script.
 
+// Register Service Worker for PWA
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => {
+        console.log('Service Worker registered:', registration.scope);
+      })
+      .catch((error) => {
+        console.error('Service Worker registration failed:', error);
+      });
+  });
+}
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element");
