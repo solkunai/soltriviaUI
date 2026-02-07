@@ -15,6 +15,14 @@ import { getSolanaRpcEndpoint } from '../utils/rpc';
 // Import wallet adapter CSS
 import '@solana/wallet-adapter-react-ui/styles.css';
 
+// Official Ledger logo - file in public/ledger-logo.svg
+const LEDGER_ICON = '/ledger-logo.svg';
+
+// Custom Ledger adapter with proper branded icon
+class BrandedLedgerWalletAdapter extends LedgerWalletAdapter {
+  override readonly icon = LEDGER_ICON;
+}
+
 export function WalletProvider({ children }: { children: ReactNode }) {
   const network = SOLANA_NETWORK === 'mainnet-beta'
     ? WalletAdapterNetwork.Mainnet
@@ -29,11 +37,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [network]);
 
   // Wallet adapters:
-  // - LedgerWalletAdapter: Direct hardware wallet connection via WebHID (no browser extension needed)
+  // - BrandedLedgerWalletAdapter: Direct hardware wallet connection via WebHID with proper Ledger branding
   // - MWA is registered via registerMwa() in main.tsx for Solana mobile (Seed Vault, etc.)
   // - Phantom, Solflare, Backpack, Magic Eden, Jupiter use Wallet Standard and auto-detect
   const wallets = useMemo(() => [
-    new LedgerWalletAdapter(),
+    new BrandedLedgerWalletAdapter(),
   ], []);
 
   return (
