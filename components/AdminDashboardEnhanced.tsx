@@ -1236,6 +1236,7 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
   const categories = ['solana', 'defi', 'nfts', 'bitcoin', 'memecoins', 'history'];
 
   const callManageQuestions = async (action: string, payload?: Record<string, unknown>) => {
+    const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
     if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.length < 20) {
       throw new Error('Missing Supabase anon key. Add VITE_SUPABASE_ANON_KEY to your .env (and .env.local if used) so the Questions tab can call manage-questions.');
     }
