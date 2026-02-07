@@ -1,0 +1,11 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect fill="#000" width="128" height="128"/>
+  <!-- Top-left corner bracket -->
+  <path fill="#fff" d="M24 24 L24 48 L32 48 L32 32 L48 32 L48 24 Z"/>
+  <!-- Top-right corner bracket -->
+  <path fill="#fff" d="M104 24 L80 24 L80 32 L96 32 L96 48 L104 48 Z"/>
+  <!-- Bottom-left corner bracket -->
+  <path fill="#fff" d="M24 104 L48 104 L48 96 L32 96 L32 80 L24 80 Z"/>
+  <!-- Bottom-right corner bracket (the L) -->
+  <path fill="#fff" d="M104 104 L104 56 L96 56 L96 96 L56 96 L56 104 Z"/>
+</svg>
