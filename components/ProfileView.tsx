@@ -41,8 +41,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
   const [currentAvatar, setCurrentAvatar] = useState(avatar);
   const [currentUsername, setCurrentUsername] = useState(username);
 
-  useEffect(() => {
-    const fetchProfileData = async () => {
+  const fetchProfileData = async () => {
       if (!publicKey) {
         setLoading(false);
         return;
@@ -206,7 +205,37 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
       }
     };
 
+  useEffect(() => {
     fetchProfileData();
+  }, [publicKey]);
+
+  // Realtime: auto-refresh history when this wallet completes a game session
+  useEffect(() => {
+    if (!publicKey) return;
+    const walletAddress = publicKey.toBase58();
+
+    const channel = supabase
+      .channel(`profile-history-${walletAddress}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'game_sessions',
+          filter: `wallet_address=eq.${walletAddress}`,
+        },
+        (payload: any) => {
+          // Re-fetch when a session gets a finished_at value (game completed)
+          if (payload.new?.finished_at && !payload.old?.finished_at) {
+            fetchProfileData();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [publicKey]);
 
   const handleAvatarUploadSuccess = (url: string) => {
@@ -303,6 +332,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
                 <thead className="bg-black/40 text-[8px] md:text-xs font-black text-zinc-500 uppercase tracking-[0.4em]">
                   <tr>
                      <th className="px-6 py-4 md:px-10 md:py-6 text-left">Arena</th>
+                     <th className="px-6 py-4 md:px-10 md:py-6 text-left">Date</th>
                      <th className="px-6 py-4 md:px-10 md:py-6 text-center">Rank</th>
                      <th className="px-6 py-4 md:px-10 md:py-6 text-center">Time</th>
                      <th className="px-6 py-4 md:px-10 md:py-6 text-center">Correct</th>
@@ -312,7 +342,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
                 <tbody className="divide-y divide-white/[0.03]">
                     {history.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-10 text-center text-zinc-500 italic">
+                        <td colSpan={6} className="px-6 py-10 text-center text-zinc-500 italic">
                           No game history yet. Play your first trivia to see stats!
                         </td>
                       </tr>
@@ -321,6 +351,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
                         <tr key={i} className="hover:bg-white/[0.01] transition-colors group">
                           <td className="px-6 py-5 md:px-10 md:py-8 font-[1000] uppercase text-[#14F195] text-sm md:text-lg italic tracking-tight">
                             #{row.round_id.slice(0, 6)}
+                          </td>
+                          <td className="px-6 py-5 md:px-10 md:py-8 text-left text-zinc-400 text-[10px] md:text-sm font-bold tabular-nums whitespace-nowrap">
+                            {row.finished_at ? new Date(row.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'}
                           </td>
                           <td className="px-6 py-5 md:px-10 md:py-8 text-center font-[1000] italic text-white text-base md:text-xl tabular-nums">
                             #{row.rank || '-'}
