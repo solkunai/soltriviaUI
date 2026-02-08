@@ -9,6 +9,11 @@ import { getSolanaRpcEndpoint } from '../src/utils/rpc';
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
 
 function getAdminCreds(): { u: string; p: string } {
+  try {
+    const u = sessionStorage.getItem('admin_username');
+    const p = sessionStorage.getItem('admin_password');
+    if (u != null && p != null) return { u, p };
+  } catch (_) {}
   return {
     u: import.meta.env.VITE_ADMIN_USERNAME || '',
     p: import.meta.env.VITE_ADMIN_PASSWORD || '',
@@ -378,6 +383,10 @@ const RoundWinnersAdminView: React.FC = () => {
   };
 
   const handleMarkPaid = async (roundId: string, rank: number, paidLamports: number) => {
+    if (!creds.u?.trim() || !creds.p) {
+      alert('Admin credentials missing. Please log out and log in again so Mark as paid can authenticate.');
+      return;
+    }
     setMarking(`${roundId}-${rank}`);
     const result = await markPayoutPaid(roundId, rank, paidLamports, creds.u, creds.p);
     setMarking(null);

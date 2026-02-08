@@ -5,7 +5,6 @@ import './src/index.css';
 import App from './App';
 import { WalletProvider } from './src/contexts/WalletContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
-import PasswordGate from './components/PasswordGate';
 
 // Register Mobile Wallet Adapter as a Wallet Standard wallet (must be called before React renders)
 import {
@@ -65,11 +64,9 @@ try {
   root.render(
     <React.StrictMode>
       <ErrorBoundary>
-        <PasswordGate>
-          <WalletProvider>
-            <App />
-          </WalletProvider>
-        </PasswordGate>
+        <WalletProvider>
+          <App />
+        </WalletProvider>
       </ErrorBoundary>
     </React.StrictMode>
   );
