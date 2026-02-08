@@ -39,6 +39,8 @@ import EditProfileModal from './components/EditProfileModal';
 import QuizView from './components/QuizView';
 import ResultsView from './components/ResultsView';
 import WalletRequiredModal from './components/WalletRequiredModal';
+import LegalDisclaimerModal from './components/LegalDisclaimerModal';
+import WalletConnectButton from './components/WalletConnectButton';
 import PwaInstallPrompt from './components/PwaInstallPrompt';
 import AdminRoute from './components/AdminRoute';
 import TermsOfServiceView from './components/TermsOfServiceView';
@@ -59,6 +61,9 @@ const App: React.FC = () => {
   const [isBuyLivesOpen, setIsBuyLivesOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [showWalletRequired, setShowWalletRequired] = useState(false);
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(() => {
+    try { return localStorage.getItem('soltrivia_terms_accepted') === 'true'; } catch { return false; }
+  });
   
   // App state for lives and round entries
   const [lives, setLives] = useState(0);
@@ -71,8 +76,8 @@ const App: React.FC = () => {
   // Current game session ID
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
-  // Pages that require wallet connection (HOME and ADMIN do NOT require wallet)
-  const walletRequiredViews = [View.PLAY, View.QUESTS, View.PROFILE, View.LEADERBOARD, View.QUIZ, View.RESULTS];
+  // Only active-game views truly require wallet (quiz in progress, viewing results)
+  const walletRequiredViews = [View.QUIZ, View.RESULTS];
 
   // Fetch lives from Supabase when wallet connects and periodically refresh
   useEffect(() => {
@@ -121,13 +126,7 @@ const App: React.FC = () => {
 
   // Check wallet connection when navigating
   const handleViewChange = (view: View) => {
-    // HOME and ADMIN are always accessible
-    if (view === View.HOME || view === View.ADMIN) {
-      setCurrentView(view);
-      return;
-    }
-
-    // Check if wallet is required for this view
+    // QUIZ and RESULTS require active wallet connection
     if (walletRequiredViews.includes(view) && !connected) {
       setShowWalletRequired(true);
       return;
@@ -160,12 +159,13 @@ const App: React.FC = () => {
     } catch (_) {}
   }, [currentView, connected, currentSessionId]);
 
-  // Redirect to HOME only when user disconnects (not on initial load – so reload keeps same page)
+  // Redirect to HOME only when user disconnects from views that need wallet data
+  const disconnectRedirectViews = [View.QUIZ, View.RESULTS, View.PROFILE];
   const prevConnectedRef = useRef<boolean | undefined>(undefined);
   useEffect(() => {
     const wasConnected = prevConnectedRef.current;
     prevConnectedRef.current = connected;
-    if (wasConnected === true && !connected && walletRequiredViews.includes(currentView)) {
+    if (wasConnected === true && !connected && disconnectRedirectViews.includes(currentView)) {
       setCurrentView(View.HOME);
     }
   }, [connected, currentView]);
@@ -592,13 +592,35 @@ const App: React.FC = () => {
           />
         );
       case View.LEADERBOARD:
-        return connected ? <LeaderboardView onOpenGuide={() => setIsGuideOpen(true)} /> : null;
+        return <LeaderboardView onOpenGuide={() => setIsGuideOpen(true)} />;
       case View.PLAY:
-        return connected ? <PlayView lives={lives} roundEntriesUsed={roundEntriesUsed} roundEntriesMax={ROUND_ENTRIES_MAX} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => setIsBuyLivesOpen(true)} /> : null;
+        return <PlayView lives={lives} roundEntriesUsed={roundEntriesUsed} roundEntriesMax={ROUND_ENTRIES_MAX} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => {
+          if (!connected) { setShowWalletRequired(true); } else { setIsBuyLivesOpen(true); }
+        }} />;
       case View.QUESTS:
-        return connected ? <QuestsView onGoToProfile={() => setCurrentView(View.PROFILE)} onOpenGuide={() => setIsGuideOpen(true)} /> : null;
+        return <QuestsView onGoToProfile={() => setCurrentView(View.PROFILE)} onOpenGuide={() => setIsGuideOpen(true)} />;
       case View.PROFILE:
-        return connected ? <ProfileView username={profile.username} avatar={profile.avatar} onEdit={() => setIsEditProfileOpen(true)} onOpenGuide={() => setIsGuideOpen(true)} /> : null;
+        if (!connected) {
+          return (
+            <div className="flex-1 flex items-center justify-center p-6">
+              <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-8 md:p-10 max-w-md w-full text-center">
+                <div className="flex justify-center mb-6">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#9945FF]/20 to-[#14F195]/20 flex items-center justify-center border border-[#9945FF]/30">
+                    <svg className="w-8 h-8 text-[#14F195]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                </div>
+                <h3 className="text-xl font-[1000] italic uppercase tracking-tighter text-white mb-2">Connect Your Wallet</h3>
+                <p className="text-zinc-400 text-sm mb-6">Connect your Solana wallet to view your profile, stats, and game history.</p>
+                <div className="flex justify-center">
+                  <WalletConnectButton />
+                </div>
+              </div>
+            </div>
+          );
+        }
+        return <ProfileView username={profile.username} avatar={profile.avatar} onEdit={() => setIsEditProfileOpen(true)} onOpenGuide={() => setIsGuideOpen(true)} />;
       case View.QUIZ:
         return connected ? (
           <QuizView
@@ -712,6 +734,16 @@ const App: React.FC = () => {
         onOpenPrivacy={() => setCurrentView(View.PRIVACY)}
       />
       <PwaInstallPrompt />
+      {!hasAcceptedTerms && currentView !== View.TERMS && currentView !== View.PRIVACY && (
+        <LegalDisclaimerModal
+          onAccept={() => {
+            try { localStorage.setItem('soltrivia_terms_accepted', 'true'); } catch {}
+            setHasAcceptedTerms(true);
+          }}
+          onOpenTerms={() => setCurrentView(View.TERMS)}
+          onOpenPrivacy={() => setCurrentView(View.PRIVACY)}
+        />
+      )}
     </div>
   );
 };
