@@ -416,17 +416,13 @@ const App: React.FC = () => {
     }
   };
 
-  const handleBuyLivesSuccess = async () => {
-    // Refresh lives after purchase from backend
-    if (connected && publicKey) {
-      try {
-        const data = await getPlayerLives(publicKey.toBase58());
-        setLives(data.lives_count || 0);
-      } catch (err) {
-        console.error('Failed to refresh lives:', err);
-        // Still update optimistically - user just purchased 3 lives
-        setLives(prev => prev + 3);
-      }
+  const handleBuyLivesSuccess = (newLivesCount?: number) => {
+    if (typeof newLivesCount === 'number') {
+      // Use the exact count returned by the purchase-lives backend
+      setLives(newLivesCount);
+    } else if (connected && publicKey) {
+      // Fallback: optimistic +3
+      setLives(prev => prev + 3);
     }
   };
 
