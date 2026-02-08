@@ -501,6 +501,8 @@ const App: React.FC = () => {
       // Call backend to start game session
       const gameResult = await startGame(publicKey.toBase58(), signature);
 
+      console.log('🎮 startGame result:', JSON.stringify(gameResult));
+
       // Store session ID for quiz (and persist so reload on /quiz keeps the game)
       setCurrentSessionId(gameResult.sessionId);
       try {
@@ -509,8 +511,10 @@ const App: React.FC = () => {
 
       // Optimistically update UI based on whether it was a free or paid entry
       if (gameResult.freeEntry) {
+        // Free entry — only increment round entries, do NOT touch lives
         setRoundEntriesUsed(prev => prev + 1);
-      } else {
+      } else if (!gameResult.resumed) {
+        // Paid entry (not a resumed session) — deduct a purchased life
         setLives(prev => Math.max(0, prev - 1));
         setRoundEntriesUsed(prev => prev + 1);
       }
