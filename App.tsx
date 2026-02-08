@@ -43,7 +43,7 @@ import PwaInstallPrompt from './components/PwaInstallPrompt';
 import AdminRoute from './components/AdminRoute';
 import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
-import { getPlayerLives, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard } from './src/utils/api';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR } from './src/utils/constants';
 
 import { supabase } from './src/utils/supabase';
@@ -60,8 +60,10 @@ const App: React.FC = () => {
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [showWalletRequired, setShowWalletRequired] = useState(false);
   
-  // App state for lives
-  const [lives, setLives] = useState(1);
+  // App state for lives and round entries
+  const [lives, setLives] = useState(0);
+  const [roundEntriesUsed, setRoundEntriesUsed] = useState(0);
+  const ROUND_ENTRIES_MAX = 2;
   
   // Quiz results state
   const [lastGameResults, setLastGameResults] = useState<{ score: number, points: number, time: number, rank?: number; scoreSaveFailed?: boolean } | null>(null);
@@ -82,7 +84,7 @@ const App: React.FC = () => {
     const fetchLivesAndRegister = async () => {
       try {
         const walletAddress = publicKey.toBase58();
-        
+
         // Register/update player profile in Supabase
         try {
           await registerPlayerProfile(walletAddress);
@@ -91,9 +93,13 @@ const App: React.FC = () => {
           console.debug('Profile registration skipped:', profileError);
         }
 
-        // Fetch player lives
-        const data = await getPlayerLives(walletAddress);
-        setLives(data.lives_count || 0);
+        // Fetch purchased lives + round entries used in parallel
+        const [livesData, entriesUsed] = await Promise.all([
+          getPlayerLives(walletAddress),
+          getRoundEntriesUsed(walletAddress),
+        ]);
+        setLives(livesData.lives_count || 0);
+        setRoundEntriesUsed(entriesUsed);
       } catch (err) {
         console.error('Failed to fetch lives:', err);
         setLives(0);
@@ -344,8 +350,9 @@ const App: React.FC = () => {
       return;
     }
     
-    // Check lives before starting
-    if (lives <= 0) {
+    // Check if player can play (has round entries OR purchased lives)
+    const roundEntriesLeft = ROUND_ENTRIES_MAX - roundEntriesUsed;
+    if (roundEntriesLeft <= 0 && lives <= 0) {
       setIsBuyLivesOpen(true);
       return;
     }
@@ -439,8 +446,13 @@ const App: React.FC = () => {
         sessionStorage.setItem('quiz_session_id', gameResult.sessionId);
       } catch (_) {}
 
-      // Optimistically update UI
-      setLives(prev => Math.max(0, prev - 1));
+      // Optimistically update UI based on whether it was a free or paid entry
+      if (gameResult.freeEntry) {
+        setRoundEntriesUsed(prev => prev + 1);
+      } else {
+        setLives(prev => Math.max(0, prev - 1));
+        setRoundEntriesUsed(prev => prev + 1);
+      }
       setCurrentView(View.QUIZ);
     } catch (err: any) {
       console.error('Failed to start quiz:', err);
@@ -461,8 +473,8 @@ const App: React.FC = () => {
         return;
       }
 
-      // If no lives, open buy lives modal
-      if (err.code === 'ALREADY_PLAYED' || err.message?.includes('Insufficient lives')) {
+      // If no lives and free entries used, open buy lives modal
+      if (err.code === 'NO_LIVES' || err.code === 'ALREADY_PLAYED' || err.message?.includes('Free entries used') || err.message?.includes('Insufficient lives')) {
         setIsBuyLivesOpen(true);
         return;
       }
@@ -517,7 +529,7 @@ const App: React.FC = () => {
       case View.LEADERBOARD:
         return connected ? <LeaderboardView onOpenGuide={() => setIsGuideOpen(true)} /> : null;
       case View.PLAY:
-        return connected ? <PlayView lives={lives} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => setIsBuyLivesOpen(true)} /> : null;
+        return connected ? <PlayView lives={lives} roundEntriesUsed={roundEntriesUsed} roundEntriesMax={ROUND_ENTRIES_MAX} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => setIsBuyLivesOpen(true)} /> : null;
       case View.QUESTS:
         return connected ? <QuestsView onGoToProfile={() => setCurrentView(View.PROFILE)} onOpenGuide={() => setIsGuideOpen(true)} /> : null;
       case View.PROFILE:

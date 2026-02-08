@@ -125,7 +125,7 @@ export interface UserQuestProgress {
 export async function startGame(
   walletAddress: string,
   entryTxSignature: string
-): Promise<{ sessionId: string; roundId: string; totalQuestions: number; resumed: boolean }> {
+): Promise<{ sessionId: string; roundId: string; totalQuestions: number; resumed: boolean; freeEntry?: boolean; freeEntriesRemaining?: number }> {
   const response = await fetch(`${FUNCTIONS_URL}/start-game`, {
     method: 'POST',
     headers: getAuthHeaders(),
@@ -236,7 +236,7 @@ export async function getLeaderboard(round_id?: string, wallet?: string, period?
 // Get player's current lives count
 export async function getPlayerLives(wallet_address: string): Promise<PlayerLivesResponse> {
   if (!isSupabaseConfigured) {
-    return { lives_count: 1, total_purchased: 0, total_used: 0 };
+    return { lives_count: 0, total_purchased: 0, total_used: 0 };
   }
 
   const { data, error } = await supabase
@@ -247,16 +247,16 @@ export async function getPlayerLives(wallet_address: string): Promise<PlayerLive
 
   if (error) {
     console.error('Error fetching player lives:', error);
-    return { lives_count: 1, total_purchased: 0, total_used: 0 };
+    return { lives_count: 0, total_purchased: 0, total_used: 0 };
   }
 
-  // If no row exists, create one with default 1 life
+  // If no row exists, create one with 0 purchased lives (free entries are per-round, not stored here)
   if (!data) {
     const { data: newData, error: insertError } = await supabase
       .from('player_lives')
       .insert({
         wallet_address,
-        lives_count: 1,
+        lives_count: 0,
         total_purchased: 0,
         total_used: 0
       })
@@ -265,13 +265,37 @@ export async function getPlayerLives(wallet_address: string): Promise<PlayerLive
 
     if (insertError) {
       console.error('Error creating player lives:', insertError);
-      return { lives_count: 1, total_purchased: 0, total_used: 0 };
+      return { lives_count: 0, total_purchased: 0, total_used: 0 };
     }
 
-    return newData || { lives_count: 1, total_purchased: 0, total_used: 0 };
+    return newData || { lives_count: 0, total_purchased: 0, total_used: 0 };
   }
 
   return data;
+}
+
+// Get how many round entries this wallet has used in the current 6-hour round
+export async function getRoundEntriesUsed(wallet_address: string): Promise<number> {
+  if (!isSupabaseConfigured) return 0;
+
+  const now = new Date();
+  const roundStartHour = Math.floor(now.getUTCHours() / 6) * 6;
+  const windowStart = new Date(now);
+  windowStart.setUTCHours(roundStartHour, 0, 0, 0);
+
+  const { count, error } = await supabase
+    .from('game_sessions')
+    .select('id', { count: 'exact', head: true })
+    .eq('wallet_address', wallet_address)
+    .gte('created_at', windowStart.toISOString())
+    .not('finished_at', 'is', null);
+
+  if (error) {
+    console.error('Error fetching round entries:', error);
+    return 0;
+  }
+
+  return count || 0;
 }
 
 // Purchase extra lives (with tier support)
@@ -360,12 +384,12 @@ export async function registerPlayerProfile(
 
       console.log('✅ New player profile created:', walletAddress);
 
-      // Also create a player_lives row with 1 default life
+      // Also create a player_lives row with 0 purchased lives (free entries are per-round)
       const { error: livesError } = await supabase
         .from('player_lives')
         .insert({
           wallet_address: walletAddress,
-          lives_count: 1,
+          lives_count: 0,
           total_purchased: 0,
           total_used: 0,
         });
@@ -374,7 +398,7 @@ export async function registerPlayerProfile(
         // 23505 = unique violation (row already exists, which is fine)
         console.error('Error creating player lives:', livesError);
       } else {
-        console.log('✅ Default life granted:', walletAddress);
+        console.log('✅ Lives record created:', walletAddress);
       }
     }
 

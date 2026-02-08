@@ -75,7 +75,7 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
               <div>
                 <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest mb-3 flex items-center gap-3">4.3 Lives System</h3>
                 <p className="text-white font-medium text-sm leading-relaxed opacity-90">
-                  New wallets receive 1 free life to start. Additional lives can be purchased in three tiers: 3 lives for 0.03 SOL, 15 lives for 0.1 SOL, or 35 lives for 0.25 SOL. Each game entry consumes 1 life. Unused lives roll over across rounds indefinitely. Lives purchases are non-refundable. Lives purchases are separate from entry fees &mdash; you still pay the standard 0.0225 SOL entry fee each time you play.
+                  Every wallet receives 2 round entries per round (every 6 hours). Beyond the 2 included round entries, extra lives can be purchased in three tiers: 3 lives for 0.03 SOL, 15 lives for 0.1 SOL, or 35 lives for 0.25 SOL. Purchased extra lives roll over across rounds indefinitely. Lives purchases are non-refundable. Both round entries and extra lives require the standard 0.0225 SOL entry fee each time you play.
                 </p>
               </div>
               <div>
