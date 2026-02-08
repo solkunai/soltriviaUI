@@ -264,24 +264,40 @@ const App: React.FC = () => {
     const walletAddress = publicKey.toBase58();
 
     try {
-      // Update in Supabase
+      // Upsert to Supabase (handles both existing and missing rows reliably)
       const { error } = await supabase
         .from('player_profiles')
-        .update({
+        .upsert({
+          wallet_address: walletAddress,
           username,
           avatar_url: avatar,
           updated_at: new Date().toISOString()
-        })
-        .eq('wallet_address', walletAddress);
+        }, { onConflict: 'wallet_address' });
 
       if (error) {
         console.error('Failed to update profile:', error);
-      } else {
-        try {
-          await updateQuestProgress(walletAddress, 'identity_sync', 1);
-        } catch {
-          // ignore quest update failure
-        }
+        return;
+      }
+
+      // Verify the save persisted by re-reading
+      const { data: verify } = await supabase
+        .from('player_profiles')
+        .select('username, avatar_url')
+        .eq('wallet_address', walletAddress)
+        .single();
+
+      if (verify) {
+        // Update state with what's actually in the DB
+        setProfile({
+          username: verify.username || username,
+          avatar: verify.avatar_url || avatar,
+        });
+      }
+
+      try {
+        await updateQuestProgress(walletAddress, 'identity_sync', 1);
+      } catch {
+        // ignore quest update failure
       }
     } catch (err) {
       console.error('Failed to update profile:', err);
@@ -333,6 +349,22 @@ const App: React.FC = () => {
         console.log('🏆 User rank from leaderboard:', rank);
       } catch (err) {
         console.error('Failed to fetch rank:', err);
+      }
+    }
+
+    // Re-fetch lives and round entries now that the session is finished (finished_at is set)
+    // This ensures the PlayView shows the correct count when the user navigates back
+    if (publicKey) {
+      try {
+        const walletAddr = publicKey.toBase58();
+        const [livesData, entriesUsed] = await Promise.all([
+          getPlayerLives(walletAddr),
+          getRoundEntriesUsed(walletAddr),
+        ]);
+        setLives(livesData.lives_count || 0);
+        setRoundEntriesUsed(entriesUsed);
+      } catch (_) {
+        // Silent — the 30-second poll will catch up
       }
     }
 

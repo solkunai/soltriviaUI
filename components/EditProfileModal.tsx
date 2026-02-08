@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -12,6 +12,14 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, cu
   const [username, setUsername] = useState(currentUsername);
   const [avatar, setAvatar] = useState(currentAvatar);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync local state when modal opens with latest prop values
+  useEffect(() => {
+    if (isOpen) {
+      setUsername(currentUsername);
+      setAvatar(currentAvatar);
+    }
+  }, [isOpen, currentUsername, currentAvatar]);
 
   if (!isOpen) return null;
 
