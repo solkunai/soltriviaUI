@@ -615,10 +615,15 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
     .select('round_id, winner_wallet, winner_score')
     .in('round_id', roundIds);
 
+  // One winner per round: keep the row with the highest score (no duplicate wallets/scores per round)
   const winnerByRoundId = new Map<string, { winner_wallet: string | null; winner_score: number }>();
   if (!winnersError && winners?.length) {
     winners.forEach((w: { round_id: string; winner_wallet: string | null; winner_score: number }) => {
-      winnerByRoundId.set(w.round_id, { winner_wallet: w.winner_wallet ?? null, winner_score: Number(w.winner_score ?? 0) });
+      const score = Number(w.winner_score ?? 0);
+      const cur = winnerByRoundId.get(w.round_id);
+      if (!cur || score > cur.winner_score) {
+        winnerByRoundId.set(w.round_id, { winner_wallet: w.winner_wallet ?? null, winner_score: score });
+      }
     });
   }
 
@@ -643,16 +648,27 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
   }
   const payoutProfileByWallet = Object.fromEntries(payoutProfiles.map((p) => [p.wallet_address, p]));
 
+  /** Per round: keep only the highest-score entry per wallet (dedupe so each wallet appears once). */
+  const dedupePayoutsByWallet = (list: RoundPayout[]): RoundPayout[] => {
+    const byWallet = new Map<string, RoundPayout>();
+    for (const p of list) {
+      const cur = byWallet.get(p.wallet_address);
+      if (!cur || Number(p.score) > Number(cur.score)) byWallet.set(p.wallet_address, p);
+    }
+    return [...byWallet.values()].sort((a, b) => Number(b.score) - Number(a.score));
+  };
+
   return rounds.map((r) => {
     const w = winnerByRoundId.get(r.id);
     const winnerWallet = w?.winner_wallet ?? null;
     const winnerScore = w?.winner_score ?? 0;
     const profile = winnerWallet ? profileByWallet[winnerWallet] : null;
-    const payouts: RoundPayout[] = (payoutsByRound.filter((p) => p.round_id === r.id) as RoundPayout[]).map((p) => ({
+    const rawPayouts = (payoutsByRound.filter((p) => p.round_id === r.id) as RoundPayout[]).map((p) => ({
       ...p,
       winner_display_name: payoutProfileByWallet[p.wallet_address]?.username ?? null,
       winner_avatar: payoutProfileByWallet[p.wallet_address]?.avatar_url ?? null,
     }));
+    const payouts: RoundPayout[] = dedupePayoutsByWallet(rawPayouts).map((p, i) => ({ ...p, rank: i + 1 }));
     return {
       round_id: r.id,
       date: r.date,
