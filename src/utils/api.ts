@@ -134,7 +134,9 @@ export async function startGame(
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.error || 'Failed to start game');
+    const err = new Error(error.error || 'Failed to start game');
+    (err as any).code = error.code;
+    throw err;
   }
 
   return response.json();
