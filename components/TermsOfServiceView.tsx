@@ -99,7 +99,7 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
               </div>
               <div className="p-6 bg-white/[0.02] border border-white/5 rounded-2xl">
                 <h3 className="text-[#14F195] text-[10px] font-black uppercase italic tracking-widest mb-2">5.3 Gameplay</h3>
-                <p className="text-white text-xs font-bold opacity-80 leading-relaxed">16s limit per question. Rankings decided by total points and time.</p>
+                <p className="text-white text-xs font-bold opacity-80 leading-relaxed">7s limit per question. Rankings decided by total points and time.</p>
               </div>
             </div>
           </section>

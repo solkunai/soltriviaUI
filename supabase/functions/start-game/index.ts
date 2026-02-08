@@ -318,6 +318,41 @@ serve(async (req) => {
     }
     fullPoolIds = activeQuestions.map((q) => q.id);
 
+    // 24-hour question dedup: fetch question IDs this wallet has seen in the last 24 hours
+    // so they get fresh questions on replay. Falls back to full pool if not enough unseen.
+    let unseenPoolIds = fullPoolIds;
+    try {
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: recentSessions } = await supabase
+        .from('game_sessions')
+        .select('question_order')
+        .eq('wallet_address', walletAddress)
+        .gte('created_at', twentyFourHoursAgo);
+
+      if (recentSessions && recentSessions.length > 0) {
+        const seenIds = new Set<string>();
+        for (const s of recentSessions) {
+          if (Array.isArray(s.question_order)) {
+            for (const qid of s.question_order) {
+              seenIds.add(qid);
+            }
+          }
+        }
+        if (seenIds.size > 0) {
+          const filtered = fullPoolIds.filter((id) => !seenIds.has(id));
+          // Only use filtered pool if it has enough questions (at least 10)
+          if (filtered.length >= 10) {
+            unseenPoolIds = filtered;
+            console.log(`24h dedup: ${seenIds.size} seen, ${filtered.length} unseen available for ${walletAddress}`);
+          } else {
+            console.log(`24h dedup: only ${filtered.length} unseen (need 10), using full pool for ${walletAddress}`);
+          }
+        }
+      }
+    } catch (dedupErr) {
+      console.error('24h dedup query failed, using full pool:', dedupErr);
+    }
+
     // Rotate round question pool every 2 minutes (so the round's default pool stays fresh)
     const TWO_MINS_MS = 2 * 60 * 1000;
     const updatedAt = round.question_ids_updated_at ? new Date(round.question_ids_updated_at).getTime() : 0;
@@ -436,8 +471,8 @@ serve(async (req) => {
           );
         }
 
-        // Create session with life_used flag; each user gets 10 random questions from full pool
-        const questionOrder = selectRandomQuestions(fullPoolIds, 10);
+        // Create session with life_used flag; each user gets 10 random questions (unseen preferred)
+        const questionOrder = selectRandomQuestions(unseenPoolIds, 10);
         const { data: session, error: sessionError } = await supabase
           .from('game_sessions')
           .insert({
@@ -554,8 +589,8 @@ serve(async (req) => {
 
     console.log('✅ Life deducted successfully. Remaining:', currentLivesCount - 1);
 
-    // Create new game session; each user gets 10 random questions from full pool
-    const questionOrder = selectRandomQuestions(fullPoolIds, 10);
+    // Create new game session; each user gets 10 random questions (unseen preferred)
+    const questionOrder = selectRandomQuestions(unseenPoolIds, 10);
     const { data: session, error: sessionError } = await supabase
       .from('game_sessions')
       .insert({
