@@ -503,19 +503,6 @@ const App: React.FC = () => {
 
       console.log('🎮 startGame result:', JSON.stringify(gameResult));
 
-      // --- TEMPORARY DEBUG (remove after diagnosis) ---
-      alert(
-        `DEBUG - Backend Response:\n` +
-        `freeEntry: ${gameResult.freeEntry}\n` +
-        `resumed: ${gameResult.resumed}\n` +
-        `freeEntriesRemaining: ${gameResult.freeEntriesRemaining}\n` +
-        `lifeUsed: ${(gameResult as any).lifeUsed}\n` +
-        `livesRemaining: ${(gameResult as any).livesRemaining}\n\n` +
-        `Frontend State (before update):\n` +
-        `roundEntriesUsed: ${roundEntriesUsed} / ${ROUND_ENTRIES_MAX}\n` +
-        `lives: ${lives}`
-      );
-
       // Store session ID for quiz (and persist so reload on /quiz keeps the game)
       setCurrentSessionId(gameResult.sessionId);
       try {
