@@ -59,11 +59,23 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose, onOpenTerms, o
             <div className="space-y-2">
               <div className="flex justify-between text-[11px]">
                 <span className="text-zinc-600 font-bold uppercase">1st Place</span>
-                <span className="text-[#00FFA3] font-black italic">80% NET POT</span>
+                <span className="text-[#00FFA3] font-black italic">50%</span>
               </div>
               <div className="flex justify-between text-[11px]">
-                <span className="text-zinc-600 font-bold uppercase">2nd - 5th</span>
-                <span className="text-white font-black italic">5% EACH</span>
+                <span className="text-zinc-600 font-bold uppercase">2nd Place</span>
+                <span className="text-white font-black italic">20%</span>
+              </div>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-zinc-600 font-bold uppercase">3rd Place</span>
+                <span className="text-white font-black italic">15%</span>
+              </div>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-zinc-600 font-bold uppercase">4th Place</span>
+                <span className="text-white font-black italic">10%</span>
+              </div>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-zinc-600 font-bold uppercase">5th Place</span>
+                <span className="text-white font-black italic">5%</span>
               </div>
               <div className="pt-3 mt-3 border-t border-white/5 flex justify-between text-[9px] text-zinc-500 font-bold uppercase">
                 <span>Network Fee</span>

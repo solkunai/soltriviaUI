@@ -543,7 +543,7 @@ export async function fetchCurrentRoundStats(): Promise<CurrentRoundStats> {
   };
 }
 
-/** Single payout row (top 5 per round, 80% pot share). */
+/** Single payout row (top 5 per round, 100% pot share). */
 export interface RoundPayout {
   round_id: string;
   rank: number;
@@ -568,7 +568,7 @@ export interface RoundWithWinner {
   winner_display_name: string | null;
   winner_avatar: string | null;
   winner_score: number;
-  /** Top 5 payouts (80% of pot: 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%). */
+  /** Top 5 payouts (100% of pot: 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%). */
   payouts?: RoundPayout[];
 }
 

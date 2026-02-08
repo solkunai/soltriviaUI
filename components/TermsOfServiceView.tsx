@@ -80,7 +80,7 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
               <div>
                 <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest mb-3 flex items-center gap-3">4.4 Prize Distribution</h3>
                 <p className="text-white font-medium text-sm leading-relaxed opacity-90">
-                  Prizes distributed automatically after each round: 1st Place (80%), 2nd-5th Place (5% each). Winners must claim prizes via the App.
+                  Prizes distributed automatically after each round: 1st Place (50%), 2nd Place (20%), 3rd Place (15%), 4th Place (10%), 5th Place (5%). Winners must claim prizes via the App.
                 </p>
               </div>
             </div>
