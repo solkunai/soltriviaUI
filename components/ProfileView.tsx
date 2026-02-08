@@ -7,8 +7,10 @@ import AvatarUpload from './AvatarUpload';
 interface ProfileViewProps {
   username: string;
   avatar: string;
+  profileCacheBuster?: number;
   onEdit: () => void;
   onOpenGuide?: () => void;
+  onAvatarUpdated?: (url: string) => void;
 }
 
 interface PlayerStats {
@@ -32,7 +34,7 @@ interface GameHistory {
   finished_at: string;
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onOpenGuide }) => {
+const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated }) => {
   const { publicKey } = useWallet();
   const [stats, setStats] = useState<PlayerStats | null>(null);
   const [history, setHistory] = useState<GameHistory[]>([]);
@@ -40,6 +42,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
   const [showAvatarUpload, setShowAvatarUpload] = useState(false);
   const [currentAvatar, setCurrentAvatar] = useState(avatar);
   const [currentUsername, setCurrentUsername] = useState(username);
+
+  const displayAvatar = (currentAvatar || avatar) && profileCacheBuster
+    ? (currentAvatar || avatar) + ((currentAvatar || avatar).includes('?') ? '&' : '?') + 'v=' + profileCacheBuster
+    : (currentAvatar || avatar);
 
   // Sync local state with props from App.tsx (e.g. after EditProfileModal save)
   useEffect(() => {
@@ -149,19 +155,20 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
               console.error('Error fetching rank for round', game.round_id, ':', err);
             }
             
-            // Get payout from payouts table
+            // Get payout from round_payouts (round_id + wallet_address; column is prize_lamports)
             try {
               const { data: payoutData } = await supabase
-                .from('payouts')
-                .select('amount_lamports')
-                .eq('session_id', game.id)
-                .single();
+                .from('round_payouts')
+                .select('prize_lamports')
+                .eq('round_id', game.round_id)
+                .eq('wallet_address', walletAddress)
+                .maybeSingle();
               
-              if (payoutData) {
-                payout_sol = payoutData.amount_lamports / 1_000_000_000; // Convert lamports to SOL
+              if (payoutData?.prize_lamports != null) {
+                payout_sol = Number(payoutData.prize_lamports) / 1_000_000_000;
               }
-            } catch (err) {
-              // No payout found, that's ok (most games don't win)
+            } catch (_) {
+              // No payout for this round, that's ok (most games don't win)
             }
             
             // Handle different column names (score vs total_points, correct_count vs correct_answers)
@@ -250,6 +257,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
   const handleAvatarUploadSuccess = (url: string) => {
     setCurrentAvatar(url);
     setShowAvatarUpload(false);
+    onAvatarUpdated?.(url);
   };
 
   // Show full layout immediately (hero from props); only stats/history show loading so profile feels instant
@@ -390,7 +398,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
       {showAvatarUpload && publicKey && (
         <AvatarUpload
           walletAddress={publicKey.toBase58()}
-          currentAvatar={currentAvatar || avatar}
+          currentAvatar={displayAvatar || avatar}
           onUploadSuccess={handleAvatarUploadSuccess}
           onClose={() => setShowAvatarUpload(false)}
         />

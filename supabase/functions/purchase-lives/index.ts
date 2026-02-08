@@ -103,7 +103,8 @@ serve(async (req) => {
       );
     }
 
-    const { walletAddress, txSignature, tier: requestedTier } = body;
+    const { walletAddress: rawWallet, txSignature, tier: requestedTier } = body;
+    const walletAddress = typeof rawWallet === 'string' ? rawWallet.trim() : '';
 
     if (!walletAddress || !txSignature) {
       return new Response(
@@ -312,14 +313,14 @@ serve(async (req) => {
       );
     }
 
-    // --- Update lives ---
+    // --- Update lives (add LIVES_PER_PURCHASE to current balance; ensure row exists first) ---
     const { data: livesRow, error: livesError } = await supabase
       .from('player_lives')
       .select('lives_count, total_purchased, total_used')
       .eq('wallet_address', walletAddress)
-      .single();
+      .maybeSingle();
 
-    if (livesError && livesError.code !== 'PGRST116') {
+    if (livesError) {
       console.error('Failed to fetch lives:', livesError);
       return new Response(
         JSON.stringify({
@@ -333,19 +334,21 @@ serve(async (req) => {
     const livesCount = livesRow?.lives_count ?? 0;
     const totalPurchased = livesRow?.total_purchased ?? 0;
     const totalUsed = livesRow?.total_used ?? 0;
-
     const newLivesCount = livesCount + LIVES_PER_PURCHASE;
     const newTotalPurchased = totalPurchased + LIVES_PER_PURCHASE;
 
+    const upsertPayload = {
+      wallet_address: walletAddress,
+      lives_count: newLivesCount,
+      total_purchased: newTotalPurchased,
+      total_used: totalUsed,
+      updated_at: new Date().toISOString(),
+    };
+    console.log('Upserting player_lives:', { before: { livesCount, totalPurchased }, add: LIVES_PER_PURCHASE, after: { newLivesCount, newTotalPurchased } });
+
     const { data: updatedLives, error: updateError } = await supabase
       .from('player_lives')
-      .upsert({
-        wallet_address: walletAddress,
-        lives_count: newLivesCount,
-        total_purchased: newTotalPurchased,
-        total_used: totalUsed,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'wallet_address' })
+      .upsert(upsertPayload, { onConflict: 'wallet_address' })
       .select('lives_count, total_purchased, total_used')
       .single();
 
@@ -360,20 +363,35 @@ serve(async (req) => {
       );
     }
 
+    let finalLivesCount = updatedLives?.lives_count ?? newLivesCount;
+    let finalTotalPurchased = updatedLives?.total_purchased ?? newTotalPurchased;
+    let finalTotalUsed = updatedLives?.total_used ?? totalUsed;
     if (!updatedLives) {
-      return new Response(
-        JSON.stringify({ error: 'Failed to update lives: no data returned' }),
-        { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
-      );
+      console.warn('Upsert succeeded but .select() returned no row; using computed values:', { finalLivesCount, finalTotalPurchased });
+    } else {
+      console.log('✅ Lives updated successfully:', updatedLives);
     }
 
-    console.log('✅ Lives updated successfully:', updatedLives);
+    // Verified read: ensure we return what's actually in the DB (catches duplicate rows / wrong row)
+    const { data: verifyRow } = await supabase
+      .from('player_lives')
+      .select('lives_count, total_purchased, total_used')
+      .eq('wallet_address', walletAddress)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (verifyRow) {
+      finalLivesCount = verifyRow.lives_count ?? finalLivesCount;
+      finalTotalPurchased = verifyRow.total_purchased ?? finalTotalPurchased;
+      finalTotalUsed = verifyRow.total_used ?? finalTotalUsed;
+      console.log('purchase-lives verified read:', { wallet: walletAddress.slice(0, 8) + '...', lives_count: finalLivesCount });
+    }
 
     // Quest: Healing Master (total lives purchased); auto-claim when progress >= 15
     try {
       const { data: quest } = await supabase.from('quests').select('id, reward_tp, requirement_config').eq('slug', 'healing_master').single();
       if (quest?.id) {
-        const progress = updatedLives.total_purchased || 0;
+        const progress = finalTotalPurchased || 0;
         const maxProgress = (quest.requirement_config as { max?: number })?.max ?? 15;
         const rewardTP = quest.reward_tp ?? 0;
         await supabase.from('user_quest_progress').upsert({
@@ -401,10 +419,10 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        livesCount: updatedLives.lives_count,
+        livesCount: finalLivesCount,
         livesPurchased: LIVES_PER_PURCHASE,
-        totalPurchased: updatedLives.total_purchased,
-        totalUsed: updatedLives.total_used || 0,
+        totalPurchased: finalTotalPurchased,
+        totalUsed: finalTotalUsed,
       }),
       { headers: { ...cors, 'Content-Type': 'application/json' } }
     );

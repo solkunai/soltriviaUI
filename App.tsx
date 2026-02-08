@@ -65,8 +65,8 @@ const App: React.FC = () => {
     try { return localStorage.getItem('soltrivia_terms_accepted') === 'true'; } catch { return false; }
   });
   
-  // App state for lives and round entries
-  const [lives, setLives] = useState(0);
+  const [lives, setLives] = useState<number | null>(null);
+  const [livesDisplayReady, setLivesDisplayReady] = useState(false); // false = show "—" for first 5s after connect
   const [roundEntriesUsed, setRoundEntriesUsed] = useState(0);
   const ROUND_ENTRIES_MAX = 2;
   
@@ -76,52 +76,74 @@ const App: React.FC = () => {
   // Current game session ID
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
+  // Ref: current wallet so async fetch can avoid applying stale result for a different wallet (reload race)
+  const currentWalletRef = useRef<string | null>(null);
+  currentWalletRef.current = publicKey?.toBase58() ?? null;
+
+  const livesIntervalsRef = useRef<ReturnType<typeof setInterval>[]>([]);
+  const livesTimeoutRef = useRef<number | null>(null);
+  const livesShowAfterRef = useRef<number | null>(null);
+
   // Only active-game views truly require wallet (quiz in progress, viewing results)
   const walletRequiredViews = [View.QUIZ, View.RESULTS];
 
-  // Fetch lives from Supabase when wallet connects and periodically refresh
+  // Lives: on load/reload do not show count for 5s; keep fetching then show (avoids wrong value from wallet race)
   useEffect(() => {
     if (!connected || !publicKey) {
-      setLives(0);
+      setLives(null);
+      setLivesDisplayReady(false);
       return;
     }
 
-    const fetchLivesAndRegister = async () => {
+    setLivesDisplayReady(false);
+    const walletAddress = publicKey.toBase58();
+
+    const fetchLivesOnly = async (forWallet: string) => {
       try {
-        const walletAddress = publicKey.toBase58();
-
-        // Register/update player profile in Supabase
-        try {
-          await registerPlayerProfile(walletAddress);
-        } catch (profileError) {
-          // Silent failure - profile registration is not critical
-          console.debug('Profile registration skipped:', profileError);
-        }
-
-        // Fetch purchased lives (always)
-        const livesData = await getPlayerLives(walletAddress);
-        setLives(livesData.lives_count || 0);
-
-        // Only fetch round entries from DB when no quiz is active.
-        // During a quiz the session has finished_at=NULL so the DB count
-        // would be stale and overwrite the correct optimistic +1 from handleStartQuiz.
-        if (!currentSessionId) {
-          const entriesUsed = await getRoundEntriesUsed(walletAddress);
-          setRoundEntriesUsed(entriesUsed);
+        const res = await getPlayerLives(forWallet);
+        const count = Math.max(0, Number(res.lives_count) || 0);
+        if (currentWalletRef.current === forWallet) {
+          setLives(count);
         }
       } catch (err) {
-        console.error('Failed to fetch lives:', err);
-        setLives(0);
+        if (currentWalletRef.current === forWallet) setLives(0);
       }
     };
 
-    // Fetch immediately
-    fetchLivesAndRegister();
+    const fetchAll = async () => {
+      await fetchLivesOnly(walletAddress);
+      if (currentWalletRef.current === walletAddress) {
+        registerPlayerProfile(walletAddress).catch(() => {});
+        if (!currentSessionId) getRoundEntriesUsed(walletAddress).then(setRoundEntriesUsed).catch(() => {});
+      }
+    };
 
-    // Refresh every 30 seconds to keep in sync
-    const interval = setInterval(fetchLivesAndRegister, 30000);
+    livesTimeoutRef.current = window.setTimeout(() => {
+      livesTimeoutRef.current = null;
+      fetchAll();
+      livesIntervalsRef.current = [
+        setInterval(() => fetchLivesOnly(walletAddress), 2000),
+        setInterval(fetchAll, 30000),
+      ];
+      // Show lives count only after 5s of fetching for this address
+      livesShowAfterRef.current = window.setTimeout(() => {
+        livesShowAfterRef.current = null;
+        setLivesDisplayReady(true);
+      }, 5000);
+    }, 250);
 
-    return () => clearInterval(interval);
+    return () => {
+      if (livesTimeoutRef.current) {
+        clearTimeout(livesTimeoutRef.current);
+        livesTimeoutRef.current = null;
+      }
+      if (livesShowAfterRef.current) {
+        clearTimeout(livesShowAfterRef.current);
+        livesShowAfterRef.current = null;
+      }
+      livesIntervalsRef.current.forEach(clearInterval);
+      livesIntervalsRef.current = [];
+    };
   }, [connected, publicKey, currentSessionId]);
 
   // Check wallet connection when navigating
@@ -213,6 +235,25 @@ const App: React.FC = () => {
     avatar: DEFAULT_AVATAR,
   });
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileCacheBuster, setProfileCacheBuster] = useState(0);
+
+  const refetchProfile = React.useCallback(async () => {
+    if (!publicKey) return;
+    const walletAddress = publicKey.toBase58();
+    try {
+      const { data, error } = await supabase
+        .from('player_profiles')
+        .select('username, avatar_url')
+        .eq('wallet_address', walletAddress)
+        .maybeSingle();
+      if (data && !error) {
+        setProfile({
+          username: data.username || 'Solana_Sage',
+          avatar: data.avatar_url || DEFAULT_AVATAR,
+        });
+      }
+    } catch (_) {}
+  }, [publicKey]);
 
   // Fetch profile when wallet connects (single fast Supabase query)
   useEffect(() => {
@@ -262,22 +303,8 @@ const App: React.FC = () => {
   // Refetch profile when user opens Profile tab so we always show latest from DB (fixes refresh showing stale/default)
   useEffect(() => {
     if (currentView !== View.PROFILE || !connected || !publicKey) return;
-    const walletAddress = publicKey.toBase58();
-    supabase
-      .from('player_profiles')
-      .select('username, avatar_url')
-      .eq('wallet_address', walletAddress)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.username != null || data?.avatar_url != null) {
-          setProfile({
-            username: data.username || 'Solana_Sage',
-            avatar: data.avatar_url || DEFAULT_AVATAR,
-          });
-        }
-      })
-      .catch(() => {});
-  }, [currentView, connected, publicKey]);
+    refetchProfile();
+  }, [currentView, connected, publicKey, refetchProfile]);
 
   // Refetch round entries when user navigates to Play so 2/2 → 1/2 → 0/2 is correct from DB
   useEffect(() => {
@@ -345,6 +372,7 @@ const App: React.FC = () => {
           username: verify.username || username,
           avatar: verify.avatar_url || avatar,
         });
+        setProfileCacheBuster(Date.now());
       }
 
       try {
@@ -406,8 +434,6 @@ const App: React.FC = () => {
       }
     }
 
-    // Re-fetch lives and round entries now that the session is finished (finished_at is set)
-    // Small delay ensures the DB write from completeSession is fully propagated
     if (publicKey) {
       await new Promise((r) => setTimeout(r, 500));
       try {
@@ -416,11 +442,9 @@ const App: React.FC = () => {
           getPlayerLives(walletAddr),
           getRoundEntriesUsed(walletAddr),
         ]);
-        setLives(livesData.lives_count || 0);
+        setLives(Math.max(0, Number(livesData.lives_count) || 0));
         setRoundEntriesUsed(entriesUsed);
-      } catch (_) {
-        // Silent — the 30-second poll will catch up
-      }
+      } catch (_) {}
     }
 
     setLastGameResults({ score: correctCount, points, time: totalTimeSeconds, rank, scoreSaveFailed });
@@ -439,7 +463,7 @@ const App: React.FC = () => {
     
     // Check if player can play (has round entries OR purchased lives)
     const roundEntriesLeft = ROUND_ENTRIES_MAX - roundEntriesUsed;
-    if (roundEntriesLeft <= 0 && lives <= 0) {
+    if (roundEntriesLeft <= 0 && (lives ?? 0) <= 0) {
       setIsBuyLivesOpen(true);
       return;
     }
@@ -473,14 +497,16 @@ const App: React.FC = () => {
       }
 
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { count: dailyCount } = await supabase
+      const { data: dailySessions } = await supabase
         .from('game_sessions')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('wallet_address', walletAddr)
-        .gte('created_at', twentyFourHoursAgo)
-        .not('finished_at', 'is', null);
+        .gte('started_at', twentyFourHoursAgo)
+        .not('finished_at', 'is', null)
+        .limit(25);
+      const dailyCount = dailySessions?.length ?? 0;
 
-      if ((dailyCount || 0) >= 20) {
+      if (dailyCount >= 20) {
         alert('You\'ve reached the maximum 20 entries for today. Please try again tomorrow!');
         return;
       }
@@ -540,8 +566,7 @@ const App: React.FC = () => {
         // Free entry — only increment round entries, do NOT touch lives
         setRoundEntriesUsed(prev => prev + 1);
       } else if (!gameResult.resumed) {
-        // Paid entry (not a resumed session) — deduct a purchased life
-        setLives(prev => Math.max(0, prev - 1));
+        setLives(prev => Math.max(0, (prev ?? 0) - 1));
         setRoundEntriesUsed(prev => prev + 1);
       }
       setCurrentView(View.QUIZ);
@@ -575,22 +600,11 @@ const App: React.FC = () => {
     }
   };
 
-  const handleBuyLivesSuccess = async (newLivesCount?: number) => {
+  const handleBuyLivesSuccess = (newLivesCount?: number) => {
     if (typeof newLivesCount === 'number') {
-      // Show the count returned by backend immediately
-      setLives(newLivesCount);
+      setLives(Math.max(0, newLivesCount));
     } else {
-      // Fallback: optimistic +3
-      setLives(prev => prev + 3);
-    }
-    // Verify against DB after a short delay to catch any persistence issues
-    if (connected && publicKey) {
-      setTimeout(async () => {
-        try {
-          const data = await getPlayerLives(publicKey.toBase58());
-          setLives(data.lives_count || 0);
-        } catch (_) { /* keep the value we already set */ }
-      }, 2000);
+      setLives(prev => Math.max(0, (prev ?? 0) + 3));
     }
   };
 
@@ -599,7 +613,7 @@ const App: React.FC = () => {
       case View.HOME:
         return (
           <HomeView 
-            lives={lives}
+            lives={livesDisplayReady ? lives : null}
             onEnterTrivia={() => {
               if (!connected) {
                 setShowWalletRequired(true);
@@ -618,9 +632,16 @@ const App: React.FC = () => {
           />
         );
       case View.LEADERBOARD:
-        return <LeaderboardView onOpenGuide={() => setIsGuideOpen(true)} />;
+        return (
+          <LeaderboardView
+            onOpenGuide={() => setIsGuideOpen(true)}
+            profileCacheBuster={profileCacheBuster}
+            currentWallet={publicKey?.toBase58() ?? null}
+            currentUserAvatar={profile.avatar}
+          />
+        );
       case View.PLAY:
-        return <PlayView lives={lives} roundEntriesUsed={roundEntriesUsed} roundEntriesMax={ROUND_ENTRIES_MAX} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => {
+        return <PlayView lives={livesDisplayReady ? lives : null} roundEntriesUsed={roundEntriesUsed} roundEntriesMax={ROUND_ENTRIES_MAX} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => {
           if (!connected) { setShowWalletRequired(true); } else { setIsBuyLivesOpen(true); }
         }} />;
       case View.QUESTS:
@@ -646,7 +667,20 @@ const App: React.FC = () => {
             </div>
           );
         }
-        return <ProfileView username={profile.username} avatar={profile.avatar} onEdit={() => setIsEditProfileOpen(true)} onOpenGuide={() => setIsGuideOpen(true)} />;
+        return (
+          <ProfileView
+            username={profile.username}
+            avatar={profile.avatar}
+            profileCacheBuster={profileCacheBuster}
+            onEdit={() => setIsEditProfileOpen(true)}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onAvatarUpdated={(url: string) => {
+              setProfile((prev) => ({ ...prev, avatar: url }));
+              setProfileCacheBuster(Date.now());
+              refetchProfile();
+            }}
+          />
+        );
       case View.QUIZ:
         return connected ? (
           <QuizView
@@ -665,7 +699,7 @@ const App: React.FC = () => {
         return connected && lastGameResults ? (
           <ResultsView 
             results={lastGameResults} 
-            lives={lives}
+            lives={livesDisplayReady ? lives : null}
             roundEntriesLeft={Math.max(0, ROUND_ENTRIES_MAX - roundEntriesUsed)}
             roundEntriesMax={ROUND_ENTRIES_MAX}
             onRestart={handleStartQuiz} 
@@ -682,7 +716,7 @@ const App: React.FC = () => {
       default:
         return (
           <HomeView 
-            lives={lives} 
+            lives={livesDisplayReady ? lives : null} 
             onEnterTrivia={() => {
               if (!connected) {
                 setShowWalletRequired(true);

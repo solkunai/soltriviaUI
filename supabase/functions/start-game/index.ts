@@ -402,17 +402,17 @@ serve(async (req) => {
     }
 
     // --- ENTRY CAP CHECKS (anti-manipulation) ---
+    // Count entries as sessions CREATED this round (on enter), not just finished — matches frontend "round entries"
+    const entriesThisRoundForCap = existingSessions?.length ?? 0;
     if (!TESTING_MODE) {
-      // Per-round cap: count finished sessions in this round
-      const entriesThisRound = existingSessions?.filter(s => s.finished_at).length || 0;
-      console.log('Entry cap check:', { walletAddress, entriesThisRound, maxPerRound: MAX_ENTRIES_PER_ROUND });
+      console.log('Entry cap check:', { walletAddress, entriesThisRound: entriesThisRoundForCap, maxPerRound: MAX_ENTRIES_PER_ROUND });
 
-      if (entriesThisRound >= MAX_ENTRIES_PER_ROUND) {
+      if (entriesThisRoundForCap >= MAX_ENTRIES_PER_ROUND) {
         return new Response(
           JSON.stringify({
             error: `Maximum ${MAX_ENTRIES_PER_ROUND} entries per round reached. Try again next round!`,
             code: 'ROUND_CAP_REACHED',
-            entriesThisRound,
+            entriesThisRound: entriesThisRoundForCap,
             maxPerRound: MAX_ENTRIES_PER_ROUND,
           }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -449,9 +449,9 @@ serve(async (req) => {
     }
 
     // --- FREE ENTRIES + PURCHASED LIVES ---
-    // Every wallet gets 2 free entries per round. Beyond that, purchased lives are required.
+    // Every wallet gets 2 free entries per round (deduct on ENTER, not on finish). Beyond that, purchased lives are required.
     const FREE_ENTRIES_PER_ROUND = 2;
-    const entriesThisRound = existingSessions?.filter(s => s.finished_at).length || 0;
+    const entriesThisRound = entriesThisRoundForCap;
     const isFreeEntry = TESTING_MODE || entriesThisRound < FREE_ENTRIES_PER_ROUND;
 
     console.log('Entry type:', {
@@ -470,11 +470,16 @@ serve(async (req) => {
       .single();
 
     if (livesError && livesError.code === 'PGRST116') {
-      // New player — create lives record with 0 purchased lives
+      // New player — create lives record with 0 purchased lives (include total_purchased for schema compatibility)
       console.log('New player, creating lives record:', walletAddress);
       const { data: newLives, error: createError } = await supabase
         .from('player_lives')
-        .insert({ wallet_address: walletAddress, lives_count: 0, total_used: 0 })
+        .insert({
+          wallet_address: walletAddress,
+          lives_count: 0,
+          total_purchased: 0,
+          total_used: 0,
+        })
         .select('lives_count, total_used')
         .single();
 

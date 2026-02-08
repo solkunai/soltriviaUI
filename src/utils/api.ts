@@ -233,50 +233,42 @@ export async function getLeaderboard(round_id?: string, wallet?: string, period?
   return response.json();
 }
 
-// Get player's current lives count
+// Get player's current lives count — direct Supabase read from player_lives
 export async function getPlayerLives(wallet_address: string): Promise<PlayerLivesResponse> {
-  if (!isSupabaseConfigured) {
-    return { lives_count: 0, total_purchased: 0, total_used: 0 };
-  }
+  const empty = { lives_count: 0, total_purchased: 0, total_used: 0 };
+  const wallet = (wallet_address || '').trim();
+  console.log('[SOL_TRIVIA_LIVES] getPlayerLives called', { wallet: wallet.slice(0, 12) + '..', supabaseOk: !!isSupabaseConfigured });
+  if (!isSupabaseConfigured) return empty;
+  if (!wallet) return empty;
 
-  const { data, error } = await supabase
+  const { data: rows, error } = await supabase
     .from('player_lives')
-    .select('lives_count, total_purchased, total_used')
-    .eq('wallet_address', wallet_address)
-    .maybeSingle();
+    .select('wallet_address, lives_count, total_purchased, total_used, updated_at')
+    .eq('wallet_address', wallet)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  const livesFromDb = Array.isArray(rows) && rows[0] ? rows[0].lives_count : 'none';
+  console.log('[SOL_TRIVIA_LIVES] getPlayerLives result', { wallet: wallet.slice(0, 8) + '..', err: error?.message ?? null, rowCount: Array.isArray(rows) ? rows.length : 0, lives_count: livesFromDb });
 
   if (error) {
-    console.error('Error fetching player lives:', error);
-    return { lives_count: 0, total_purchased: 0, total_used: 0 };
+    console.error('[SOL_TRIVIA_LIVES] getPlayerLives Supabase error', error);
+    return empty;
   }
+  const data = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  if (!data) return empty;
 
-  // If no row exists, create one with 0 purchased lives (free entries are per-round, not stored here)
-  if (!data) {
-    const { data: newData, error: insertError } = await supabase
-      .from('player_lives')
-      .insert({
-        wallet_address,
-        lives_count: 0,
-        total_purchased: 0,
-        total_used: 0
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('Error creating player lives:', insertError);
-      return { lives_count: 0, total_purchased: 0, total_used: 0 };
-    }
-
-    return newData || { lives_count: 0, total_purchased: 0, total_used: 0 };
-  }
-
-  return data;
+  const lives_count = Math.max(0, Number(data.lives_count) || 0);
+  return {
+    lives_count,
+    total_purchased: Math.max(0, Number(data.total_purchased) || 0),
+    total_used: Math.max(0, Number(data.total_used) || 0),
+  };
 }
 
 // Get how many round entries this wallet has used in the current 6-hour round.
-// Counts sessions where the wallet ENTERED (created_at in window), not just finished.
-// So round entries deduct as soon as they start a game, not when they complete it.
+// Counts sessions where the wallet ENTERED (timestamp in window), not just finished.
+// game_sessions has started_at only (no created_at); use it to avoid 400.
 export async function getRoundEntriesUsed(wallet_address: string): Promise<number> {
   if (!isSupabaseConfigured) return 0;
 
@@ -284,19 +276,20 @@ export async function getRoundEntriesUsed(wallet_address: string): Promise<numbe
   const roundStartHour = Math.floor(now.getUTCHours() / 6) * 6;
   const windowStart = new Date(now);
   windowStart.setUTCHours(roundStartHour, 0, 0, 0);
+  const windowStartStr = windowStart.toISOString();
 
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from('game_sessions')
-    .select('id', { count: 'exact', head: true })
+    .select('id')
     .eq('wallet_address', wallet_address)
-    .gte('created_at', windowStart.toISOString());
+    .gte('started_at', windowStartStr)
+    .limit(10);
 
   if (error) {
     console.error('Error fetching round entries:', error);
     return 0;
   }
-
-  return count || 0;
+  return (data?.length ?? 0);
 }
 
 // Purchase extra lives (with tier support)
@@ -305,18 +298,21 @@ export async function purchaseLives(
   txSignature: string,
   tier?: string
 ): Promise<PurchaseLivesResponse> {
-  const response = await fetch(`${FUNCTIONS_URL}/purchase-lives`, {
+  const url = `${FUNCTIONS_URL}/purchase-lives`;
+  const response = await fetch(url, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify({ walletAddress, txSignature, tier }),
   });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to purchase lives');
-  }
+  const body = await response.json().catch(() => ({}));
+  console.log('purchase-lives response:', { status: response.status, ok: response.ok, body });
 
-  return response.json();
+  if (!response.ok) {
+    const msg = body.details ? `${body.error || 'Failed to purchase lives'}: ${body.details}` : (body.error || 'Failed to purchase lives');
+    throw new Error(msg);
+  }
+  return body as PurchaseLivesResponse;
 }
 
 // Register or update player profile when wallet connects

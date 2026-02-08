@@ -73,16 +73,22 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         walletAddress: publicKey.toBase58(),
         txSignature: signature,
         tier: tier.id,
+        livesInTier: tier.lives,
       });
 
       const result = await purchaseLives(publicKey.toBase58(), signature, tier.id);
 
+      console.log('purchase-lives API result:', result);
+
       if (result.success) {
-        setPurchasedLives(result.livesPurchased || tier.lives);
+        const added = result.livesPurchased ?? tier.lives;
+        const newTotal = typeof result.livesCount === 'number' ? result.livesCount : added;
+        setPurchasedLives(added);
         setShowSuccess(true);
+        console.log('[BuyLives] API success — passing to parent:', { livesCount: result.livesCount, newTotal });
 
         if (onBuySuccess) {
-          onBuySuccess(result.livesCount);
+          onBuySuccess(newTotal);
         }
 
         setTimeout(() => {

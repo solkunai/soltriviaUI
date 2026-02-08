@@ -273,8 +273,18 @@ serve(async (req) => {
       }
       // Skip calculate_rankings_and_winner so no prize payouts are created; players will be refunded.
     } else {
+      // Use current pot so payouts match the actual prize pool (run migration round_payouts_use_pot_override.sql)
+      const { data: roundRow } = await supabase
+        .from('daily_rounds')
+        .select('pot_lamports')
+        .eq('id', roundId)
+        .single();
+      const potLamports = roundRow?.pot_lamports != null ? Number(roundRow.pot_lamports) : null;
       try {
-        await supabase.rpc('calculate_rankings_and_winner', { p_round_id: roundId });
+        await supabase.rpc('calculate_rankings_and_winner', {
+          p_round_id: roundId,
+          p_pot_lamports: potLamports,
+        });
       } catch (_) {
         // RPC might not exist yet (run migration leaderboard_and_round_winners.sql); rank/winner computed on read
       }
