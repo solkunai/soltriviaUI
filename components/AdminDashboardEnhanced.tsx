@@ -399,8 +399,8 @@ const RoundWinnersAdminView: React.FC = () => {
 
   return (
     <div className="py-6">
-      <h2 className="text-xl font-black text-white mb-2">Round Winners (Top 5, 80% pot)</h2>
-      <p className="text-zinc-500 text-sm mb-6">Copy wallet, mark as paid, and set prize amount paid. 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5% of 80%.</p>
+      <h2 className="text-xl font-black text-white mb-2">Round Winners (Top 5, 100% pot)</h2>
+      <p className="text-zinc-500 text-sm mb-6">Copy wallet, mark as paid, and set prize amount paid. 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.</p>
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>

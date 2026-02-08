@@ -70,7 +70,7 @@ BEGIN
       v_rank,
       v_row.wallet_address,
       v_row.scr,
-      (v_pot_lamports * 0.8 * v_share[v_rank])::BIGINT,
+      (v_pot_lamports * v_share[v_rank])::BIGINT,
       timezone('utc'::text, now())
     )
     ON CONFLICT (round_id, rank) DO UPDATE SET

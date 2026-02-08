@@ -72,9 +72,8 @@ function getSupabaseClient() {
 // =====================
 // CONSTANTS
 // =====================
-// Payout percentages (must sum to 0.95 for players, 0.05 for treasury)
-const PAYOUT_SPLITS = [0.75, 0.05, 0.05, 0.05, 0.05]; // 1st: 75%, 2nd-5th: 5% each
-const PLATFORM_FEE = 0.05; // 5% goes to treasury
+// Payout percentages (100% of pot to top 5)
+const PAYOUT_SPLITS = [0.50, 0.20, 0.15, 0.10, 0.05]; // 1st: 50%, 2nd: 20%, 3rd: 15%, 4th: 10%, 5th: 5%
 const MIN_PLAYERS = 5;
 const TREASURY_WALLET = '4u1UTyMBX8ghSQBagZHCzArt32XMFSw4CUXbdgo2Cv74';
 
@@ -175,10 +174,8 @@ serve(async (req) => {
         .eq('id', session.id);
     }
 
-    // Calculate payouts for top 5
+    // Calculate payouts for top 5 (100% of pot — platform fee already collected at entry)
     const pot = round.pot_lamports;
-    const platformFee = Math.floor(pot * PLATFORM_FEE);
-    const prizePool = pot - platformFee;
 
     const payouts = [];
     const top5 = rankedSessions.slice(0, 5);
@@ -186,7 +183,7 @@ serve(async (req) => {
     for (let i = 0; i < top5.length; i++) {
       const session = top5[i];
       const percentage = PAYOUT_SPLITS[i];
-      const amount = Math.floor(prizePool * percentage);
+      const amount = Math.floor(pot * percentage);
 
       payouts.push({
         round_id: round.id,
@@ -207,14 +204,6 @@ serve(async (req) => {
 
       if (payoutError) throw payoutError;
     }
-
-    // Record platform fee
-    await supabase.from('treasury_transactions').insert({
-      round_id: round.id,
-      type: 'platform_fee',
-      amount_lamports: platformFee,
-      wallet_address: TREASURY_WALLET,
-    });
 
     // Update round status
     await supabase
@@ -241,8 +230,8 @@ serve(async (req) => {
         round_id: round.id,
         player_count: playerCount,
         pot_lamports: pot,
-        platform_fee_lamports: platformFee,
-        prize_pool_lamports: prizePool,
+        platform_fee_lamports: 0,
+        prize_pool_lamports: pot,
         payouts: payouts.map((p) => ({
           rank: p.rank,
           wallet: p.wallet_address.slice(0, 4) + '...' + p.wallet_address.slice(-4),

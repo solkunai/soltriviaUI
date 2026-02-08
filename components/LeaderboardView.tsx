@@ -170,7 +170,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
               </h1>
               <div className="h-1 w-16 bg-[#14F195] mt-4 shadow-[0_0_15px_#14F195]" />
               <p className="text-zinc-500 text-[10px] md:text-xs font-black uppercase tracking-widest italic mt-4 max-w-md">
-                Top 5 share 80% of the pot: 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.
+                Top 5 share the pot: 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.
               </p>
             </div>
             {roundsLoading && (
@@ -200,7 +200,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                           <span>·</span>
                           <span>{(r.pot_lamports / 1_000_000_000).toFixed(2)} SOL pool</span>
                           <span>·</span>
-                          <span>80% to top 5</span>
+                          <span>100% to top 5</span>
                         </div>
                       </div>
                     </div>

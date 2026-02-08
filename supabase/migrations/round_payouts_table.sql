@@ -1,5 +1,5 @@
--- Round payouts: top 5 per round sharing 80% of pot. Admin can mark paid and set paid amount.
--- Prize share of the 80%: 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.
+-- Round payouts: top 5 per round sharing 100% of pot. Admin can mark paid and set paid amount.
+-- Prize share: 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.
 
 CREATE TABLE IF NOT EXISTS public.round_payouts (
   round_id UUID NOT NULL REFERENCES public.daily_rounds(id) ON DELETE CASCADE,
@@ -17,7 +17,7 @@ CREATE INDEX IF NOT EXISTS idx_round_payouts_round ON public.round_payouts(round
 CREATE INDEX IF NOT EXISTS idx_round_payouts_wallet ON public.round_payouts(wallet_address);
 CREATE INDEX IF NOT EXISTS idx_round_payouts_paid ON public.round_payouts(paid_at) WHERE paid_at IS NOT NULL;
 
-COMMENT ON TABLE public.round_payouts IS 'Top 5 finishers per round with prize share (80% of pot) and admin-paid tracking.';
+COMMENT ON TABLE public.round_payouts IS 'Top 5 finishers per round with prize share (100% of pot) and admin-paid tracking.';
 
 ALTER TABLE public.round_payouts ENABLE ROW LEVEL SECURITY;
 
@@ -29,7 +29,7 @@ DROP POLICY IF EXISTS "Service role can manage round payouts" ON public.round_pa
 CREATE POLICY "Service role can manage round payouts"
   ON public.round_payouts FOR ALL USING (auth.role() = 'service_role');
 
--- RPC: populate top 5 and their prize_lamports (80% of pot: 50%, 20%, 15%, 10%, 5%)
+-- RPC: populate top 5 and their prize_lamports (100% of pot: 50%, 20%, 15%, 10%, 5%)
 CREATE OR REPLACE FUNCTION public.calculate_rankings_and_winner(p_round_id UUID)
 RETURNS void
 LANGUAGE plpgsql
@@ -81,7 +81,7 @@ BEGIN
       updated_at = EXCLUDED.updated_at;
   END IF;
 
-  -- Upsert top 5 into round_payouts (80% of pot split by rank)
+  -- Upsert top 5 into round_payouts (100% of pot split by rank)
   FOR v_row IN
     SELECT wallet_address, COALESCE(total_points, 0)::BIGINT AS scr
     FROM public.game_sessions
@@ -96,7 +96,7 @@ BEGIN
       v_rank,
       v_row.wallet_address,
       v_row.scr,
-      (v_pot_lamports * 0.8 * v_share[v_rank])::BIGINT,
+      (v_pot_lamports * v_share[v_rank])::BIGINT,
       timezone('utc'::text, now())
     )
     ON CONFLICT (round_id, rank) DO UPDATE SET
@@ -109,4 +109,4 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.calculate_rankings_and_winner(UUID) IS
-  'Recalculates ranks, updates daily_rounds + round_winners + round_payouts (top 5, 80% pot split). Call after each complete-session.';
+  'Recalculates ranks, updates daily_rounds + round_winners + round_payouts (top 5, 100% pot split). Call after each complete-session.';

@@ -129,26 +129,16 @@ serve(async (req) => {
     const totalPot = round?.pot_lamports || 0;
 
     // Calculate prize distribution
-    // 80% to 1st place
-    // 20% split among 2nd-5th (5% each)
+    // 100% of pot to top 5: 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%
+    const PRIZE_SPLITS = [0.50, 0.20, 0.15, 0.10, 0.05];
     const prizes = [];
-    if (leaderboard.length > 0) {
+    for (let i = 0; i < Math.min(5, leaderboard.length); i++) {
       prizes.push({
-        rank: 1,
-        wallet_address: leaderboard[0].wallet_address,
-        prize_lamports: Math.floor(totalPot * 0.8),
-        prize_sol: (totalPot * 0.8) / 1_000_000_000,
+        rank: i + 1,
+        wallet_address: leaderboard[i].wallet_address,
+        prize_lamports: Math.floor(totalPot * PRIZE_SPLITS[i]),
+        prize_sol: (totalPot * PRIZE_SPLITS[i]) / 1_000_000_000,
       });
-    }
-    if (leaderboard.length > 1) {
-      for (let i = 1; i < Math.min(5, leaderboard.length); i++) {
-        prizes.push({
-          rank: i + 1,
-          wallet_address: leaderboard[i].wallet_address,
-          prize_lamports: Math.floor(totalPot * 0.05),
-          prize_sol: (totalPot * 0.05) / 1_000_000_000,
-        });
-      }
     }
 
     // Update player profiles with wins/stats
