@@ -5,7 +5,7 @@ import { getBalanceSafely } from '../src/utils/balance';
 import { fetchCurrentRoundStats, subscribeCurrentRoundStats, getCurrentRoundKey, getRoundLabel } from '../src/utils/api';
 
 interface HomeViewProps {
-  lives: number;
+  lives: number | null;
   onEnterTrivia: () => void;
   onOpenGuide: () => void;
   onOpenBuyLives: () => void;
@@ -143,7 +143,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               <div className="text-right flex flex-col items-end">
                 <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest block mb-0.5 italic">LIVES</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-[#FF3131] text-xl font-[1000] italic leading-none">{lives.toString().padStart(2, '0')}</span>
+                  <span className="text-[#FF3131] text-xl font-[1000] italic leading-none" data-lives={lives === null ? 'null' : String(lives)}>{lives === null ? '—' : Number(lives).toString().padStart(2, '0')}</span>
                   <button 
                     onClick={onOpenBuyLives}
                     className="px-2 py-1 bg-[#FF3131] text-white text-[8px] font-black uppercase italic rounded-sm shadow-[0_0_15px_rgba(255,49,49,0.3)] active:scale-95 transition-all"
@@ -298,7 +298,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 <span className="text-zinc-300 text-[10px] font-black uppercase tracking-widest block mb-1 italic">VITALITY LIVES</span>
                 <div className="flex items-center justify-between">
                   <div className="text-[28px] font-[1000] italic text-[#FF3131] tabular-nums">
-                    {lives.toString().padStart(2, '0')}
+                    <span data-lives={lives === null ? 'null' : String(lives)}>{lives === null ? '—' : Number(lives).toString().padStart(2, '0')}</span>
                   </div>
                   <button 
                     onClick={onOpenBuyLives}

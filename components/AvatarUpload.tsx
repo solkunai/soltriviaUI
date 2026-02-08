@@ -78,14 +78,17 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({
 
       const avatarUrl = urlData.publicUrl;
 
-      // Update player profile with new avatar URL
+      // Update player profile with new avatar URL (only avatar_url/updated_at so username is preserved)
       const { error: updateError } = await supabase
         .from('player_profiles')
-        .upsert({
-          wallet_address: walletAddress,
-          avatar_url: avatarUrl,
-          updated_at: new Date().toISOString(),
-        });
+        .upsert(
+          {
+            wallet_address: walletAddress,
+            avatar_url: avatarUrl,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'wallet_address' }
+        );
 
       if (updateError) {
         throw new Error(updateError.message);

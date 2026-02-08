@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 interface ResultsViewProps {
   results: { score: number, points: number, time: number, rank?: number; scoreSaveFailed?: boolean };
-  lives: number;
+  lives: number | null;
   roundEntriesLeft: number;
   roundEntriesMax: number;
   onRestart: () => void;
@@ -13,7 +13,7 @@ interface ResultsViewProps {
 const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesLeft, roundEntriesMax, onRestart, onGoHome, onBuyLives }) => {
   const [showShareCard, setShowShareCard] = useState(false);
   const isPerfect = results.score === 10;
-  const canPlayAgain = roundEntriesLeft > 0 || lives > 0;
+  const canPlayAgain = roundEntriesLeft > 0 || (lives ?? 0) > 0;
 
   const handleShare = () => {
     const text = `I just scored ${results.points}XP on SOL Trivia! 🧠⚡\n\nAccuracy: ${results.score}/10\nTime: ${results.time}s\n\nThink you're smarter? Join the arena on Solana!\nhttps://soltriviaui.onrender.com`;
@@ -106,7 +106,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
              <div className="flex items-center justify-center gap-4 mb-2 text-zinc-400 text-[9px] font-black uppercase tracking-[0.2em] italic">
                <span>Round entries: {roundEntriesLeft} / {roundEntriesMax}</span>
                <span>·</span>
-               <span>Extra lives: {lives}</span>
+               <span>Extra lives: {lives === null ? '—' : lives}</span>
              </div>
              {canPlayAgain ? (
                <div className="flex flex-col items-center">

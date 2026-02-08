@@ -1,7 +1,7 @@
 import React from 'react';
 
 interface PlayViewProps {
-  lives: number;
+  lives: number | null;
   roundEntriesUsed: number;
   roundEntriesMax: number;
   onStartQuiz: () => void;
@@ -10,7 +10,8 @@ interface PlayViewProps {
 
 const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives }) => {
   const roundEntriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
-  const canPlay = roundEntriesLeft > 0 || lives > 0;
+  const livesNum = lives ?? 0;
+  const canPlay = roundEntriesLeft > 0 || livesNum > 0;
   return (
     <div className="h-full flex flex-col items-center justify-center p-6 md:p-12 relative overflow-hidden">
       {/* Dynamic Background Elements */}
@@ -62,11 +63,11 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
             </div>
             <button
               onClick={onOpenBuyLives}
-              className={`border p-4 rounded-full text-center group transition-colors flex flex-col items-center justify-center ${lives > 0 ? 'bg-[#0A0A0A] border-white/10 hover:border-white/20' : 'bg-[#FF3131]/5 border-[#FF3131]/20 hover:bg-[#FF3131]/10'}`}
+              className={`border p-4 rounded-full text-center group transition-colors flex flex-col items-center justify-center ${livesNum > 0 ? 'bg-[#0A0A0A] border-white/10 hover:border-white/20' : 'bg-[#FF3131]/5 border-[#FF3131]/20 hover:bg-[#FF3131]/10'}`}
             >
-                <span className={`text-[8px] font-black uppercase block mb-1 tracking-widest italic leading-none ${lives > 0 ? 'text-zinc-300' : 'text-[#FF3131]'}`}>Extra Lives</span>
-                <span className={`font-black text-sm uppercase italic tabular-nums leading-none ${lives > 0 ? 'text-white' : 'text-[#FF3131]'}`}>
-                  {lives > 0 ? lives : 'BUY'}
+                <span className={`text-[8px] font-black uppercase block mb-1 tracking-widest italic leading-none ${livesNum > 0 ? 'text-zinc-300' : 'text-[#FF3131]'}`}>Extra Lives</span>
+                <span className={`font-black text-sm uppercase italic tabular-nums leading-none ${livesNum > 0 ? 'text-white' : 'text-[#FF3131]'}`}>
+                  {livesNum > 0 ? livesNum : 'BUY'}
                 </span>
             </button>
         </div>
