@@ -15,8 +15,13 @@ import * as base58 from 'https://esm.sh/bs58@5.0.0';
 // =====================
 // CONFIG (from environment variables)
 // =====================
-const LIVES_PER_PURCHASE = 3;
-const EXPECTED_AMOUNT_LAMPORTS = parseInt(Deno.env.get('LIVES_PRICE_LAMPORTS') || '30000000', 10); // 0.03 SOL
+// Lives purchase tiers: all payments go to revenue wallet
+const LIVES_TIERS: Record<string, { lives: number; lamports: number }> = {
+  basic: { lives: 3, lamports: 30_000_000 },   // 0.03 SOL
+  value: { lives: 15, lamports: 100_000_000 },  // 0.1 SOL
+  bulk:  { lives: 35, lamports: 250_000_000 },  // 0.25 SOL
+};
+const DEFAULT_TIER = 'basic';
 const REVENUE_WALLET = Deno.env.get('REVENUE_WALLET') || '4u1UTyMBX8ghSQBagZHCzArt32XMFSw4CUXbdgo2Cv74';
 const SOLANA_RPC_URL = Deno.env.get('SOLANA_RPC_URL') || 'https://api.mainnet-beta.solana.com';
 const SYSTEM_PROGRAM_ID = '11111111111111111111111111111111';
@@ -27,6 +32,7 @@ const SYSTEM_PROGRAM_ID = '11111111111111111111111111111111';
 interface PurchaseLivesRequest {
   walletAddress: string;
   txSignature: string;
+  tier?: string; // 'basic' | 'value' | 'bulk' — defaults to 'basic'
 }
 
 // =====================
@@ -97,7 +103,7 @@ serve(async (req) => {
       );
     }
 
-    const { walletAddress, txSignature } = body;
+    const { walletAddress, txSignature, tier: requestedTier } = body;
 
     if (!walletAddress || !txSignature) {
       return new Response(
@@ -105,6 +111,16 @@ serve(async (req) => {
         { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Resolve tier (default to basic for backwards compatibility)
+    // Use hasOwnProperty to prevent prototype pollution attacks (e.g. tier: "__proto__")
+    const tierKey = requestedTier && Object.prototype.hasOwnProperty.call(LIVES_TIERS, requestedTier)
+      ? requestedTier
+      : DEFAULT_TIER;
+    const selectedTier = LIVES_TIERS[tierKey];
+    const EXPECTED_AMOUNT_LAMPORTS = selectedTier.lamports;
+    const LIVES_PER_PURCHASE = selectedTier.lives;
+    console.log('Tier selected:', { tierKey, lives: LIVES_PER_PURCHASE, lamports: EXPECTED_AMOUNT_LAMPORTS });
 
     if (!isValidSolanaAddress(walletAddress)) {
       return new Response(

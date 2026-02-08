@@ -9,6 +9,15 @@ export const TOTAL_ENTRY_FEE_LAMPORTS = ENTRY_FEE_LAMPORTS + TXN_FEE_LAMPORTS; /
 export const LIVES_PRICE_LAMPORTS = parseInt(import.meta.env.VITE_LIVES_PRICE_LAMPORTS || '30000000', 10); // 0.03 SOL for 3 lives (does NOT include entry fee)
 export const LIVES_PER_PURCHASE = 3;
 
+// Lives purchase tiers (all go to revenue wallet)
+export const LIVES_TIERS = [
+  { id: 'basic', lives: 3, lamports: 30_000_000, sol: 0.03, label: '3 Lives' },
+  { id: 'value', lives: 15, lamports: 100_000_000, sol: 0.1, label: '15 Lives', badge: 'POPULAR' },
+  { id: 'bulk', lives: 35, lamports: 250_000_000, sol: 0.25, label: '35 Lives', badge: 'BEST VALUE' },
+] as const;
+
+export type LivesTierId = typeof LIVES_TIERS[number]['id'];
+
 export const APP_IDENTITY = {
   name: 'SOL Trivia',
   uri: 'https://soltrivia.app',

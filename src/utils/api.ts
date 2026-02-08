@@ -274,15 +274,16 @@ export async function getPlayerLives(wallet_address: string): Promise<PlayerLive
   return data;
 }
 
-// Purchase extra lives
+// Purchase extra lives (with tier support)
 export async function purchaseLives(
   walletAddress: string,
-  txSignature: string
+  txSignature: string,
+  tier?: string
 ): Promise<PurchaseLivesResponse> {
   const response = await fetch(`${FUNCTIONS_URL}/purchase-lives`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ walletAddress, txSignature }),
+    body: JSON.stringify({ walletAddress, txSignature, tier }),
   });
 
   if (!response.ok) {
