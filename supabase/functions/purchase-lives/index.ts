@@ -329,7 +329,7 @@ serve(async (req) => {
         total_purchased: newTotalPurchased,
         total_used: totalUsed,
         updated_at: new Date().toISOString(),
-      })
+      }, { onConflict: 'wallet_address' })
       .select('lives_count, total_purchased, total_used')
       .single();
 
