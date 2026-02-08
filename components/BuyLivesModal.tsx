@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { purchaseLives } from '../src/utils/api';
-import { REVENUE_WALLET, LIVES_PRICE_LAMPORTS } from '../src/utils/constants';
+import { REVENUE_WALLET, LIVES_TIERS } from '../src/utils/constants';
+import type { LivesTierId } from '../src/utils/constants';
 
 
 interface BuyLivesModalProps {
@@ -18,8 +19,11 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [purchasedLives, setPurchasedLives] = useState(0);
+  const [selectedTier, setSelectedTier] = useState<LivesTierId>('basic');
 
   if (!isOpen) return null;
+
+  const tier = LIVES_TIERS.find(t => t.id === selectedTier) || LIVES_TIERS[0];
 
   const handlePurchase = async () => {
     if (!connected || !publicKey) {
@@ -31,23 +35,21 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
     setError(null);
 
     try {
-      // Create the transaction
       console.log('Creating purchase lives transaction:', {
         from: publicKey.toBase58(),
         to: REVENUE_WALLET,
-        lamports: LIVES_PRICE_LAMPORTS,
-        sol: LIVES_PRICE_LAMPORTS / 1_000_000_000,
+        tier: tier.id,
+        lamports: tier.lamports,
+        sol: tier.sol,
       });
 
-      // Get blockhash first for VersionedTransaction
       const { blockhash } = await connection.getLatestBlockhash();
 
-      // Use VersionedTransaction (V0) for better Seed Vault simulation support
       const instructions = [
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(REVENUE_WALLET),
-          lamports: LIVES_PRICE_LAMPORTS,
+          lamports: tier.lamports,
         }),
       ];
 
@@ -59,36 +61,31 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
 
       const transaction = new VersionedTransaction(messageV0);
 
-      // Use sendTransaction which internally uses MWA's signAndSendTransactions
       const signature = await sendTransaction(transaction, connection);
 
-      // Wait for confirmation with timeout
       const confirmationPromise = connection.confirmTransaction(signature, 'confirmed');
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
       );
-      
+
       await Promise.race([confirmationPromise, timeoutPromise]);
 
-      // Call the backend API to record the purchase
       console.log('Calling purchase-lives API:', {
         walletAddress: publicKey.toBase58(),
         txSignature: signature,
+        tier: tier.id,
       });
-      
-      const result = await purchaseLives(publicKey.toBase58(), signature);
+
+      const result = await purchaseLives(publicKey.toBase58(), signature, tier.id);
 
       if (result.success) {
-        // Show success modal
-        setPurchasedLives(result.livesPurchased || 3);
+        setPurchasedLives(result.livesPurchased || tier.lives);
         setShowSuccess(true);
-        
-        // Update lives display immediately using the count from the backend response
+
         if (onBuySuccess) {
           onBuySuccess(result.livesCount);
         }
-        
-        // Auto-close success modal and main modal after 3 seconds
+
         setTimeout(() => {
           setShowSuccess(false);
           onClose();
@@ -98,19 +95,18 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
       }
     } catch (err: any) {
       console.error('Purchase error:', err);
-      
-      // Provide user-friendly error messages
+
       let errorMessage = 'Failed to purchase lives. Please try again.';
       if (err.message?.includes('User rejected')) {
         errorMessage = 'Transaction was cancelled.';
       } else if (err.message?.includes('insufficient funds')) {
-        errorMessage = 'Insufficient SOL balance. You need at least 0.03 SOL.';
+        errorMessage = `Insufficient SOL balance. You need at least ${tier.sol} SOL.`;
       } else if (err.message?.includes('blockhash') || err.message?.includes('403')) {
         errorMessage = 'Network error. Please try again or check your connection.';
       } else if (err.message) {
         errorMessage = err.message;
       }
-      
+
       setError(errorMessage);
     } finally {
       setPurchasing(false);
@@ -119,13 +115,12 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 backdrop-blur-3xl bg-black/90 animate-fade-in overflow-hidden">
-      {/* Use max-w-md for professional desktop size, w-full for mobile */}
       <div className="relative w-full max-w-md bg-[#0D0D0D] border border-white/10 shadow-[0_0_100px_rgba(255,49,49,0.1)] overflow-hidden flex flex-col rounded-2xl">
         {/* Top Accent Strip */}
         <div className="h-1.5 w-full bg-gradient-to-r from-[#FF3131] via-[#818cf8] to-[#FF3131]"></div>
-        
+
         <div className="p-8">
-          <div className="flex justify-between items-start mb-8">
+          <div className="flex justify-between items-start mb-6">
             <div>
               <span className="text-[#FF3131] text-[10px] font-black tracking-[0.4em] uppercase mb-1 block italic">Neural Restoration</span>
               <h2 className="text-3xl font-[1000] italic uppercase tracking-tighter text-white leading-none">VITALITY <span className="text-[#FF3131]">SYNC</span></h2>
@@ -137,35 +132,66 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
             </button>
           </div>
 
-          <div className="flex justify-center mb-8 relative">
-              <div className="relative z-10 w-24 h-24 bg-[#FF3131]/10 rounded-full border border-[#FF3131]/30 flex items-center justify-center shadow-[0_0_30px_rgba(255,49,49,0.2)]">
-                  <svg className="w-12 h-12 text-[#FF3131] fill-[#FF3131]" viewBox="0 0 24 24">
-                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                  </svg>
-                  <div className="absolute -bottom-1 -right-1 bg-white text-black text-xs font-black px-2 py-0.5 rounded-full italic">+3</div>
-              </div>
-              <div className="absolute inset-0 bg-[#FF3131]/5 blur-3xl rounded-full"></div>
+          <p className="text-zinc-300 text-[11px] font-black uppercase tracking-widest mb-5 italic text-center">
+            Unlock multi-entry access. Unused lives roll over indefinitely.
+          </p>
+
+          {/* Tier Selection */}
+          <div className="space-y-3 mb-5">
+            {LIVES_TIERS.map((t) => {
+              const isSelected = selectedTier === t.id;
+              const pricePerLife = (t.sol / t.lives).toFixed(4);
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => { setSelectedTier(t.id); setError(null); }}
+                  disabled={purchasing}
+                  className={`w-full p-4 rounded-xl border-2 transition-all relative ${
+                    isSelected
+                      ? 'border-[#FF3131] bg-[#FF3131]/10 shadow-[0_0_20px_rgba(255,49,49,0.15)]'
+                      : 'border-white/5 bg-white/[0.02] hover:border-white/10'
+                  } ${purchasing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {'badge' in t && t.badge && (
+                    <span className={`absolute -top-2 right-3 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                      t.id === 'bulk' ? 'bg-[#14F195] text-black' : 'bg-[#818cf8] text-white'
+                    }`}>
+                      {t.badge}
+                    </span>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                        isSelected ? 'bg-[#FF3131]/20' : 'bg-white/5'
+                      }`}>
+                        <svg className={`w-5 h-5 ${isSelected ? 'text-[#FF3131] fill-[#FF3131]' : 'text-zinc-500 fill-zinc-500'}`} viewBox="0 0 24 24">
+                          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                        </svg>
+                      </div>
+                      <div className="text-left">
+                        <span className="text-white font-[1000] text-lg italic tracking-tighter block leading-tight">
+                          {t.lives} LIVES
+                        </span>
+                        <span className="text-zinc-500 text-[9px] font-bold uppercase">
+                          {pricePerLife} SOL / life
+                        </span>
+                      </div>
+                    </div>
+                    <span className={`font-[1000] text-xl italic tracking-tighter ${
+                      isSelected ? 'text-[#00FFA3]' : 'text-zinc-400'
+                    }`}>
+                      {t.sol} SOL
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="text-center mb-8">
-              <p className="text-zinc-300 text-[11px] font-black uppercase tracking-widest mb-4 italic">
-                Unlock multi-entry access. Unused lives roll over and can be used for any future trivia round.
-              </p>
-              <div className="bg-black/40 border border-white/5 p-4 rounded-xl mb-4">
-                <div className="flex justify-between items-center mb-2">
-                    <span className="text-zinc-300 text-[10px] font-black uppercase italic">Service</span>
-                    <span className="text-white font-black text-sm italic tracking-tighter">3 ROLLING LIVES</span>
-                </div>
-                <div className="flex justify-between items-center">
-                    <span className="text-zinc-300 text-[10px] font-black uppercase italic">Cost</span>
-                    <span className="text-[#00FFA3] font-black text-sm italic tracking-tighter">0.03 SOL</span>
-                </div>
-              </div>
-              <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg mb-6">
-                <p className="text-amber-400 text-[9px] font-black uppercase tracking-wider text-center italic leading-tight">
-                  Note: Lives purchase does NOT include entry fee. You'll still need to pay 0.02 SOL entry fee + 0.0025 SOL transaction fee to play.
-                </p>
-              </div>
+          <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg mb-5">
+            <p className="text-amber-400 text-[9px] font-black uppercase tracking-wider text-center italic leading-tight">
+              Note: Lives purchase does NOT include entry fee. You'll still need to pay 0.0225 SOL per game.
+            </p>
           </div>
 
           {error && (
@@ -174,14 +200,14 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
             </div>
           )}
 
-          <button 
+          <button
             onClick={handlePurchase}
             disabled={purchasing || !connected}
             className="w-full py-5 bg-[#FF3131] disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_0_30px_rgba(255,49,49,0.4)] active:scale-95 transition-all rounded-sm disabled:cursor-not-allowed"
           >
-            {purchasing ? 'PROCESSING...' : 'PURCHASE LIVES'}
+            {purchasing ? 'PROCESSING...' : `BUY ${tier.lives} LIVES — ${tier.sol} SOL`}
           </button>
-          
+
           <p className="text-[8px] text-zinc-600 text-center font-black uppercase tracking-[0.2em] mt-4 italic">
             Secured by Solana Protocol
           </p>
@@ -207,7 +233,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
               +{purchasedLives} Lives Purchased Successfully!
             </p>
             <p className="text-black/80 font-black text-sm italic uppercase tracking-wider">
-              Time to Play! 🚀
+              Time to Play!
             </p>
           </div>
         </div>
