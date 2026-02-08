@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DEFAULT_AVATAR } from '../src/utils/constants';
-import { getLeaderboard, LeaderboardEntry, LeaderboardResponse, fetchRoundsWithWinners, type RoundWithWinner } from '../src/utils/api';
+import { getLeaderboard, LeaderboardEntry, fetchRoundsWithWinners, getTotalSolWonByWallets, type RoundWithWinner } from '../src/utils/api';
 import { useWallet } from '../src/contexts/WalletContext';
 
 type RankPeriod = 'ALL_TIME' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
@@ -40,7 +40,18 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
   const [playerCount, setPlayerCount] = useState(0);
   const [roundsWithWinners, setRoundsWithWinners] = useState<RoundWithWinner[]>([]);
   const [roundsLoading, setRoundsLoading] = useState(false);
+  const [solWonByWallet, setSolWonByWallet] = useState<Record<string, number>>({});
   const { publicKey } = useWallet();
+
+  // Fetch total SOL won per wallet (from round_payouts) when leaderboard data is available
+  useEffect(() => {
+    if (leaderboardData.length === 0) {
+      setSolWonByWallet({});
+      return;
+    }
+    const wallets = leaderboardData.map((e) => e.wallet_address).filter(Boolean);
+    getTotalSolWonByWallets(wallets).then(setSolWonByWallet);
+  }, [leaderboardData]);
 
   // Fetch leaderboard; refresh every 2s so it updates as rounds complete
   const periodApi = period === 'ALL_TIME' ? 'all' : period === 'DAILY' ? 'daily' : period === 'WEEKLY' ? 'weekly' : 'monthly';
@@ -113,17 +124,21 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
     return () => { mounted = false; };
   }, [mainTab]);
 
-  // Transform API data to display format (correct score removed from cards)
-  const allPlayers: PlayerStats[] = leaderboardData.map((entry) => ({
-    rank: entry.rank.toString(),
-    username: entry.display_name ?? `${entry.wallet_address.slice(0, 4)}...${entry.wallet_address.slice(-4)}`,
-    winnings: '0.00 SOL', // TODO: Calculate from payouts
-    avatar: entry.avatar || DEFAULT_AVATAR,
-    score: Number(entry.score).toLocaleString(),
-    time: `${Math.floor((entry.time_taken_ms ?? 0) / 1000)}s`,
-    gamesPlayed: '1',
-    wallet_address: entry.wallet_address,
-  }));
+  // Transform API data to display format; winnings from round_payouts (total prize/paid per wallet)
+  const allPlayers: PlayerStats[] = leaderboardData.map((entry) => {
+    const lamports = solWonByWallet[entry.wallet_address] ?? 0;
+    const solWon = lamports / 1_000_000_000;
+    return {
+      rank: entry.rank.toString(),
+      username: entry.display_name ?? `${entry.wallet_address.slice(0, 4)}...${entry.wallet_address.slice(-4)}`,
+      winnings: solWon > 0 ? solWon.toFixed(4) + ' SOL' : '0.00 SOL',
+      avatar: entry.avatar || DEFAULT_AVATAR,
+      score: Number(entry.score).toLocaleString(),
+      time: `${Math.floor((entry.time_taken_ms ?? 0) / 1000)}s`,
+      gamesPlayed: '1',
+      wallet_address: entry.wallet_address,
+    };
+  });
 
   return (
     <div className="min-h-full bg-[#050505] text-white safe-top relative flex flex-col overflow-x-hidden">
