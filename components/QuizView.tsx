@@ -3,6 +3,7 @@ import { Question } from '../types';
 import { HapticFeedback } from '../src/utils/haptics';
 import { playCorrectSound, playWrongSound } from '../src/utils/sounds';
 import { getQuestions, submitAnswer } from '../src/utils/api';
+import { supabase } from '../src/utils/supabase';
 
 interface QuizViewProps {
   sessionId: string | null;
@@ -63,6 +64,28 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
         if (transformedQuestions.length === 0) {
           setError('No questions available');
           return;
+        }
+
+        // For resumed sessions, the backend may have advanced current_question_index
+        // beyond 0. Fetch it so we start from the right question instead of re-asking
+        // already-answered questions (which causes QUESTION_INDEX_MISMATCH errors).
+        const { data: sessionRow } = await supabase
+          .from('game_sessions')
+          .select('current_question_index')
+          .eq('id', sessionId)
+          .single();
+
+        const startIdx = sessionRow?.current_question_index || 0;
+        if (startIdx >= transformedQuestions.length) {
+          // All questions were already answered but session wasn't properly completed.
+          // Auto-finish with 0 score so the user can start a fresh game.
+          console.log('⚠️ Resumed session already answered all questions, auto-finishing');
+          onFinish(0, 0, 0);
+          return;
+        }
+        if (startIdx > 0) {
+          console.log(`🔄 Resuming session at question ${startIdx + 1}/${transformedQuestions.length}`);
+          setCurrentIdx(startIdx);
         }
 
         setQuestions(transformedQuestions);
