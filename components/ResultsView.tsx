@@ -3,15 +3,17 @@ import React, { useState } from 'react';
 interface ResultsViewProps {
   results: { score: number, points: number, time: number, rank?: number; scoreSaveFailed?: boolean };
   lives: number;
+  roundEntriesLeft: number;
+  roundEntriesMax: number;
   onRestart: () => void;
   onGoHome: () => void;
   onBuyLives: () => void;
 }
 
-const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, onRestart, onGoHome, onBuyLives }) => {
+const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesLeft, roundEntriesMax, onRestart, onGoHome, onBuyLives }) => {
   const [showShareCard, setShowShareCard] = useState(false);
   const isPerfect = results.score === 10;
-  const hasLives = lives > 0;
+  const canPlayAgain = roundEntriesLeft > 0 || lives > 0;
 
   const handleShare = () => {
     const text = `I just scored ${results.points}XP on SOL Trivia! 🧠⚡\n\nAccuracy: ${results.score}/10\nTime: ${results.time}s\n\nThink you're smarter? Join the arena on Solana!\nhttps://soltriviaui.onrender.com`;
@@ -99,30 +101,34 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, onRestart, on
             SHARE YOUR SCORE
           </button>
 
-          {/* Conditional Run Again / Buy Lives Callout */}
+          {/* Play again / Round entries / Buy lives */}
           <div className="bg-black/60 border border-white/5 p-6 rounded-2xl mb-8 flex flex-col gap-4">
-             {hasLives ? (
+             <div className="flex items-center justify-center gap-4 mb-2 text-zinc-400 text-[9px] font-black uppercase tracking-[0.2em] italic">
+               <span>Round entries: {roundEntriesLeft} / {roundEntriesMax}</span>
+               <span>·</span>
+               <span>Extra lives: {lives}</span>
+             </div>
+             {canPlayAgain ? (
                <div className="flex flex-col items-center">
-                  <span className="text-zinc-400 text-[9px] font-black uppercase tracking-[0.2em] mb-3 italic">VITALITY LIVES REMAINING: {lives}</span>
                   <button 
                     onClick={onRestart}
                     className="w-full py-5 bg-[#00FFA3] text-black font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_10px_30px_rgba(0,255,163,0.2)] active:scale-95 transition-all rounded-full"
                   >
-                    RUN AGAIN
+                    PLAY AGAIN
                   </button>
                </div>
              ) : (
                <div className="flex flex-col items-center">
                   <div className="flex items-center gap-3 mb-4">
                      <div className="w-1.5 h-1.5 rounded-full bg-[#FF3131] animate-ping"></div>
-                     <span className="text-[#FF3131] text-[10px] font-black uppercase tracking-[0.3em] italic">VITALITY DEPLETED</span>
+                     <span className="text-[#FF3131] text-[10px] font-black uppercase tracking-[0.3em] italic">NO ROUND ENTRIES OR LIVES</span>
                   </div>
-                  <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-6 italic">Unlock multi-entry access to secure your rank.</p>
+                  <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-6 italic">Buy extra lives or wait for the next 6h round.</p>
                   <button 
                     onClick={onBuyLives}
                     className="w-full py-5 bg-[#FF3131] text-white font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_10px_30px_rgba(255,49,49,0.3)] active:scale-95 transition-all rounded-full"
                   >
-                    GET MORE LIVES
+                    GET EXTRA LIVES
                   </button>
                </div>
              )}

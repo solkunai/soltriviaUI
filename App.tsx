@@ -259,6 +259,32 @@ const App: React.FC = () => {
     fetchProfile();
   }, [connected, publicKey]);
 
+  // Refetch profile when user opens Profile tab so we always show latest from DB (fixes refresh showing stale/default)
+  useEffect(() => {
+    if (currentView !== View.PROFILE || !connected || !publicKey) return;
+    const walletAddress = publicKey.toBase58();
+    supabase
+      .from('player_profiles')
+      .select('username, avatar_url')
+      .eq('wallet_address', walletAddress)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.username != null || data?.avatar_url != null) {
+          setProfile({
+            username: data.username || 'Solana_Sage',
+            avatar: data.avatar_url || DEFAULT_AVATAR,
+          });
+        }
+      })
+      .catch(() => {});
+  }, [currentView, connected, publicKey]);
+
+  // Refetch round entries when user navigates to Play so 2/2 → 1/2 → 0/2 is correct from DB
+  useEffect(() => {
+    if (currentView !== View.PLAY || !connected || !publicKey || currentSessionId) return;
+    getRoundEntriesUsed(publicKey.toBase58()).then(setRoundEntriesUsed).catch(() => {});
+  }, [currentView, connected, publicKey, currentSessionId]);
+
   const handleUpdateProfile = async (username: string, avatar: string) => {
     if (!publicKey) return;
 
@@ -640,6 +666,8 @@ const App: React.FC = () => {
           <ResultsView 
             results={lastGameResults} 
             lives={lives}
+            roundEntriesLeft={Math.max(0, ROUND_ENTRIES_MAX - roundEntriesUsed)}
+            roundEntriesMax={ROUND_ENTRIES_MAX}
             onRestart={handleStartQuiz} 
             onGoHome={() => setCurrentView(View.HOME)} 
             onBuyLives={() => setIsBuyLivesOpen(true)}

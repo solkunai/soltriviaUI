@@ -1,3 +1,9 @@
+/**
+ * Supabase client for the web app.
+ * Required env: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY.
+ * Optional: VITE_SUPABASE_FUNCTIONS_URL (see constants.ts).
+ * When not set, isSupabaseConfigured is false and api.ts skips DB calls (lives, round entries, profile).
+ */
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';

@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { purchaseLives } from '../src/utils/api';
-import { REVENUE_WALLET, LIVES_TIERS } from '../src/utils/constants';
-import type { LivesTierId } from '../src/utils/constants';
+import { REVENUE_WALLET, LIVES_TIERS, type LivesTierId } from '@/src/utils/constants';
 
 
 interface BuyLivesModalProps {
