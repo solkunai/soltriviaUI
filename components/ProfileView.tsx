@@ -81,6 +81,22 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           console.log('✅ Profile data:', profileData);
         }
 
+        // Total SOL actually paid out to this wallet (round_payouts where paid_at is set)
+        let totalSolPaid = 0;
+        try {
+          const { data: paidRows } = await supabase
+            .from('round_payouts')
+            .select('paid_lamports, prize_lamports')
+            .eq('wallet_address', walletAddress)
+            .not('paid_at', 'is', null);
+          if (paidRows?.length) {
+            totalSolPaid = paidRows.reduce(
+              (sum, row) => sum + (Number(row.paid_lamports ?? row.prize_lamports ?? 0) || 0),
+              0
+            ) / 1_000_000_000;
+          }
+        } catch (_) {}
+
         const initialStats: PlayerStats = profileData
           ? {
               total_games_played: profileData.total_games_played ?? 0,
@@ -89,7 +105,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
               highest_score: profileData.highest_score ?? 0,
               current_streak: profileData.current_streak ?? 0,
               best_streak: profileData.best_streak ?? 0,
-              total_sol_won: 0,
+              total_sol_won: totalSolPaid,
             }
           : {
               total_games_played: 0,
@@ -98,7 +114,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
               highest_score: 0,
               current_streak: 0,
               best_streak: 0,
-              total_sol_won: 0,
+              total_sol_won: totalSolPaid,
             };
 
         if (profileData) {

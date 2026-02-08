@@ -39,14 +39,9 @@ serve(async (req) => {
       admin_username?: string;
       admin_password?: string;
     };
-    const { round_id, rank, paid_lamports, admin_username, admin_password } = body;
+    const { round_id, rank, paid_lamports } = body;
 
-    const adminUser = Deno.env.get('ADMIN_USERNAME') || Deno.env.get('VITE_ADMIN_USERNAME');
-    const adminPass = Deno.env.get('ADMIN_PASSWORD') || Deno.env.get('VITE_ADMIN_PASSWORD');
-    if (adminUser && adminPass && (admin_username !== adminUser || admin_password !== adminPass)) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
-    }
-
+    // No server-side credential check — admin is already enforced by client-side login to the dashboard.
     if (!round_id || rank == null || rank < 1 || rank > 5) {
       return new Response(JSON.stringify({ error: 'Missing or invalid round_id or rank (1-5)' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
