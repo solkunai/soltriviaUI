@@ -416,13 +416,22 @@ const App: React.FC = () => {
     }
   };
 
-  const handleBuyLivesSuccess = (newLivesCount?: number) => {
+  const handleBuyLivesSuccess = async (newLivesCount?: number) => {
     if (typeof newLivesCount === 'number') {
-      // Use the exact count returned by the purchase-lives backend
+      // Show the count returned by backend immediately
       setLives(newLivesCount);
-    } else if (connected && publicKey) {
+    } else {
       // Fallback: optimistic +3
       setLives(prev => prev + 3);
+    }
+    // Verify against DB after a short delay to catch any persistence issues
+    if (connected && publicKey) {
+      setTimeout(async () => {
+        try {
+          const data = await getPlayerLives(publicKey.toBase58());
+          setLives(data.lives_count || 0);
+        } catch (_) { /* keep the value we already set */ }
+      }, 2000);
     }
   };
 
