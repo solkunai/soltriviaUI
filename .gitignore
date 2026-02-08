@@ -38,3 +38,7 @@ seeker-app/app-release-signed.apk
 seeker-app/android.keystore
 seeker-app/*.keystore
 seeker-app/assetlinks.json
+
+# Signing keystores (never commit)
+publishing/*.keystore
+*.keystore
