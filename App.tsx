@@ -404,14 +404,30 @@ const App: React.FC = () => {
       setCurrentView(View.QUIZ);
     } catch (err: any) {
       console.error('Failed to start quiz:', err);
-      
+
       // Show error to user
       if (err.message?.includes('User rejected')) {
         // User cancelled, don't show error
         return;
       }
-      
-      // For other errors, you might want to show an error modal
+
+      // Handle entry cap errors
+      if (err.code === 'ROUND_CAP_REACHED') {
+        alert('You\'ve reached the maximum 5 entries for this round. Try again next round!');
+        return;
+      }
+      if (err.code === 'DAILY_CAP_REACHED') {
+        alert('You\'ve reached the maximum 20 entries for today. Please try again tomorrow!');
+        return;
+      }
+
+      // If no lives, open buy lives modal
+      if (err.code === 'ALREADY_PLAYED' || err.message?.includes('Insufficient lives')) {
+        setIsBuyLivesOpen(true);
+        return;
+      }
+
+      // For other errors, show the message
       alert(err.message || 'Failed to start quiz. Please try again.');
     }
   };

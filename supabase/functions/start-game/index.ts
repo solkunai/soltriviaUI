@@ -24,6 +24,10 @@ const SOLANA_RPC_URL = Deno.env.get('SOLANA_RPC_URL') || 'https://api.mainnet-be
 // ──────────────────────────────────────────────────────────────────────────────
 const TESTING_MODE = false;
 
+// Entry caps to prevent leaderboard manipulation
+const MAX_ENTRIES_PER_ROUND = 5;
+const MAX_ENTRIES_PER_24H = 20;
+
 interface StartGameRequest {
   walletAddress: string;
   entryTxSignature: string;
@@ -395,6 +399,53 @@ serve(async (req) => {
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // --- ENTRY CAP CHECKS (anti-manipulation) ---
+    if (!TESTING_MODE) {
+      // Per-round cap: count finished sessions in this round
+      const entriesThisRound = existingSessions?.filter(s => s.finished_at).length || 0;
+      console.log('Entry cap check:', { walletAddress, entriesThisRound, maxPerRound: MAX_ENTRIES_PER_ROUND });
+
+      if (entriesThisRound >= MAX_ENTRIES_PER_ROUND) {
+        return new Response(
+          JSON.stringify({
+            error: `Maximum ${MAX_ENTRIES_PER_ROUND} entries per round reached. Try again next round!`,
+            code: 'ROUND_CAP_REACHED',
+            entriesThisRound,
+            maxPerRound: MAX_ENTRIES_PER_ROUND,
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Per-24h cap: count all finished sessions in last 24 hours
+      const twentyFourHoursAgoForCap = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { count: dailyCount, error: dailyCapError } = await supabase
+        .from('game_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('wallet_address', walletAddress)
+        .gte('created_at', twentyFourHoursAgoForCap)
+        .not('finished_at', 'is', null);
+
+      if (dailyCapError) {
+        console.error('Error checking daily entry cap:', dailyCapError);
+      }
+
+      const entriesLast24h = dailyCount || 0;
+      console.log('Daily cap check:', { walletAddress, entriesLast24h, maxPer24h: MAX_ENTRIES_PER_24H });
+
+      if (entriesLast24h >= MAX_ENTRIES_PER_24H) {
+        return new Response(
+          JSON.stringify({
+            error: `Maximum ${MAX_ENTRIES_PER_24H} entries per 24 hours reached. Please try again later!`,
+            code: 'DAILY_CAP_REACHED',
+            entriesLast24h,
+            maxPer24h: MAX_ENTRIES_PER_24H,
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     // Check if player has any finished session today
