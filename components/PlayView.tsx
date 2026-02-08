@@ -2,11 +2,15 @@ import React from 'react';
 
 interface PlayViewProps {
   lives: number;
+  roundEntriesUsed: number;
+  roundEntriesMax: number;
   onStartQuiz: () => void;
   onOpenBuyLives: () => void;
 }
 
-const PlayView: React.FC<PlayViewProps> = ({ lives, onStartQuiz, onOpenBuyLives }) => {
+const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives }) => {
+  const roundEntriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
+  const canPlay = roundEntriesLeft > 0 || lives > 0;
   return (
     <div className="h-full flex flex-col items-center justify-center p-6 md:p-12 relative overflow-hidden">
       {/* Dynamic Background Elements */}
@@ -38,35 +42,37 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, onStartQuiz, onOpenBuyLives 
 
       {/* Big Play CTA */}
       <div className="flex flex-col gap-6 w-full max-md relative z-10 max-w-md">
-        <button 
-          onClick={onStartQuiz}
+        <button
+          onClick={canPlay ? onStartQuiz : onOpenBuyLives}
           className="w-full h-24 bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#14F195] rounded-full flex items-center justify-center px-10 active:scale-[0.98] transition-all group shadow-[0_15px_40px_-10px_rgba(153,69,255,0.4)] hover:shadow-[0_20px_60px_-10px_rgba(20,241,149,0.5)] border-t border-white/20 relative overflow-hidden"
         >
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
-          
+
           <span className="text-white text-3xl md:text-4xl font-[1000] italic leading-none uppercase tracking-tighter relative z-10">
-            {lives > 0 ? 'START TRIVIA' : 'REFUEL LIVES'}
+            {canPlay ? 'START TRIVIA' : 'GET EXTRA LIVES'}
           </span>
         </button>
         
         <div className="grid grid-cols-2 gap-4">
-            <div className="bg-[#0A0A0A] border border-white/5 p-4 rounded-full text-center backdrop-blur-md flex flex-col items-center justify-center">
-                <span className="text-zinc-300 text-[8px] font-black uppercase block mb-1 tracking-widest italic leading-none">Vitality</span>
-                <span className={`font-black text-sm uppercase italic tabular-nums leading-none ${lives > 0 ? 'text-white' : 'text-[#FF3131]'}`}>
-                  {lives} LIVES
+            <div className={`bg-[#0A0A0A] border p-4 rounded-full text-center backdrop-blur-md flex flex-col items-center justify-center ${roundEntriesLeft > 0 ? 'border-[#14F195]/20' : 'border-white/5'}`}>
+                <span className="text-zinc-300 text-[8px] font-black uppercase block mb-1 tracking-widest italic leading-none">Round Entries</span>
+                <span className={`font-black text-sm uppercase italic tabular-nums leading-none ${roundEntriesLeft > 0 ? 'text-[#14F195]' : 'text-zinc-500'}`}>
+                  {roundEntriesLeft} / {roundEntriesMax}
                 </span>
             </div>
-            <button 
+            <button
               onClick={onOpenBuyLives}
-              className="bg-[#FF3131]/5 border border-[#FF3131]/20 p-4 rounded-full text-center group hover:bg-[#FF3131]/10 transition-colors flex flex-col items-center justify-center"
+              className={`border p-4 rounded-full text-center group transition-colors flex flex-col items-center justify-center ${lives > 0 ? 'bg-[#0A0A0A] border-white/10 hover:border-white/20' : 'bg-[#FF3131]/5 border-[#FF3131]/20 hover:bg-[#FF3131]/10'}`}
             >
-                <span className="text-[#FF3131] text-[8px] font-black uppercase block mb-1 tracking-widest italic leading-none">Buy Entries</span>
-                <span className="text-white font-black text-sm uppercase italic leading-none">0.03 SOL</span>
+                <span className={`text-[8px] font-black uppercase block mb-1 tracking-widest italic leading-none ${lives > 0 ? 'text-zinc-300' : 'text-[#FF3131]'}`}>Extra Lives</span>
+                <span className={`font-black text-sm uppercase italic tabular-nums leading-none ${lives > 0 ? 'text-white' : 'text-[#FF3131]'}`}>
+                  {lives > 0 ? lives : 'BUY'}
+                </span>
             </button>
         </div>
-        
+
         <p className="text-[9px] text-zinc-400 text-center font-black uppercase tracking-widest mt-2 px-6 opacity-60 italic leading-tight">
-          * Entry fee: 0.02 SOL + 0.0025 SOL txn fee. <span className="text-[#FF3131]">Extra lives</span> (0.03 SOL) allow multiple entries and roll over across rounds.
+          * 2 round entries reset every 6h. Entry fee: 0.0225 SOL. <span className="text-[#14F195]">Extra lives</span> are for plays beyond your round entries.
         </p>
       </div>
     </div>

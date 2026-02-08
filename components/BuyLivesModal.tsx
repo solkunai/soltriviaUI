@@ -190,7 +190,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
 
           <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg mb-5">
             <p className="text-amber-400 text-[9px] font-black uppercase tracking-wider text-center italic leading-tight">
-              Note: Lives purchase does NOT include entry fee. You'll still need to pay 0.0225 SOL per game.
+              You get 2 round entries included each round. Extra lives are for additional plays beyond that. Entry fee (0.0225 SOL) still applies.
             </p>
           </div>
 

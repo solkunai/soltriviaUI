@@ -11,11 +11,11 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose, onOpenTerms, o
   if (!isOpen) return null;
 
   const steps = [
-    { title: "1. Connect wallet", desc: "Connect your Solana wallet to verify your identity on-chain." },
-    { title: "2. Join the trivia", desc: "0.02 SOL standard entry per arena session." },
-    { title: "3. Extra Entries", desc: "Buy 3 lives for 0.03 SOL to enter multiple times. Unused lives roll over!" },
-    { title: "4. Top 5 win", desc: "Answer correctly + fast. Top 5 split the pot!" },
-    { title: "5. Claim winnings", desc: "Claim instantly after results via smart contract." },
+    { title: "1. Connect wallet", desc: "Connect your Solana wallet to verify your identity on-chain. Every wallet gets 2 round entries per 6-hour round!" },
+    { title: "2. Join the trivia", desc: "0.0225 SOL per entry (0.02 SOL to prize pool + 0.0025 SOL platform fee). Your first 2 entries each round are included!" },
+    { title: "3. Extra lives", desc: "Want more than 2 plays per round? Buy extra lives: 3 for 0.03 SOL, 15 for 0.1 SOL, or 35 for 0.25 SOL. They roll over!" },
+    { title: "4. Answer fast", desc: "10 questions, 7 seconds each. Up to 1,000 pts per question — speed matters! Top 5 split the pot." },
+    { title: "5. Get paid", desc: "Winners are paid out after each round by the SOL Trivia team. 100% of the pot goes to the top 5." },
   ];
 
   return (
@@ -77,11 +77,24 @@ const GuideModal: React.FC<GuideModalProps> = ({ isOpen, onClose, onOpenTerms, o
                 <span className="text-zinc-600 font-bold uppercase">5th Place</span>
                 <span className="text-white font-black italic">5%</span>
               </div>
-              <div className="pt-3 mt-3 border-t border-white/5 flex justify-between text-[9px] text-zinc-500 font-bold uppercase">
-                <span>Network Fee</span>
-                <span>0.0025 SOL</span>
+              <div className="pt-3 mt-3 border-t border-white/5 space-y-1.5">
+                <div className="flex justify-between text-[9px] text-zinc-500 font-bold uppercase">
+                  <span>Platform Fee (per entry)</span>
+                  <span>0.0025 SOL</span>
+                </div>
+                <div className="flex justify-between text-[9px] text-[#14F195]/60 font-bold uppercase">
+                  <span>Pot Deduction</span>
+                  <span>0% — all goes to winners</span>
+                </div>
               </div>
             </div>
+          </div>
+
+          {/* Entry Limits */}
+          <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl mt-6">
+            <p className="text-zinc-500 text-[9px] font-black uppercase tracking-wider text-center italic leading-relaxed">
+              Fair play limits: max 5 entries per round, 20 per 24 hours. 4 rounds daily (every 6h UTC).
+            </p>
           </div>
 
           {/* Legal links */}

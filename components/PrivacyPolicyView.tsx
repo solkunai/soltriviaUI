@@ -115,7 +115,7 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
           <section>
             <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">Payment Processing</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
-              We use a <span className="text-[#14F195] font-black italic">Dual Wallet System</span>. Entry fees (0.02 SOL) go to the Prize Pool wallet for winner payouts. Platform fees (0.0025 SOL) and lives purchases (0.03 SOL) go to the Revenue wallet for operations. All payments are verified on-chain via Solana RPC before crediting. Transaction replay protection prevents the same transaction from being used twice.
+              We use a <span className="text-[#14F195] font-black italic">Dual Wallet System</span>. Entry fees (0.02 SOL) go to the Prize Pool wallet for winner payouts. Platform fees (0.0025 SOL) and extra lives purchases (0.03–0.25 SOL depending on tier) go to the Revenue wallet for operations. All payments are verified on-chain via Solana RPC before crediting. Transaction replay protection prevents the same transaction from being used twice.
             </p>
           </section>
 
