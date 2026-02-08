@@ -5,9 +5,11 @@ import WalletConnectButton from './WalletConnectButton';
 interface WalletRequiredModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenTerms?: () => void;
+  onOpenPrivacy?: () => void;
 }
 
-const WalletRequiredModal: React.FC<WalletRequiredModalProps> = ({ isOpen, onClose }) => {
+const WalletRequiredModal: React.FC<WalletRequiredModalProps> = ({ isOpen, onClose, onOpenTerms, onOpenPrivacy }) => {
   const { connected } = useWallet();
 
   // Auto-close modal when wallet connects
@@ -47,8 +49,26 @@ const WalletRequiredModal: React.FC<WalletRequiredModalProps> = ({ isOpen, onClo
         </h2>
 
         {/* Description */}
-        <p className="text-zinc-400 text-center mb-8 text-sm md:text-base leading-relaxed">
+        <p className="text-zinc-400 text-center mb-4 text-sm md:text-base leading-relaxed">
           Please connect your Solana wallet to access this feature. Your wallet is required to play games, view your profile, and participate in SOL Trivia.
+        </p>
+
+        {/* TOS/Privacy Acknowledgment */}
+        <p className="text-zinc-500 text-center mb-8 text-[11px] md:text-xs leading-relaxed">
+          By connecting your wallet, you confirm that you have read and agree to our{' '}
+          <button
+            onClick={() => { onClose(); onOpenTerms?.(); }}
+            className="text-[#14F195] hover:underline font-bold"
+          >
+            Terms of Service
+          </button>
+          {' '}and{' '}
+          <button
+            onClick={() => { onClose(); onOpenPrivacy?.(); }}
+            className="text-[#14F195] hover:underline font-bold"
+          >
+            Privacy Policy
+          </button>.
         </p>
 
         {/* Connect Button */}
