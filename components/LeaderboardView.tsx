@@ -199,12 +199,27 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide }) => {
                           <span>{r.player_count} players</span>
                           <span>·</span>
                           <span>{(r.pot_lamports / 1_000_000_000).toFixed(2)} SOL pool</span>
+                          {r.payouts && r.payouts.length > 0 && (
+                            <>
+                              <span>·</span>
+                              <span>Distributed: {(r.payouts.reduce((sum, p) => sum + (p.prize_lamports || 0), 0) / 1_000_000_000).toFixed(4)} SOL</span>
+                            </>
+                          )}
                           <span>·</span>
                           <span>100% to top 5</span>
                         </div>
+                        {r.status === 'refund' && (
+                          <div className="mt-2 text-[#FF9500] text-[10px] font-black uppercase tracking-wider italic">
+                            Round failed — players will be refunded
+                          </div>
+                        )}
                       </div>
                     </div>
-                    {r.payouts && r.payouts.length > 0 ? (
+                    {r.status === 'refund' ? (
+                      <div className="py-3 px-3 rounded-lg bg-[#FF9500]/10 border border-[#FF9500]/30 text-[#FF9500] text-xs font-bold italic">
+                        Fewer than 5 players finished. Entry fees will be refunded.
+                      </div>
+                    ) : r.payouts && r.payouts.length > 0 ? (
                       <div className="space-y-2">
                         {r.payouts.map((p) => (
                           <div

@@ -252,17 +252,39 @@ serve(async (req) => {
 
     // Recalculate ranks for the round and set daily_rounds.winner_wallet/winner_score to current #1
     const roundId = (session as Record<string, unknown>).round_id as string;
-    try {
-      await supabase.rpc('calculate_rankings_and_winner', { p_round_id: roundId });
-    } catch (_) {
-      // RPC might not exist yet (run migration leaderboard_and_round_winners.sql); rank/winner computed on read
-    }
+    const MIN_PLAYERS_FOR_PAYOUT = 5;
 
-    // Refresh dedicated round_leaderboard table so all users see the same list in real time
-    try {
-      await supabase.rpc('refresh_round_leaderboard', { p_round_id: roundId });
-    } catch (_) {
-      // Migration round_leaderboard_table.sql adds this; non-fatal if not yet run
+    const { count: finishedCount, error: countErr } = await supabase
+      .from('game_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('round_id', roundId)
+      .not('finished_at', 'is', null);
+
+    const finishedInRound = countErr ? 0 : (finishedCount ?? 0);
+
+    if (finishedInRound < MIN_PLAYERS_FOR_PAYOUT) {
+      // Round failed: fewer than 5 players. Mark round for refund; do not populate payouts.
+      const { error: statusErr } = await supabase
+        .from('daily_rounds')
+        .update({ status: 'refund', updated_at: new Date().toISOString() })
+        .eq('id', roundId);
+      if (statusErr) {
+        console.warn('Could not set daily_rounds.status=refund (run migration daily_rounds_status_refund.sql):', statusErr.message);
+      }
+      // Skip calculate_rankings_and_winner so no prize payouts are created; players will be refunded.
+    } else {
+      try {
+        await supabase.rpc('calculate_rankings_and_winner', { p_round_id: roundId });
+      } catch (_) {
+        // RPC might not exist yet (run migration leaderboard_and_round_winners.sql); rank/winner computed on read
+      }
+
+      // Refresh dedicated round_leaderboard table so all users see the same list in real time
+      try {
+        await supabase.rpc('refresh_round_leaderboard', { p_round_id: roundId });
+      } catch (_) {
+        // Migration round_leaderboard_table.sql adds this; non-fatal if not yet run
+      }
     }
 
     // Get the player's rank after calculation

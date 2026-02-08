@@ -274,7 +274,9 @@ export async function getPlayerLives(wallet_address: string): Promise<PlayerLive
   return data;
 }
 
-// Get how many round entries this wallet has used in the current 6-hour round
+// Get how many round entries this wallet has used in the current 6-hour round.
+// Counts sessions where the wallet ENTERED (created_at in window), not just finished.
+// So round entries deduct as soon as they start a game, not when they complete it.
 export async function getRoundEntriesUsed(wallet_address: string): Promise<number> {
   if (!isSupabaseConfigured) return 0;
 
@@ -287,8 +289,7 @@ export async function getRoundEntriesUsed(wallet_address: string): Promise<numbe
     .from('game_sessions')
     .select('id', { count: 'exact', head: true })
     .eq('wallet_address', wallet_address)
-    .gte('created_at', windowStart.toISOString())
-    .not('finished_at', 'is', null);
+    .gte('created_at', windowStart.toISOString());
 
   if (error) {
     console.error('Error fetching round entries:', error);
@@ -591,6 +592,8 @@ export interface RoundWithWinner {
   round_title: string;
   pot_lamports: number;
   player_count: number;
+  /** When 'refund', round had <5 players and entries will be refunded. */
+  status?: string | null;
   winner_wallet: string | null;
   winner_display_name: string | null;
   winner_avatar: string | null;
@@ -603,7 +606,7 @@ export interface RoundWithWinner {
 export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinner[]> {
   const { data: rounds, error: roundsError } = await supabase
     .from('daily_rounds')
-    .select('id, date, round_number, pot_lamports, player_count')
+    .select('id, date, round_number, pot_lamports, player_count, status')
     .order('date', { ascending: false })
     .order('round_number', { ascending: false })
     .limit(limit);
@@ -624,11 +627,11 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
   }
 
   const winnerWallets = [...new Set([...winnerByRoundId.values()].map((v) => v.winner_wallet).filter(Boolean) as string[])];
-  let profiles: { wallet_address: string; display_name: string | null; avatar_url: string | null }[] = [];
+  let profiles: { wallet_address: string; username: string | null; avatar_url: string | null }[] = [];
   if (winnerWallets.length > 0) {
     const { data: prof } = await supabase
       .from('player_profiles')
-      .select('wallet_address, display_name, avatar_url')
+      .select('wallet_address, username, avatar_url')
       .in('wallet_address', winnerWallets);
     profiles = prof ?? [];
   }
@@ -637,9 +640,9 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
   const payoutsByRound = await fetchRoundPayouts(roundIds);
   const allPayoutWallets = new Set<string>();
   payoutsByRound.forEach((p) => allPayoutWallets.add(p.wallet_address));
-  let payoutProfiles: { wallet_address: string; display_name: string | null; avatar_url: string | null }[] = [];
+  let payoutProfiles: { wallet_address: string; username: string | null; avatar_url: string | null }[] = [];
   if (allPayoutWallets.size > 0) {
-    const { data: pp } = await supabase.from('player_profiles').select('wallet_address, display_name, avatar_url').in('wallet_address', [...allPayoutWallets]);
+    const { data: pp } = await supabase.from('player_profiles').select('wallet_address, username, avatar_url').in('wallet_address', [...allPayoutWallets]);
     payoutProfiles = pp ?? [];
   }
   const payoutProfileByWallet = Object.fromEntries(payoutProfiles.map((p) => [p.wallet_address, p]));
@@ -651,7 +654,7 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
     const profile = winnerWallet ? profileByWallet[winnerWallet] : null;
     const payouts: RoundPayout[] = (payoutsByRound.filter((p) => p.round_id === r.id) as RoundPayout[]).map((p) => ({
       ...p,
-      winner_display_name: payoutProfileByWallet[p.wallet_address]?.display_name ?? null,
+      winner_display_name: payoutProfileByWallet[p.wallet_address]?.username ?? null,
       winner_avatar: payoutProfileByWallet[p.wallet_address]?.avatar_url ?? null,
     }));
     return {
@@ -661,8 +664,9 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
       round_title: getRoundLabel(r.date, r.round_number),
       pot_lamports: r.pot_lamports ?? 0,
       player_count: r.player_count ?? 0,
+      status: (r as { status?: string }).status ?? null,
       winner_wallet: winnerWallet,
-      winner_display_name: profile?.display_name ?? null,
+      winner_display_name: profile?.username ?? null,
       winner_avatar: profile?.avatar_url ?? null,
       winner_score: winnerScore,
       payouts,
