@@ -698,6 +698,24 @@ export async function fetchRoundPayouts(roundIds: string[]): Promise<RoundPayout
   return (data ?? []) as RoundPayout[];
 }
 
+/** Total SOL won (lamports) per wallet from round_payouts (prize/paid). For leaderboard SOL won column. */
+export async function getTotalSolWonByWallets(walletAddresses: string[]): Promise<Record<string, number>> {
+  if (!isSupabaseConfigured || walletAddresses.length === 0) return {};
+  const uniq = [...new Set(walletAddresses)].slice(0, 200);
+  const { data, error } = await supabase
+    .from('round_payouts')
+    .select('wallet_address, prize_lamports, paid_lamports')
+    .in('wallet_address', uniq);
+  if (error) return {};
+  const out: Record<string, number> = {};
+  for (const row of data ?? []) {
+    const w = row.wallet_address as string;
+    const lamports = Number(row.paid_lamports ?? row.prize_lamports ?? 0) || 0;
+    out[w] = (out[w] ?? 0) + lamports;
+  }
+  return out;
+}
+
 /** Mark a round payout as paid (admin). Calls Edge Function. */
 export async function markPayoutPaid(
   roundId: string,
