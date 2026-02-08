@@ -705,9 +705,11 @@ const App: React.FC = () => {
         currentAvatar={profile.avatar}
         onSave={handleUpdateProfile}
       />
-      <WalletRequiredModal 
-        isOpen={showWalletRequired} 
-        onClose={() => setShowWalletRequired(false)} 
+      <WalletRequiredModal
+        isOpen={showWalletRequired}
+        onClose={() => setShowWalletRequired(false)}
+        onOpenTerms={() => setCurrentView(View.TERMS)}
+        onOpenPrivacy={() => setCurrentView(View.PRIVACY)}
       />
       <PwaInstallPrompt />
     </div>

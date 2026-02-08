@@ -180,7 +180,35 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">14. Contact</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">14. Not Financial Advice</h2>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              SOL Trivia is an entertainment platform only. Nothing in the App constitutes financial, investment, legal, or tax advice. You should consult qualified professionals before making decisions involving cryptocurrency. We make no representations about the value, stability, or future price of SOL or any digital asset.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">15. Tax Responsibility</h2>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              You are solely responsible for determining and fulfilling any tax obligations arising from your use of SOL Trivia, including but not limited to prizes won, entry fees paid, and any other transactions. We do not provide tax documentation and recommend consulting a tax professional.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">16. Indemnification</h2>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              You agree to indemnify, defend, and hold harmless SOL Trivia, its operators, and affiliates from any claims, damages, losses, or expenses (including reasonable legal fees) arising from your use of the App, violation of these Terms, or infringement of any third party&apos;s rights.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">17. Governing Law & Disputes</h2>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              These Terms shall be governed by and construed in accordance with applicable law. Any disputes arising from these Terms or your use of the App shall first be attempted to be resolved informally by contacting us. If informal resolution fails, disputes shall be resolved through binding arbitration on an individual basis. You waive any right to participate in class action lawsuits or class-wide arbitration.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">18. Contact</h2>
             <div className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               Email: <span className="text-[#14F195] font-black italic">soltriviateam@gmail.com</span><br /><br />
               By using SOL Trivia, you acknowledge you have read and agree to these Terms.<br /><br />
