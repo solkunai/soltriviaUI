@@ -26,7 +26,7 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
           Privacy Policy
         </h1>
         <p className="text-[#14F195] font-black uppercase tracking-widest text-[10px] italic mb-16 border-l-2 border-[#14F195] pl-4">
-          SOL Trivia Last Updated: February 2, 2026
+          SOL Trivia Last Updated: February 7, 2026
         </p>
 
         <div className="space-y-16">
@@ -46,32 +46,51 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
                 <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">Wallet Information</h3>
                 <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
                   <li><span className="text-white font-bold italic">Public Wallet Address:</span> Collected when you connect your wallet to verify participation and process payouts.</li>
-                  <li><span className="text-white font-bold italic">Transaction Signatures:</span> Stored for fees, lives, and claims to verify legitimate transactions.</li>
+                  <li><span className="text-white font-bold italic">Transaction Signatures:</span> Stored for entry fees, lives purchases, and prize claims to verify legitimate on-chain transactions.</li>
                 </ul>
               </div>
 
               <div className="space-y-4">
                 <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">Game Data</h3>
                 <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
-                  <li>Answers, scores, completion times, and rankings.</li>
-                  <li>Aggregated stats: games played, win/loss, accuracy.</li>
-                  <li>Daily play streaks and answer timing for anti-cheat.</li>
+                  <li>Answers, scores, completion times, and rankings per session.</li>
+                  <li>Aggregated stats: games played, win/loss record, accuracy.</li>
+                  <li>Session history including round participation and entry counts.</li>
+                  <li>Answer timing data used for anti-cheat verification.</li>
                 </ul>
               </div>
 
               <div className="space-y-4">
                 <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">Profile Information</h3>
                 <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
-                  <li><span className="text-white font-bold italic">Display Name:</span> Stored for leaderboard display.</li>
-                  <li><span className="text-white font-bold italic">Avatar Images:</span> Stored in Supabase Storage and publicly accessible.</li>
+                  <li><span className="text-white font-bold italic">Display Name:</span> Optional, stored for leaderboard display.</li>
+                  <li><span className="text-white font-bold italic">Avatar Images:</span> Optional, stored in Supabase Storage with public read access.</li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">Purchase & Lives Data</h3>
+                <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
+                  <li>Lives purchase history (wallet, amount, transaction signature).</li>
+                  <li>Current lives balance, total purchased, and total used.</li>
+                  <li>Entry counts per round and per 24-hour period for limit enforcement.</li>
                 </ul>
               </div>
 
               <div className="space-y-4">
                 <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">Activity & Technical</h3>
                 <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
-                  <li>Daily login activity and most recent activity timestamp.</li>
-                  <li>Device type and anonymous crash logs.</li>
+                  <li>Daily login activity and play streaks.</li>
+                  <li>Quest and achievement progress.</li>
+                  <li>Device type and anonymous crash/error logs.</li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">Local Storage</h3>
+                <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
+                  <li>Session identifiers stored temporarily in your browser to maintain game state during active play.</li>
+                  <li>Wallet connection preferences for reconnecting on return visits.</li>
                 </ul>
               </div>
             </div>
@@ -83,9 +102,12 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
               We use collected information to:
               <ul className="list-disc list-inside mt-4 space-y-2 marker:text-[#14F195]">
                 <li>Process entry fees, lives purchases, and distribute prizes</li>
-                <li>Display leaderboards and rankings with your identity</li>
-                <li>Calculate scores, streaks, and anti-cheat timing</li>
-                <li>Communicate important updates and generate analytics</li>
+                <li>Display leaderboards and rankings with your display name or wallet address</li>
+                <li>Calculate scores, streaks, and track quest/achievement progress</li>
+                <li>Enforce entry limits (5 per round, 20 per 24 hours) to ensure fair play</li>
+                <li>Randomize questions and track previously seen questions to provide fresh content</li>
+                <li>Detect and prevent cheating, fraud, and manipulation</li>
+                <li>Communicate important updates and generate aggregated analytics</li>
               </ul>
             </div>
           </section>
@@ -93,37 +115,82 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
           <section>
             <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">Payment Processing</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
-              We use a <span className="text-[#14F195] font-black italic">Dual Wallet System</span>. Entry fees go to the Prize Pool wallet, while transaction fees and lives purchases go to the Revenue wallet. All payments are verified on-chain via Solana RPC before crediting.
+              We use a <span className="text-[#14F195] font-black italic">Dual Wallet System</span>. Entry fees (0.02 SOL) go to the Prize Pool wallet for winner payouts. Platform fees (0.0025 SOL) and lives purchases (0.03 SOL) go to the Revenue wallet for operations. All payments are verified on-chain via Solana RPC before crediting. Transaction replay protection prevents the same transaction from being used twice.
             </p>
           </section>
 
           <section>
             <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">Blockchain Transactions</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
-              SOL Trivia operates on the Solana blockchain. All transactions are public, permanent, and visible to anyone. We cannot modify or delete blockchain transaction records. The immutable nature of blockchain means these records exist forever.
+              SOL Trivia operates on the Solana blockchain. All on-chain transactions (entry fees, lives purchases, prize claims) are public, permanent, and visible to anyone with access to a Solana block explorer. We cannot modify or delete blockchain transaction records. The immutable nature of blockchain means these records exist independently of our service.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">Third-Party Services</h2>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              We use the following third-party services to operate the App:
+            </p>
+            <ul className="list-disc list-inside mt-4 space-y-2 marker:text-[#14F195] text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              <li><span className="text-[#14F195] font-black">Supabase:</span> Database hosting, authentication, and file storage (avatars).</li>
+              <li><span className="text-[#14F195] font-black">Solana RPC Providers:</span> Transaction verification and blockchain interaction.</li>
+              <li><span className="text-[#14F195] font-black">Render:</span> Frontend application hosting.</li>
+            </ul>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90 mt-4">
+              These services have their own privacy policies. We do not sell or share your personal information with third parties for marketing purposes.
             </p>
           </section>
 
           <section>
             <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">Data Storage and Security</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
-              Game data is stored securely using Supabase. Avatar images are stored in Supabase Storage with public read access. We implement industry-standard security measures and Row Level Security (RLS). We never store your private keys or seed phrases.
+              Game data is stored securely using Supabase with Row Level Security (RLS) policies. Avatar images are stored in Supabase Storage with public read access. We implement industry-standard security measures including encrypted connections (HTTPS/TLS), service role separation, and input validation. We never store your private keys, seed phrases, or wallet passwords.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">Data Retention</h2>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              Game session data and transaction records are retained indefinitely for leaderboard integrity and dispute resolution. Question history is tracked on a rolling 24-hour basis for question freshness and is not permanently stored per-user. Profile information (display name, avatar) is retained until you request deletion. You may request deletion of optional profile data at any time by contacting us.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">Children&apos;s Privacy</h2>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              SOL Trivia is not intended for users under 18 years of age. We do not knowingly collect personal information from minors. If we become aware that a user is under 18, we will take steps to remove their data and restrict access.
             </p>
           </section>
 
           <section>
             <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">Your Rights</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
-              You have the right to access your data, request correction, or delete optional profile data. You can disconnect your wallet at any time. To exercise these rights, please contact us with your wallet address.
+              You have the right to:
+            </p>
+            <ul className="list-disc list-inside mt-4 space-y-2 marker:text-[#14F195] text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              <li>Access your game data, scores, and transaction history</li>
+              <li>Request correction of inaccurate profile information</li>
+              <li>Delete optional profile data (display name, avatar)</li>
+              <li>Disconnect your wallet at any time to stop participating</li>
+            </ul>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90 mt-4">
+              To exercise these rights, please contact us with your wallet address. Note that blockchain transaction records and game session data necessary for leaderboard integrity cannot be deleted from our systems.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">Changes to This Policy</h2>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              We may update this Privacy Policy from time to time. Changes will be posted within the App with an updated &quot;Last Updated&quot; date. Continued use of the App after changes constitutes acceptance of the revised policy.
             </p>
           </section>
 
           <section>
             <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">Contact Us</h2>
             <div className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
-              If you have questions, contact us at:<br /><br />
+              If you have questions about this Privacy Policy, contact us at:<br /><br />
               <span className="text-[#14F195] font-black italic">Email: soltriviateam@gmail.com</span><br /><br />
-              Effective Date: February 2, 2026.
+              Effective Date: February 7, 2026.
             </div>
           </section>
         </div>
