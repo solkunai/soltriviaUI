@@ -187,7 +187,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               </h1>
               <div className="h-0.5 w-16 md:w-32 bg-[#00FFA3] opacity-30 mt-4 shadow-[0_0_10px_#00FFA3]"></div>
               <p className="text-zinc-300 font-black uppercase tracking-[0.3em] text-[10px] md:text-[11px] mt-6 max-w-sm leading-relaxed italic">
-                THE HIGH-STAKES INTELLIGENCE TRIVIA ON SOLANA
+                TEST YOUR CRYPTO KNOWLEDGE | THE HIGH-STAKES INTELLIGENCE TRIVIA ON SOLANA
               </p>
             </div>
 
