@@ -351,6 +351,46 @@ const App: React.FC = () => {
     }
 
     try {
+      // --- Pre-flight entry cap check (BEFORE taking payment) ---
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const roundNumber = Math.floor(now.getUTCHours() / 6);
+      const walletAddr = publicKey.toBase58();
+
+      const { data: currentRound } = await supabase
+        .from('daily_rounds')
+        .select('id')
+        .eq('date', today)
+        .eq('round_number', roundNumber)
+        .single();
+
+      if (currentRound) {
+        const { data: roundSessions } = await supabase
+          .from('game_sessions')
+          .select('id, finished_at')
+          .eq('round_id', currentRound.id)
+          .eq('wallet_address', walletAddr);
+
+        const finishedInRound = roundSessions?.filter(s => s.finished_at).length || 0;
+        if (finishedInRound >= 5) {
+          alert('You\'ve reached the maximum 5 entries for this round. Try again next round!');
+          return;
+        }
+      }
+
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { count: dailyCount } = await supabase
+        .from('game_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('wallet_address', walletAddr)
+        .gte('created_at', twentyFourHoursAgo)
+        .not('finished_at', 'is', null);
+
+      if ((dailyCount || 0) >= 20) {
+        alert('You\'ve reached the maximum 20 entries for today. Please try again tomorrow!');
+        return;
+      }
+
       // Get blockhash first for VersionedTransaction
       const { blockhash } = await connection.getLatestBlockhash();
 
