@@ -93,13 +93,17 @@ const App: React.FC = () => {
           console.debug('Profile registration skipped:', profileError);
         }
 
-        // Fetch purchased lives + round entries used in parallel
-        const [livesData, entriesUsed] = await Promise.all([
-          getPlayerLives(walletAddress),
-          getRoundEntriesUsed(walletAddress),
-        ]);
+        // Fetch purchased lives (always)
+        const livesData = await getPlayerLives(walletAddress);
         setLives(livesData.lives_count || 0);
-        setRoundEntriesUsed(entriesUsed);
+
+        // Only fetch round entries from DB when no quiz is active.
+        // During a quiz the session has finished_at=NULL so the DB count
+        // would be stale and overwrite the correct optimistic +1 from handleStartQuiz.
+        if (!currentSessionId) {
+          const entriesUsed = await getRoundEntriesUsed(walletAddress);
+          setRoundEntriesUsed(entriesUsed);
+        }
       } catch (err) {
         console.error('Failed to fetch lives:', err);
         setLives(0);
@@ -113,7 +117,7 @@ const App: React.FC = () => {
     const interval = setInterval(fetchLivesAndRegister, 30000);
 
     return () => clearInterval(interval);
-  }, [connected, publicKey]);
+  }, [connected, publicKey, currentSessionId]);
 
   // Check wallet connection when navigating
   const handleViewChange = (view: View) => {
@@ -264,18 +268,42 @@ const App: React.FC = () => {
     const walletAddress = publicKey.toBase58();
 
     try {
-      // Upsert to Supabase (handles both existing and missing rows reliably)
-      const { error } = await supabase
+      // First check if profile row exists
+      const { data: existing } = await supabase
         .from('player_profiles')
-        .upsert({
-          wallet_address: walletAddress,
-          username,
-          avatar_url: avatar,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'wallet_address' });
+        .select('wallet_address')
+        .eq('wallet_address', walletAddress)
+        .maybeSingle();
 
-      if (error) {
-        console.error('Failed to update profile:', error);
+      let saveError: any = null;
+
+      if (existing) {
+        // Row exists — use targeted update (safest, won't touch stats columns)
+        const { error } = await supabase
+          .from('player_profiles')
+          .update({
+            username,
+            avatar_url: avatar,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('wallet_address', walletAddress);
+        saveError = error;
+      } else {
+        // No row yet — insert with defaults
+        const { error } = await supabase
+          .from('player_profiles')
+          .insert({
+            wallet_address: walletAddress,
+            username,
+            avatar_url: avatar,
+            updated_at: new Date().toISOString(),
+          });
+        saveError = error;
+      }
+
+      if (saveError) {
+        console.error('Profile save failed:', saveError);
+        alert('Profile save failed. Please try again.');
         return;
       }
 
@@ -287,7 +315,6 @@ const App: React.FC = () => {
         .single();
 
       if (verify) {
-        // Update state with what's actually in the DB
         setProfile({
           username: verify.username || username,
           avatar: verify.avatar_url || avatar,
@@ -301,6 +328,7 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to update profile:', err);
+      alert('Profile save failed. Please try again.');
     }
   };
 
@@ -353,8 +381,9 @@ const App: React.FC = () => {
     }
 
     // Re-fetch lives and round entries now that the session is finished (finished_at is set)
-    // This ensures the PlayView shows the correct count when the user navigates back
+    // Small delay ensures the DB write from completeSession is fully propagated
     if (publicKey) {
+      await new Promise((r) => setTimeout(r, 500));
       try {
         const walletAddr = publicKey.toBase58();
         const [livesData, entriesUsed] = await Promise.all([
