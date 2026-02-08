@@ -8,7 +8,7 @@ import { REVENUE_WALLET, LIVES_PRICE_LAMPORTS } from '../src/utils/constants';
 interface BuyLivesModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onBuySuccess?: () => void;
+  onBuySuccess?: (newLivesCount?: number) => void;
 }
 
 const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuccess }) => {
@@ -83,9 +83,9 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         setPurchasedLives(result.livesPurchased || 3);
         setShowSuccess(true);
         
-        // Refresh lives after successful purchase
+        // Update lives display immediately using the count from the backend response
         if (onBuySuccess) {
-          await onBuySuccess();
+          onBuySuccess(result.livesCount);
         }
         
         // Auto-close success modal and main modal after 3 seconds
