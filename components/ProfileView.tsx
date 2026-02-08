@@ -41,6 +41,15 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, onEdit, onO
   const [currentAvatar, setCurrentAvatar] = useState(avatar);
   const [currentUsername, setCurrentUsername] = useState(username);
 
+  // Sync local state with props from App.tsx (e.g. after EditProfileModal save)
+  useEffect(() => {
+    setCurrentUsername(username);
+  }, [username]);
+
+  useEffect(() => {
+    setCurrentAvatar(avatar);
+  }, [avatar]);
+
   const fetchProfileData = async () => {
       if (!publicKey) {
         setLoading(false);
