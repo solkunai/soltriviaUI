@@ -45,6 +45,7 @@ import PwaInstallPrompt from './components/PwaInstallPrompt';
 import AdminRoute from './components/AdminRoute';
 import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
+import LoadingScreen from './components/LoadingScreen';
 import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard } from './src/utils/api';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR } from './src/utils/constants';
 
@@ -61,6 +62,7 @@ const App: React.FC = () => {
   const [isBuyLivesOpen, setIsBuyLivesOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [showWalletRequired, setShowWalletRequired] = useState(false);
+  const [appLoading, setAppLoading] = useState(true);
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(() => {
     try { return localStorage.getItem('soltrivia_terms_accepted') === 'true'; } catch { return false; }
   });
@@ -745,6 +747,10 @@ const App: React.FC = () => {
   // Optimized help button logic to avoid duplication on views with built-in headers
   const viewsWithBuiltInHeader = [View.LEADERBOARD, View.PROFILE, View.QUESTS];
   const showMobileHelpButton = currentView !== View.HOME && !hideSidebar && !viewsWithBuiltInHeader.includes(currentView);
+
+  if (appLoading) {
+    return <LoadingScreen onComplete={() => setAppLoading(false)} />;
+  }
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#050505] overflow-hidden text-white selection:bg-[#00FFA3] selection:text-black">
