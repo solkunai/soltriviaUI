@@ -16,7 +16,25 @@ const PRIZE_POOL_WALLET = Deno.env.get('PRIZE_POOL_WALLET') || 'C9U6pL7FcroUBcSG
 const REVENUE_WALLET = Deno.env.get('REVENUE_WALLET') || '4u1UTyMBX8ghSQBagZHCzArt32XMFSw4CUXbdgo2Cv74'; // Transaction fees (0.0025 SOL) and lives purchases (0.03 SOL)
 const EXPECTED_PRIZE_POOL_AMOUNT = ENTRY_FEE_LAMPORTS; // 0.02 SOL
 const EXPECTED_REVENUE_AMOUNT = TXN_FEE_LAMPORTS; // 0.0025 SOL
+const TOTAL_ENTRY_LAMPORTS = ENTRY_FEE_LAMPORTS + TXN_FEE_LAMPORTS; // 0.0225 SOL (contract enter_round)
 const SOLANA_RPC_URL = Deno.env.get('SOLANA_RPC_URL') || 'https://api.mainnet-beta.solana.com';
+const SOLTRIVIA_PROGRAM_ID = new PublicKey(Deno.env.get('SOLTRIVIA_PROGRAM_ID') || '4XCpxbDvwtbtY3S3WZjkWdcFweMVAazzMbVDKBudFSwo');
+
+function contractRoundId(dateStr: string, roundNumber: number): number {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const epoch = new Date(Date.UTC(1970, 0, 1)).getTime();
+  const day = new Date(Date.UTC(y, m - 1, d)).getTime();
+  const daysSinceEpoch = Math.floor((day - epoch) / 86400_000);
+  return daysSinceEpoch * 4 + (roundNumber & 3);
+}
+
+function getVaultPda(roundIdU64: number): PublicKey {
+  const roundIdLe = new Uint8Array(8);
+  new DataView(roundIdLe.buffer).setBigUint64(0, BigInt(roundIdU64), true);
+  const VAULT_SEED = new TextEncoder().encode('vault');
+  const [pda] = PublicKey.findProgramAddressSync([VAULT_SEED, roundIdLe], SOLTRIVIA_PROGRAM_ID);
+  return pda;
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // TESTING MODE: Set to true to allow unlimited plays per wallet per round
@@ -138,129 +156,72 @@ serve(async (req) => {
       );
     }
 
-    // Verify the payment details using BALANCE CHANGES (more reliable)
-    // Must have TWO transfers:
-    // 1. 0.02 SOL to PRIZE_POOL_WALLET (entry fee)
-    // 2. 0.0025 SOL to REVENUE_WALLET (transaction fee)
-    
-    console.log('Verifying transaction using balance changes...');
-    
-    const accountKeys = transaction.transaction.message.staticAccountKeys ||
-                       transaction.transaction.message.accountKeys;
-                       
-    if (!accountKeys || accountKeys.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid transaction: no account keys found' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Account keys (same order as meta.preBalances/postBalances)
+    const accountKeys = transaction.transaction.message.staticAccountKeys ??
+                       (transaction.transaction.message as any).accountKeys;
+    const accountKeyStrings: string[] = (accountKeys || []).map((k: PublicKey | string) =>
+      typeof k === 'string' ? k : k.toString()
+    );
 
     const meta = transaction.meta;
-    if (!meta || !meta.postBalances || !meta.preBalances) {
+    if (!meta || !meta.postBalances || !meta.preBalances || accountKeyStrings.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Transaction missing balance information' }),
+        JSON.stringify({ error: 'Transaction missing balance or account key information' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Transaction meta:', {
-      preBalances: meta.preBalances,
-      postBalances: meta.postBalances,
-      accountKeys: accountKeys.map((k: any) => k.toString()),
-    });
-
-    // Find indices of sender, prize pool, and revenue wallets
-    let senderIndex = -1;
-    let prizePoolIndex = -1;
-    let revenueIndex = -1;
-    
-    for (let i = 0; i < accountKeys.length; i++) {
-      const key = accountKeys[i].toString();
-      if (key === walletAddress) senderIndex = i;
-      if (key === PRIZE_POOL_WALLET) prizePoolIndex = i;
-      if (key === REVENUE_WALLET) revenueIndex = i;
-    }
-
-    console.log('Account indices:', { senderIndex, prizePoolIndex, revenueIndex });
-
-    if (senderIndex === -1) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Sender wallet not found in transaction',
-          details: { expectedSender: walletAddress }
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (prizePoolIndex === -1 || revenueIndex === -1) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Prize pool or revenue wallet not found in transaction',
-          details: { 
-            expectedPrizePool: PRIZE_POOL_WALLET,
-            expectedRevenue: REVENUE_WALLET,
-            foundPrizePool: prizePoolIndex !== -1,
-            foundRevenue: revenueIndex !== -1,
-          }
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Calculate actual transfer amounts from balance changes
-    const prizePoolChange = meta.postBalances[prizePoolIndex] - meta.preBalances[prizePoolIndex];
-    const revenueChange = meta.postBalances[revenueIndex] - meta.preBalances[revenueIndex];
-    
-    console.log('Balance changes:', {
-      prizePool: {
-        pre: meta.preBalances[prizePoolIndex],
-        post: meta.postBalances[prizePoolIndex],
-        change: prizePoolChange,
-        expected: EXPECTED_PRIZE_POOL_AMOUNT,
-      },
-      revenue: {
-        pre: meta.preBalances[revenueIndex],
-        post: meta.postBalances[revenueIndex],
-        change: revenueChange,
-        expected: EXPECTED_REVENUE_AMOUNT,
-      },
-    });
-
-    // Verify both amounts match exactly
-    const prizePoolVerified = prizePoolChange === EXPECTED_PRIZE_POOL_AMOUNT;
-    const revenueVerified = revenueChange === EXPECTED_REVENUE_AMOUNT;
-
-    if (!prizePoolVerified || !revenueVerified) {
-      console.error('❌ Payment verification failed');
-      return new Response(
-        JSON.stringify({
-          error: 'Payment verification failed: Invalid amounts or recipients',
-          details: {
-            prizePool: {
-              expected: EXPECTED_PRIZE_POOL_AMOUNT,
-              actual: prizePoolChange,
-              verified: prizePoolVerified,
-            },
-            revenue: {
-              expected: EXPECTED_REVENUE_AMOUNT,
-              actual: revenueChange,
-              verified: revenueVerified,
-            },
-          }
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log('✅ Payment verification passed');
-
-    // Get or create current round (4 rounds per day, every 6 hours)
+    let paymentVerified = false;
     const now = new Date();
     const today = now.toISOString().split('T')[0];
-    const currentHour = now.getUTCHours();
-    const roundNumber = Math.floor(currentHour / 6); // 0-3 (00:00-06:00, 06:00-12:00, 12:00-18:00, 18:00-00:00)
+    const roundNumber = Math.floor(now.getUTCHours() / 6);
+    const roundIdU64 = contractRoundId(today, roundNumber);
+    const vaultPda = getVaultPda(roundIdU64);
+    const vaultStr = vaultPda.toString();
 
+    // Path 1: Contract enter_round — player -0.0225, vault +0.02, revenue +0.0025
+    const playerIdx = accountKeyStrings.indexOf(walletAddress);
+    const vaultIdx = accountKeyStrings.indexOf(vaultStr);
+    const revenueIdx = accountKeyStrings.indexOf(REVENUE_WALLET);
+    if (playerIdx !== -1 && vaultIdx !== -1 && revenueIdx !== -1) {
+      const playerChange = meta.postBalances[playerIdx] - meta.preBalances[playerIdx];
+      const vaultChange = meta.postBalances[vaultIdx] - meta.preBalances[vaultIdx];
+      const revenueChange = meta.postBalances[revenueIdx] - meta.preBalances[revenueIdx];
+      if (
+        playerChange === -TOTAL_ENTRY_LAMPORTS &&
+        vaultChange === ENTRY_FEE_LAMPORTS &&
+        revenueChange === TXN_FEE_LAMPORTS
+      ) {
+        paymentVerified = true;
+        console.log('✅ Payment verified (contract enter_round)');
+      }
+    }
+
+    // Path 2: Legacy two transfers — prize pool +0.02, revenue +0.0025
+    if (!paymentVerified) {
+      const prizePoolIdx = accountKeyStrings.indexOf(PRIZE_POOL_WALLET);
+      const revIdx = accountKeyStrings.indexOf(REVENUE_WALLET);
+      const senderIdx = accountKeyStrings.indexOf(walletAddress);
+      if (senderIdx !== -1 && prizePoolIdx !== -1 && revIdx !== -1) {
+        const prizePoolChange = meta.postBalances[prizePoolIdx] - meta.preBalances[prizePoolIdx];
+        const revChange = meta.postBalances[revIdx] - meta.preBalances[revIdx];
+        if (prizePoolChange === EXPECTED_PRIZE_POOL_AMOUNT && revChange === EXPECTED_REVENUE_AMOUNT) {
+          paymentVerified = true;
+          console.log('✅ Payment verified (legacy two transfers)');
+        }
+      }
+    }
+
+    if (!paymentVerified) {
+      return new Response(
+        JSON.stringify({
+          error: 'Payment verification failed: expected contract enter_round or legacy entry transfers',
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get or create current round (reuse today, roundNumber from payment block)
     // Query for round with date and round_number
     let { data: round, error: roundError } = await supabase
       .from('daily_rounds')

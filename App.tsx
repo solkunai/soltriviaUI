@@ -10,6 +10,7 @@ const PATH_TO_VIEW: Record<string, View> = {
   '/profile': View.PROFILE,
   '/quiz': View.QUIZ,
   '/results': View.RESULTS,
+  '/contract-test': View.CONTRACT_TEST,
   '/terms': View.TERMS,
   '/privacy': View.PRIVACY,
   '/admin': View.ADMIN,
@@ -23,6 +24,7 @@ function viewFromPath(): View {
 function pathForView(view: View): string {
   if (view === View.HOME) return '/';
   if (view === View.ADMIN) return '/admin';
+  if (view === View.CONTRACT_TEST) return '/contract-test';
   return '/' + view.toLowerCase();
 }
 import { useWallet, useConnection } from './src/contexts/WalletContext';
@@ -46,8 +48,10 @@ import AdminRoute from './components/AdminRoute';
 import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
 import LoadingScreen from './components/LoadingScreen';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard } from './src/utils/api';
-import { PRIZE_POOL_WALLET, REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR } from './src/utils/constants';
+import ContractTestView from './components/ContractTestView';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain } from './src/utils/api';
+import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR } from './src/utils/constants';
+import { buildEnterRoundInstruction, contractRoundIdFromDateAndNumber } from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
 import { useKeepAlive } from './src/hooks/useKeepAlive';
@@ -513,25 +517,35 @@ const App: React.FC = () => {
         return;
       }
 
-      // Get blockhash first for VersionedTransaction
+      const useContractEntry = import.meta.env.VITE_USE_ENTRY_CONTRACT === 'true';
       const { blockhash } = await connection.getLatestBlockhash();
 
-      // Create entry fee transaction with two transfers using VersionedTransaction (V0)
-      // This format is better supported by modern wallets like Seed Vault for simulation
-      const instructions = [
-        // Entry fee to prize pool (0.02 SOL)
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: new PublicKey(PRIZE_POOL_WALLET),
-          lamports: ENTRY_FEE_LAMPORTS,
-        }),
-        // Transaction fee to revenue wallet (0.0025 SOL)
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: new PublicKey(REVENUE_WALLET),
-          lamports: TXN_FEE_LAMPORTS,
-        }),
-      ];
+      let instructions;
+      if (useContractEntry) {
+        await ensureRoundOnChain();
+        const roundIdU64 = contractRoundIdFromDateAndNumber(today, roundNumber);
+        instructions = [
+          buildEnterRoundInstruction(
+            roundIdU64,
+            publicKey,
+            new PublicKey(REVENUE_WALLET)
+          ),
+        ];
+      } else {
+        const PRIZE_POOL_WALLET = import.meta.env.VITE_PRIZE_POOL_WALLET || 'C9U6pL7FcroUBcSGQR2iCEGmAydVjzEE7ZYaJuVJuEEo';
+        instructions = [
+          SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: new PublicKey(PRIZE_POOL_WALLET),
+            lamports: ENTRY_FEE_LAMPORTS,
+          }),
+          SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: new PublicKey(REVENUE_WALLET),
+            lamports: TXN_FEE_LAMPORTS,
+          }),
+        ];
+      }
 
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -540,8 +554,6 @@ const App: React.FC = () => {
       }).compileToV0Message();
 
       const transaction = new VersionedTransaction(messageV0);
-
-      // Use sendTransaction which internally uses MWA's signAndSendTransactions
       const signature = await sendTransaction(transaction, connection);
 
       // Wait for confirmation
@@ -715,6 +727,8 @@ const App: React.FC = () => {
         return <PrivacyPolicyView onBack={() => setCurrentView(View.HOME)} />;
       case View.ADMIN:
         return <AdminRoute />;
+      case View.CONTRACT_TEST:
+        return <ContractTestView />;
       default:
         return (
           <HomeView 

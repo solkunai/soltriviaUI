@@ -13,7 +13,7 @@ import {
 } from 'https://esm.sh/@solana/web3.js@1.95.8';
 
 const PROGRAM_ID = new PublicKey(
-  Deno.env.get('SOLTRIVIA_PROGRAM_ID') || 'HDa691QBrV9S5e491p187jKUpkpguYms3cuPBbcTuG1J'
+  Deno.env.get('SOLTRIVIA_PROGRAM_ID') || '4XCpxbDvwtbtY3S3WZjkWdcFweMVAazzMbVDKBudFSwo'
 );
 const RPC_URL = Deno.env.get('SOLANA_RPC_URL') || Deno.env.get('RPC_URL') || 'https://api.mainnet-beta.solana.com';
 const POST_WINNERS_DISCRIMINATOR = new Uint8Array([74, 54, 188, 218, 230, 234, 215, 49]);
