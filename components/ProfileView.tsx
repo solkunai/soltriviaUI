@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
-import { DEFAULT_AVATAR } from '../src/utils/constants';
-import { fetchClaimableRoundPayouts, type ClaimablePayout } from '../src/utils/api';
+import { DEFAULT_AVATAR, REVENUE_WALLET, SOLANA_NETWORK } from '../src/utils/constants';
+import { fetchClaimableRoundPayouts, initializeProgram, type ClaimablePayout } from '../src/utils/api';
 import { buildClaimPrizeInstruction } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
 
@@ -255,6 +255,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
     if (!publicKey || !sendTransaction || !connection) return;
     setClaimingRoundId(payout.round_id);
     try {
+      await initializeProgram({
+        revenueWallet: REVENUE_WALLET,
+        useDevnet: SOLANA_NETWORK === 'devnet',
+      }).catch(() => {}); // idempotent; non-fatal if already inited
       const ix = buildClaimPrizeInstruction(payout.contract_round_id, publicKey);
       const { blockhash } = await connection.getLatestBlockhash();
       const msg = new TransactionMessage({

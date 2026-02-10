@@ -49,8 +49,8 @@ import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
 import LoadingScreen from './components/LoadingScreen';
 import ContractTestView from './components/ContractTestView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain } from './src/utils/api';
-import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR } from './src/utils/constants';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram } from './src/utils/api';
+import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK } from './src/utils/constants';
 import { buildEnterRoundInstruction, contractRoundIdFromDateAndNumber } from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
@@ -522,7 +522,12 @@ const App: React.FC = () => {
 
       let instructions;
       if (useContractEntry) {
-        await ensureRoundOnChain();
+        // Ensure program is initialized once (idempotent). Then ensure current round exists on-chain.
+        await initializeProgram({
+          revenueWallet: REVENUE_WALLET,
+          useDevnet: SOLANA_NETWORK === 'devnet',
+        });
+        await ensureRoundOnChain(SOLANA_NETWORK === 'devnet' ? { useDevnet: true } : undefined);
         const roundIdU64 = contractRoundIdFromDateAndNumber(today, roundNumber);
         instructions = [
           buildEnterRoundInstruction(
