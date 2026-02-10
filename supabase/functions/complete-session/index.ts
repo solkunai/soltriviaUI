@@ -295,6 +295,24 @@ serve(async (req) => {
       } catch (_) {
         // Migration round_leaderboard_table.sql adds this; non-fatal if not yet run
       }
+
+      // Post winners on-chain (Sol Trivia contract) so winners can claim from the vault. Non-fatal if contract not in use.
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+        const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+        const base = supabaseUrl.replace(/\/$/, '') + '/functions/v1';
+        const res = await fetch(base + '/post-winners-on-chain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+          body: JSON.stringify({ round_id: roundId }),
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          console.warn('post-winners-on-chain failed (non-fatal):', res.status, t);
+        }
+      } catch (e) {
+        console.warn('post-winners-on-chain request failed (non-fatal):', e);
+      }
     }
 
     // Get the player's rank after calculation
