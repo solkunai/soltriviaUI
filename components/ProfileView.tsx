@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useWallet } from '../src/contexts/WalletContext';
+import { TransactionMessage, VersionedTransaction } from '@solana/web3.js';
+import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
 import { DEFAULT_AVATAR } from '../src/utils/constants';
+import { fetchClaimableRoundPayouts, type ClaimablePayout } from '../src/utils/api';
+import { buildClaimPrizeInstruction } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
 
 interface ProfileViewProps {
@@ -35,9 +38,12 @@ interface GameHistory {
 }
 
 const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated }) => {
-  const { publicKey } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
   const [stats, setStats] = useState<PlayerStats | null>(null);
   const [history, setHistory] = useState<GameHistory[]>([]);
+  const [claimablePayouts, setClaimablePayouts] = useState<ClaimablePayout[]>([]);
+  const [claimingRoundId, setClaimingRoundId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAvatarUpload, setShowAvatarUpload] = useState(false);
   const [currentAvatar, setCurrentAvatar] = useState(avatar);
@@ -230,6 +236,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           console.log('ℹ️ No game history found');
           setHistory([]);
         }
+
+        // Round wins eligible for on-chain claim (winners acknowledged at round end)
+        const claimable = await fetchClaimableRoundPayouts(walletAddress);
+        setClaimablePayouts(claimable);
       } catch (error) {
         console.error('Error fetching profile data:', error);
       } finally {
@@ -240,6 +250,28 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   useEffect(() => {
     fetchProfileData();
   }, [publicKey]);
+
+  const handleClaimPrize = async (payout: ClaimablePayout) => {
+    if (!publicKey || !sendTransaction || !connection) return;
+    setClaimingRoundId(payout.round_id);
+    try {
+      const ix = buildClaimPrizeInstruction(payout.contract_round_id, publicKey);
+      const { blockhash } = await connection.getLatestBlockhash();
+      const msg = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(msg);
+      const sig = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(sig, 'confirmed');
+      setClaimablePayouts((prev) => prev.filter((p) => p.round_id !== payout.round_id));
+    } catch (e: any) {
+      if (!e?.message?.includes('rejected')) alert(e?.message || 'Claim failed');
+    } finally {
+      setClaimingRoundId(null);
+    }
+  };
 
   // Realtime: auto-refresh history when this wallet completes a game session
   useEffect(() => {
@@ -351,6 +383,38 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
             </>
           )}
         </div>
+
+        {/* Round wins – claim on-chain (winners acknowledged when round ends) */}
+        {claimablePayouts.length > 0 && (
+          <div className="mb-8 md:mb-12 relative z-10">
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">Round wins</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">Winners are set when the round ends. Claim your prize below.</p>
+            <div className="space-y-3">
+              {claimablePayouts.map((p) => (
+                <div
+                  key={p.round_id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 md:px-6 bg-[#0A0A0A] border border-white/10 rounded-xl"
+                >
+                  <div>
+                    <span className="text-[#14F195] font-bold text-sm md:text-base">{p.round_title}</span>
+                    <span className="text-zinc-500 text-xs ml-2">#{p.rank}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-white font-bold">{(p.prize_lamports / 1_000_000_000).toFixed(4)} SOL</span>
+                    <button
+                      type="button"
+                      disabled={claimingRoundId === p.round_id}
+                      onClick={() => handleClaimPrize(p)}
+                      className="px-4 py-2 bg-[#14F195] hover:bg-[#14F195]/90 disabled:opacity-50 text-black font-[1000] text-xs uppercase italic rounded-lg transition-all"
+                    >
+                      {claimingRoundId === p.round_id ? 'Claiming…' : 'Claim'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Trivia History Table - Optimized for Mobile */}
         <div className="bg-[#0A0A0A] border border-white/5 relative z-10 shadow-2xl rounded-[24px] md:rounded-[40px] overflow-hidden">

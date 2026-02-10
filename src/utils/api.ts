@@ -716,6 +716,58 @@ export async function getTotalSolWonByWallets(walletAddresses: string[]): Promis
   return out;
 }
 
+/** Round payout for a wallet with date/round_number for on-chain claim (contract round_id). */
+export interface ClaimablePayout {
+  round_id: string;
+  date: string;
+  round_number: number;
+  rank: number;
+  prize_lamports: number;
+  contract_round_id: number;
+  round_title: string;
+}
+
+/** Fetch round payouts for a wallet with daily_rounds date/round_number (for claim button). */
+export async function fetchClaimableRoundPayouts(walletAddress: string): Promise<ClaimablePayout[]> {
+  if (!isSupabaseConfigured || !walletAddress?.trim()) return [];
+  const { data: payouts, error: payErr } = await supabase
+    .from('round_payouts')
+    .select('round_id, rank, prize_lamports')
+    .eq('wallet_address', walletAddress.trim());
+  if (payErr || !payouts?.length) return [];
+  const roundIds = [...new Set((payouts as { round_id: string }[]).map((p) => p.round_id))];
+  const { data: rounds, error: roundErr } = await supabase
+    .from('daily_rounds')
+    .select('id, date, round_number')
+    .in('id', roundIds);
+  if (roundErr || !rounds?.length) return [];
+  const byId = Object.fromEntries((rounds as { id: string; date: string; round_number: number }[]).map((r) => [r.id, r]));
+  function contractRoundId(dateStr: string, roundNumber: number): number {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const epoch = new Date(Date.UTC(1970, 0, 1)).getTime();
+    const day = new Date(Date.UTC(y, m - 1, d)).getTime();
+    const daysSinceEpoch = Math.floor((day - epoch) / 86400_000);
+    return daysSinceEpoch * 4 + (roundNumber & 3);
+  }
+  return (payouts as { round_id: string; rank: number; prize_lamports: number }[])
+    .map((p) => {
+      const r = byId[p.round_id];
+      if (!r) return null;
+      const contract_round_id = contractRoundId(r.date, r.round_number);
+      return {
+        round_id: p.round_id,
+        date: r.date,
+        round_number: r.round_number,
+        rank: p.rank,
+        prize_lamports: p.prize_lamports ?? 0,
+        contract_round_id,
+        round_title: `${r.date} Round ${r.round_number + 1}`,
+      };
+    })
+    .filter((x): x is ClaimablePayout => x != null)
+    .sort((a, b) => (b.date + b.round_number).localeCompare(a.date + a.round_number));
+}
+
 /** Mark a round payout as paid (admin). Calls Edge Function. */
 export async function markPayoutPaid(
   roundId: string,
