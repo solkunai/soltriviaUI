@@ -3,7 +3,7 @@
  * Program ID: 4XCpxbDvwtbtY3S3WZjkWdcFweMVAazzMbVDKBudFSwo; set VITE_SOLTRIVIA_PROGRAM_ID to override.
  */
 
-import { PublicKey, TransactionInstruction, SystemProgram } from '@solana/web3.js';
+import { PublicKey, TransactionInstruction, SystemProgram, Connection } from '@solana/web3.js';
 
 export const SOLTRIVIA_PROGRAM_ID = new PublicKey(
   import.meta.env.VITE_SOLTRIVIA_PROGRAM_ID || '4XCpxbDvwtbtY3S3WZjkWdcFweMVAazzMbVDKBudFSwo'
@@ -76,6 +76,57 @@ export function getRoundAndVaultPdas(
   const [roundPda] = PublicKey.findProgramAddressSync([ROUND_SEED, roundIdLe], programId);
   const [vaultPda] = PublicKey.findProgramAddressSync([VAULT_SEED, roundIdLe], programId);
   return { roundPda, vaultPda };
+}
+
+/** Round account data decoded from chain (for claim amount display). */
+export interface RoundAccountData {
+  roundId: number;
+  totalPot: number;
+  finalized: boolean;
+  prizeAmounts: number[];
+  winners: string[];
+  claimed: boolean[];
+}
+
+const ROUND_DISCRIMINATOR_LEN = 8;
+const ROUND_ID_LEN = 8;
+const TOTAL_POT_LEN = 8;
+const ENTRY_COUNT_LEN = 4;
+const FINALIZED_LEN = 1;
+const WINNERS_LEN = 5 * 32;
+const PRIZE_AMOUNTS_OFFSET = ROUND_DISCRIMINATOR_LEN + ROUND_ID_LEN + TOTAL_POT_LEN + ENTRY_COUNT_LEN + FINALIZED_LEN + WINNERS_LEN;
+
+/**
+ * Fetch and decode round account for a given round_id. Returns null if account missing or invalid.
+ */
+export async function fetchRoundAccountData(
+  connection: Connection,
+  roundIdU64: number,
+  programId: PublicKey = SOLTRIVIA_PROGRAM_ID
+): Promise<RoundAccountData | null> {
+  const { roundPda } = getRoundAndVaultPdas(roundIdU64, programId);
+  const accountInfo = await connection.getAccountInfo(roundPda);
+  if (!accountInfo?.data || accountInfo.data.length < PRIZE_AMOUNTS_OFFSET + 5 * 8 + 5 * 1 + 2) return null;
+  const data = accountInfo.data;
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const roundId = Number(dv.getBigUint64(ROUND_DISCRIMINATOR_LEN, true));
+  const totalPot = Number(dv.getBigUint64(ROUND_DISCRIMINATOR_LEN + ROUND_ID_LEN, true));
+  const finalized = data[ROUND_DISCRIMINATOR_LEN + ROUND_ID_LEN + TOTAL_POT_LEN + ENTRY_COUNT_LEN] !== 0;
+  const prizeAmounts: number[] = [];
+  for (let i = 0; i < 5; i++) {
+    prizeAmounts.push(Number(dv.getBigUint64(PRIZE_AMOUNTS_OFFSET + i * 8, true)));
+  }
+  const winnersOffset = ROUND_DISCRIMINATOR_LEN + ROUND_ID_LEN + TOTAL_POT_LEN + ENTRY_COUNT_LEN + FINALIZED_LEN;
+  const winners: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    winners.push(new PublicKey(data.slice(winnersOffset + i * 32, winnersOffset + (i + 1) * 32)).toBase58());
+  }
+  const claimedOffset = PRIZE_AMOUNTS_OFFSET + 5 * 8;
+  const claimed: boolean[] = [];
+  for (let i = 0; i < 5; i++) {
+    claimed.push(data[claimedOffset + i] !== 0);
+  }
+  return { roundId, totalPot, finalized, prizeAmounts, winners, claimed };
 }
 
 /**
