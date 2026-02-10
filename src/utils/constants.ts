@@ -24,7 +24,7 @@ export const APP_IDENTITY = {
   icon: 'favicon.ico',
 };
 
-// Network configuration
+// Network configuration (default mainnet for production; set VITE_SOLANA_NETWORK=devnet for testing)
 export const SOLANA_NETWORK: 'devnet' | 'mainnet-beta' = 
   (import.meta.env.VITE_SOLANA_NETWORK as 'devnet' | 'mainnet-beta') || 'mainnet-beta';
 

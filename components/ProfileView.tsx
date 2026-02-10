@@ -3,6 +3,12 @@ import { TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
 import { DEFAULT_AVATAR, REVENUE_WALLET, SOLANA_NETWORK } from '../src/utils/constants';
+
+function claimExplorerUrl(signature: string): string {
+  const base = 'https://explorer.solana.com';
+  const cluster = SOLANA_NETWORK === 'devnet' ? '?cluster=devnet' : '';
+  return `${base}/tx/${signature}${cluster}`;
+}
 import { fetchClaimableRoundPayouts, initializeProgram, type ClaimablePayout } from '../src/utils/api';
 import { buildClaimPrizeInstruction } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
@@ -44,6 +50,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const [history, setHistory] = useState<GameHistory[]>([]);
   const [claimablePayouts, setClaimablePayouts] = useState<ClaimablePayout[]>([]);
   const [claimingRoundId, setClaimingRoundId] = useState<string | null>(null);
+  const [lastClaimTx, setLastClaimTx] = useState<{ signature: string; solAmount: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAvatarUpload, setShowAvatarUpload] = useState(false);
   const [currentAvatar, setCurrentAvatar] = useState(avatar);
@@ -270,6 +277,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
       const sig = await sendTransaction(tx, connection);
       await connection.confirmTransaction(sig, 'confirmed');
       setClaimablePayouts((prev) => prev.filter((p) => p.round_id !== payout.round_id));
+      setLastClaimTx({
+        signature: sig,
+        solAmount: (payout.prize_lamports / 1_000_000_000).toFixed(4),
+      });
     } catch (e: any) {
       if (!e?.message?.includes('rejected')) alert(e?.message || 'Claim failed');
     } finally {
@@ -387,6 +398,31 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
             </>
           )}
         </div>
+
+        {/* Last claim success – verify SOL received via Explorer */}
+        {lastClaimTx && (
+          <div className="mb-6 p-4 bg-[#14F195]/10 border border-[#14F195]/30 rounded-xl">
+            <p className="text-[#14F195] font-bold text-sm mb-2">
+              {lastClaimTx.solAmount} SOL sent to your wallet. You can verify on-chain:
+            </p>
+            <a
+              href={claimExplorerUrl(lastClaimTx.signature)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-white/90 underline text-sm hover:text-[#14F195]"
+            >
+              View transaction on Solana Explorer →
+            </a>
+            <button
+              type="button"
+              onClick={() => setLastClaimTx(null)}
+              className="ml-3 text-zinc-500 text-xs hover:text-white"
+              aria-label="Dismiss"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* Round wins – claim on-chain (winners acknowledged when round ends) */}
         {claimablePayouts.length > 0 && (

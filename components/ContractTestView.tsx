@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { PublicKey, TransactionMessage, VersionedTransaction, Connection, clusterApiUrl } from '@solana/web3.js';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { initializeProgram, ensureRoundOnChain, postWinnersTest, getAuthHeaders } from '../src/utils/api';
@@ -7,6 +7,7 @@ import {
   buildEnterRoundInstruction,
   buildClaimPrizeInstruction,
   contractRoundIdFromDateAndNumber,
+  fetchRoundAccountData,
 } from '../src/utils/soltriviaContract';
 import { REVENUE_WALLET, SOLANA_NETWORK, SUPABASE_FUNCTIONS_URL } from '../src/utils/constants';
 
@@ -25,6 +26,8 @@ export default function ContractTestView() {
   const [claimRoundId, setClaimRoundId] = useState('');
   const [authorityPubkey, setAuthorityPubkey] = useState<string | null>(null);
   const [forceDevnet, setForceDevnet] = useState(true);
+  const [claimAmountSol, setClaimAmountSol] = useState<string | null>(null);
+  const [claimAmountStatus, setClaimAmountStatus] = useState<'idle' | 'loading' | 'done'>('idle');
 
   const now = new Date();
   const today = now.toISOString().split('T')[0];
@@ -36,8 +39,19 @@ export default function ContractTestView() {
     setStatus(null);
     try {
       await fn();
-    } catch (e) {
-      setStatus({ ok: false, message: e instanceof Error ? e.message : String(e) });
+    } catch (e: unknown) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      let msg = err.message;
+      const cause = err instanceof Error && (e as any).cause;
+      if (cause instanceof Error) msg += ` — ${cause.message}`;
+      if (msg.includes('Custom":6001') || msg.includes('Custom:6001')) {
+        msg = 'Round already finalized (winners were posted). Use a round that has not had "Post winners" yet, or increase the round number above to use a new round.';
+      } else if (msg.includes('Custom":3012') || msg.includes('Custom:3012')) {
+        msg = 'Round not created on-chain yet. Click "2. Ensure round on-chain" first, wait for success, then try "3. Enter round" again.';
+      } else if (msg.includes('Unexpected error') || msg.includes('WalletSendTransactionError')) {
+        msg += ` — Switch your wallet to ${useDevnet ? 'Devnet' : 'Mainnet'} (e.g. Phantom → Settings → Developer Settings → Change Network) so it matches the checkbox above.`;
+      }
+      setStatus({ ok: false, message: msg });
     } finally {
       setLoading(null);
     }
@@ -46,6 +60,54 @@ export default function ContractTestView() {
   const useDevnet = forceDevnet || SOLANA_NETWORK === 'devnet';
   const devnetConnection = useMemo(() => new Connection(clusterApiUrl('devnet')), []);
   const connectionForTx = useDevnet ? devnetConnection : connection;
+
+  // Fetch on-chain claim amount for the round ID in the claim box (for testing)
+  useEffect(() => {
+    const rid = claimRoundId.trim();
+    const roundId = rid ? parseInt(rid, 10) : NaN;
+    if (!publicKey || !rid || Number.isNaN(roundId)) {
+      setClaimAmountSol(null);
+      setClaimAmountStatus('idle');
+      return;
+    }
+    let cancelled = false;
+    setClaimAmountStatus('loading');
+    setClaimAmountSol(null);
+    fetchRoundAccountData(connectionForTx, roundId, SOLTRIVIA_PROGRAM_ID)
+      .then((round) => {
+        if (cancelled) return;
+        setClaimAmountStatus('done');
+        if (!round) {
+          setClaimAmountSol(null);
+          return;
+        }
+        if (!round.finalized) {
+          setClaimAmountSol(null);
+          return;
+        }
+        const walletStr = publicKey.toBase58();
+        const winnerIndex = round.winners.findIndex((w) => w === walletStr);
+        if (winnerIndex < 0) {
+          setClaimAmountSol(null);
+          return;
+        }
+        if (round.claimed[winnerIndex]) {
+          setClaimAmountSol(null);
+          return;
+        }
+        const lamports = round.prizeAmounts[winnerIndex];
+        setClaimAmountSol((lamports / 1_000_000_000).toFixed(6));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setClaimAmountStatus('done');
+          setClaimAmountSol(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [claimRoundId, publicKey, connectionForTx]);
 
   const getAuthorityPubkey = async () => {
     setLoading('Get authority');
@@ -102,6 +164,12 @@ export default function ContractTestView() {
       instructions: [ix],
     }).compileToV0Message();
     const tx = new VersionedTransaction(msg);
+    const sim = await connectionForTx.simulateTransaction(tx);
+    if (sim.value.err) {
+      throw new Error(
+        `Simulation failed: ${JSON.stringify(sim.value.err)}. Ensure program is deployed and round exists on ${useDevnet ? 'Devnet' : 'Mainnet'}, and wallet is on the same network.`
+      );
+    }
     const sig = await sendTransaction(tx, connectionForTx);
     setStatus({ ok: true, message: 'Enter round tx sent', sig });
   };
@@ -133,6 +201,12 @@ export default function ContractTestView() {
       instructions: [ix],
     }).compileToV0Message();
     const tx = new VersionedTransaction(msg);
+    const sim = await connectionForTx.simulateTransaction(tx);
+    if (sim.value.err) {
+      throw new Error(
+        `Simulation failed: ${JSON.stringify(sim.value.err)}. Ensure program is deployed and round/winners exist on ${useDevnet ? 'Devnet' : 'Mainnet'}, and wallet is on the same network.`
+      );
+    }
     const sig = await sendTransaction(tx, connectionForTx);
     setStatus({ ok: true, message: 'Claim tx sent', sig });
   };
@@ -161,8 +235,14 @@ export default function ContractTestView() {
       {!connected && (
         <p className="text-amber-400 mb-4">Connect wallet to use Enter round, Post winners, and Claim.</p>
       )}
-      {connected && useDevnet && (
-        <p className="text-amber-200/90 text-xs mb-2">Switch your wallet to <strong>Devnet</strong> (e.g. Phantom → Settings → Developer Settings → Change Network) so Enter round / Claim txs work.</p>
+      {connected && (
+        <p className="text-amber-200/90 text-xs mb-2">
+          {useDevnet ? (
+            <>Your wallet must be on <strong>Devnet</strong> for Enter round / Claim (Phantom → Settings → Developer Settings → Change Network).</>
+          ) : (
+            <>Your wallet must be on <strong>Mainnet</strong> for Enter round / Claim.</>
+          )}
+        </p>
       )}
 
       <div className="space-y-3">
@@ -211,22 +291,35 @@ export default function ContractTestView() {
         >
           {loading === 'Post winners (test)' ? '…' : '3b. Post winners (test) — then claim below'}
         </button>
-        <div className="flex gap-2 items-center">
-          <input
-            type="text"
-            placeholder="Round ID (u64) to claim"
-            value={claimRoundId}
-            onChange={(e) => setClaimRoundId(e.target.value)}
-            className="flex-1 bg-white/10 rounded px-3 py-2 text-sm font-mono placeholder-white/50"
-          />
-          <button
-            type="button"
-            disabled={!!loading || !connected}
-            onClick={() => run('Claim', claim)}
-            className="py-2 px-4 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 font-medium whitespace-nowrap"
-          >
-            {loading === 'Claim' ? '…' : '4. Claim'}
-          </button>
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2 items-center">
+            <input
+              type="text"
+              placeholder="Round ID (u64) to claim"
+              value={claimRoundId}
+              onChange={(e) => setClaimRoundId(e.target.value)}
+              className="flex-1 bg-white/10 rounded px-3 py-2 text-sm font-mono placeholder-white/50"
+            />
+            <button
+              type="button"
+              disabled={!!loading || !connected}
+              onClick={() => run('Claim', claim)}
+              className="py-2 px-4 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 font-medium whitespace-nowrap"
+            >
+              {loading === 'Claim' ? '…' : '4. Claim'}
+            </button>
+          </div>
+          {connected && claimRoundId.trim() && (
+            <p className="text-sm text-white/80">
+              {claimAmountStatus === 'loading' && 'Claim amount (on-chain): …'}
+              {claimAmountStatus === 'done' && claimAmountSol != null && (
+                <>Claim amount (on-chain): <span className="font-mono font-bold text-emerald-300">{claimAmountSol} SOL</span></>
+              )}
+              {claimAmountStatus === 'done' && claimAmountSol == null && (
+                <span className="text-amber-200/90">Round not found, not finalized, or you are not an unclaimed winner for this round.</span>
+              )}
+            </p>
+          )}
         </div>
       </div>
 

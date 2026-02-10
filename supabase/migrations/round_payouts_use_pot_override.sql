@@ -11,8 +11,11 @@ DECLARE
   v_winner_wallet TEXT;
   v_winner_score BIGINT;
   v_share NUMERIC[] := ARRAY[0.50, 0.20, 0.15, 0.10, 0.05];
+  v_prizes BIGINT[] := ARRAY[0::BIGINT, 0::BIGINT, 0::BIGINT, 0::BIGINT, 0::BIGINT];
+  v_sum_rest BIGINT := 0;
   v_row RECORD;
   v_rank INT := 0;
+  i INT;
 BEGIN
   -- Use passed pot when provided; otherwise read from daily_rounds (backward compatible)
   IF p_pot_lamports IS NOT NULL AND p_pot_lamports >= 0 THEN
@@ -57,7 +60,14 @@ BEGIN
       updated_at = EXCLUDED.updated_at;
   END IF;
 
-  -- Upsert top 5 into round_payouts (100% of pot split by rank)
+  -- Upsert top 5 into round_payouts (100% of pot split by rank).
+  -- Use same formula as on-chain: 50/20/15/10/5, dust to 1st so sum = pot exactly (matches contract).
+  FOR i IN 2..5 LOOP
+    v_prizes[i] := (v_pot_lamports * v_share[i])::BIGINT;
+    v_sum_rest := v_sum_rest + v_prizes[i];
+  END LOOP;
+  v_prizes[1] := v_pot_lamports - v_sum_rest;
+
   FOR v_row IN
     SELECT wallet_address, COALESCE(total_points, 0)::BIGINT AS scr
     FROM public.game_sessions
@@ -72,7 +82,7 @@ BEGIN
       v_rank,
       v_row.wallet_address,
       v_row.scr,
-      (v_pot_lamports * v_share[v_rank])::BIGINT,
+      v_prizes[v_rank],
       timezone('utc'::text, now())
     )
     ON CONFLICT (round_id, rank) DO UPDATE SET

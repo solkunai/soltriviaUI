@@ -10,7 +10,7 @@ const PATH_TO_VIEW: Record<string, View> = {
   '/profile': View.PROFILE,
   '/quiz': View.QUIZ,
   '/results': View.RESULTS,
-  '/contract-test': View.CONTRACT_TEST,
+  ...(import.meta.env.VITE_ENABLE_CONTRACT_TEST === 'true' ? { '/contract-test': View.CONTRACT_TEST } : {}),
   '/terms': View.TERMS,
   '/privacy': View.PRIVACY,
   '/admin': View.ADMIN,
@@ -24,7 +24,7 @@ function viewFromPath(): View {
 function pathForView(view: View): string {
   if (view === View.HOME) return '/';
   if (view === View.ADMIN) return '/admin';
-  if (view === View.CONTRACT_TEST) return '/contract-test';
+  if (view === View.CONTRACT_TEST) return import.meta.env.VITE_ENABLE_CONTRACT_TEST === 'true' ? '/contract-test' : '/';
   return '/' + view.toLowerCase();
 }
 import { useWallet, useConnection } from './src/contexts/WalletContext';
@@ -522,12 +522,16 @@ const App: React.FC = () => {
 
       let instructions;
       if (useContractEntry) {
-        // Ensure program is initialized once (idempotent). Then ensure current round exists on-chain.
+        // Ensure program is initialized once (idempotent). Then ensure current round exists on-chain (same date/round as client).
         await initializeProgram({
           revenueWallet: REVENUE_WALLET,
           useDevnet: SOLANA_NETWORK === 'devnet',
         });
-        await ensureRoundOnChain(SOLANA_NETWORK === 'devnet' ? { useDevnet: true } : undefined);
+        await ensureRoundOnChain(
+          SOLANA_NETWORK === 'devnet'
+            ? { date: today, round_number: roundNumber, useDevnet: true }
+            : { date: today, round_number: roundNumber }
+        );
         const roundIdU64 = contractRoundIdFromDateAndNumber(today, roundNumber);
         instructions = [
           buildEnterRoundInstruction(
