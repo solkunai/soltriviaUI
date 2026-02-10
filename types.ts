@@ -9,6 +9,7 @@ export enum View {
   QUIZ = 'QUIZ',
   RESULTS = 'RESULTS',
   ADMIN = 'ADMIN',
+  CONTRACT_TEST = 'CONTRACT_TEST',
   TERMS = 'TERMS',
   PRIVACY = 'PRIVACY'
 }

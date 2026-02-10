@@ -121,6 +121,58 @@ export interface UserQuestProgress {
   quest?: Quest;
 }
 
+// One-time: initialize the program's GameConfig (authority + revenue wallet). Idempotent.
+export async function initializeProgram(options?: { revenueWallet?: string; useDevnet?: boolean }): Promise<{ ok: boolean; message: string; signature?: string; initialized?: boolean }> {
+  const body: { revenue_wallet?: string; useDevnet?: boolean } = {};
+  if (options?.revenueWallet) body.revenue_wallet = options.revenueWallet;
+  if (options?.useDevnet) body.useDevnet = true;
+  const response = await fetch(`${FUNCTIONS_URL}/initialize-program`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to initialize program');
+  }
+  return response.json();
+}
+
+// Ensure current round exists on-chain (create_round if needed). Call before sending enter_round.
+export async function ensureRoundOnChain(options?: { date?: string; round_number?: number; useDevnet?: boolean }): Promise<{ ok: boolean; round_id_u64: number; created?: boolean; signature?: string }> {
+  const body: { date?: string; round_number?: number; useDevnet?: boolean } = { ...options };
+  if (options?.useDevnet) body.useDevnet = true;
+  const response = await fetch(`${FUNCTIONS_URL}/ensure-round-on-chain`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to ensure round on-chain');
+  }
+  return response.json();
+}
+
+// Test-only: Post 5 winners for a round (no DB). So you can claim on test page with one entrant.
+export async function postWinnersTest(options: { roundIdU64: number; winners: string[]; useDevnet?: boolean }): Promise<{ success: boolean; signature: string }> {
+  const body: { round_id_u64: number; winners: string[]; useDevnet?: boolean } = {
+    round_id_u64: options.roundIdU64,
+    winners: options.winners,
+  };
+  if (options.useDevnet) body.useDevnet = true;
+  const response = await fetch(`${FUNCTIONS_URL}/post-winners-test`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to post winners (test)');
+  }
+  return response.json();
+}
+
 // Start game (after payment)
 export async function startGame(
   walletAddress: string,
