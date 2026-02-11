@@ -286,6 +286,10 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                           <div className="text-[#14F195] text-sm font-black italic mt-0.5">{r.winner_score.toLocaleString()} XP</div>
                         </div>
                       </div>
+                    ) : (r.player_count ?? 0) > 0 ? (
+                      <div className="text-zinc-500 text-sm font-bold italic">
+                        No winners — need 5+ finishers for prizes. This round had {r.player_count} player{r.player_count === 1 ? '' : 's'}.
+                      </div>
                     ) : (
                       <div className="text-zinc-600 text-sm font-bold italic">No finishers yet (round in progress)</div>
                     )}

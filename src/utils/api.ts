@@ -173,6 +173,29 @@ export async function postWinnersTest(options: { roundIdU64: number; winners: st
   return response.json();
 }
 
+/** Refund entry fees for a round with < 5 players. Round must have status 'refund' in daily_rounds. */
+export async function refundRoundOnChain(
+  roundId: string,
+  options?: { useDevnet?: boolean }
+): Promise<{
+  success: boolean;
+  round_id: string;
+  contract_round_id: number;
+  recipients_count: number;
+  signatures: string[];
+}> {
+  const response = await fetch(`${FUNCTIONS_URL}/refund-round-on-chain`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ round_id: roundId, useDevnet: options?.useDevnet }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Refund failed');
+  }
+  return response.json();
+}
+
 // Start game (after payment)
 export async function startGame(
   walletAddress: string,

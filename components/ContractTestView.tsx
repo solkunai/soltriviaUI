@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { PublicKey, TransactionMessage, VersionedTransaction, Connection, clusterApiUrl } from '@solana/web3.js';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
-import { initializeProgram, ensureRoundOnChain, postWinnersTest, getAuthHeaders } from '../src/utils/api';
+import { initializeProgram, ensureRoundOnChain, postWinnersTest, refundRoundOnChain, getAuthHeaders } from '../src/utils/api';
 import {
   SOLTRIVIA_PROGRAM_ID,
   buildEnterRoundInstruction,
@@ -28,6 +28,7 @@ export default function ContractTestView() {
   const [forceDevnet, setForceDevnet] = useState(true);
   const [claimAmountSol, setClaimAmountSol] = useState<string | null>(null);
   const [claimAmountStatus, setClaimAmountStatus] = useState<'idle' | 'loading' | 'done'>('idle');
+  const [refundRoundId, setRefundRoundId] = useState('');
 
   const now = new Date();
   const today = now.toISOString().split('T')[0];
@@ -324,6 +325,35 @@ export default function ContractTestView() {
               )}
             </p>
           )}
+        </div>
+        <div className="flex flex-col gap-2 pt-2 border-t border-white/10">
+          <p className="text-sm text-white/70">Refund (round with &lt;5 players):</p>
+          <div className="flex gap-2 items-center">
+            <input
+              type="text"
+              placeholder="daily_rounds UUID (status=refund)"
+              value={refundRoundId}
+              onChange={(e) => setRefundRoundId(e.target.value)}
+              className="flex-1 bg-white/10 rounded px-3 py-2 text-sm font-mono placeholder-white/50"
+            />
+            <button
+              type="button"
+              disabled={!!loading || !refundRoundId.trim()}
+              onClick={() =>
+                run('Refund round', async () => {
+                  const res = await refundRoundOnChain(refundRoundId.trim(), { useDevnet });
+                  setStatus({
+                    ok: true,
+                    message: `Refunded ${res.recipients_count} recipient(s). ${res.signatures.length} tx(s).`,
+                    sig: res.signatures[0],
+                  });
+                })
+              }
+              className="py-2 px-4 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-50 font-medium whitespace-nowrap"
+            >
+              {loading === 'Refund round' ? '…' : '5. Refund round'}
+            </button>
+          </div>
         </div>
       </div>
 
