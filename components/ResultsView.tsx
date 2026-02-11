@@ -16,7 +16,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
   const canPlayAgain = roundEntriesLeft > 0 || (lives ?? 0) > 0;
 
   const handleShare = () => {
-    const text = `I just scored ${results.points}XP on SOL Trivia! 🧠⚡\n\nAccuracy: ${results.score}/10\nTime: ${results.time}s\n\nThink you're smarter? Join the arena on Solana!\nhttps://soltriviaui.onrender.com`;
+    const text = `I just scored ${results.points}XP on SOL Trivia! 🧠⚡\n\nAccuracy: ${results.score}/10\nTime: ${results.time}s\n\nThink you're smarter? Join the arena on Solana!\n\n@soltrivia_app\nhttps://soltrivia.app\n\n#SOLTrivia #Solana #Trivia #Web3 #Crypto`;
     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
