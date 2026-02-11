@@ -46,8 +46,12 @@ export default function ContractTestView() {
       if (cause instanceof Error) msg += ` — ${cause.message}`;
       if (msg.includes('Custom":6001') || msg.includes('Custom:6001')) {
         msg = 'Round already finalized (winners were posted). Use a round that has not had "Post winners" yet, or increase the round number above to use a new round.';
-      } else if (msg.includes('Custom":3012') || msg.includes('Custom:3012')) {
-        msg = 'Round not created on-chain yet. Click "2. Ensure round on-chain" first, wait for success, then try "3. Enter round" again.';
+      } else if (msg.includes('3012') || msg.includes('0xbc4') || msg.includes('AccountNotInitialized')) {
+        if (loading === 'Ensure round' || msg.includes('config') || msg.includes('CreateRound')) {
+          msg = 'Config not initialized. Click "1. Initialize program (once)" first, then try "2. Ensure round on-chain" again.';
+        } else {
+          msg = 'Round not created on-chain yet. Click "2. Ensure round on-chain" first, wait for success, then try "3. Enter round" again.';
+        }
       } else if (msg.includes('Unexpected error') || msg.includes('WalletSendTransactionError')) {
         msg += ` — Switch your wallet to ${useDevnet ? 'Devnet' : 'Mainnet'} (e.g. Phantom → Settings → Developer Settings → Change Network) so it matches the checkbox above.`;
       }
