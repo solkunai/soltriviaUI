@@ -74,6 +74,7 @@ const App: React.FC = () => {
   const [lives, setLives] = useState<number | null>(null);
   const [livesDisplayReady, setLivesDisplayReady] = useState(false); // false = show "—" for first 5s after connect
   const [roundEntriesUsed, setRoundEntriesUsed] = useState(0);
+  const [freeEntryNotification, setFreeEntryNotification] = useState<string | null>(null);
   const ROUND_ENTRIES_MAX = 2;
   
   // Quiz results state
@@ -204,6 +205,13 @@ const App: React.FC = () => {
       setShowWalletRequired(false);
     }
   }, [connected, showWalletRequired]);
+
+  // Auto-dismiss free-entry notification after 5 seconds
+  useEffect(() => {
+    if (!freeEntryNotification) return;
+    const t = setTimeout(() => setFreeEntryNotification(null), 5000);
+    return () => clearTimeout(t);
+  }, [freeEntryNotification]);
 
   // Admin access: Check URL on mount for /adminlogin
   useEffect(() => {
@@ -486,7 +494,7 @@ const App: React.FC = () => {
         .select('id')
         .eq('date', today)
         .eq('round_number', roundNumber)
-        .single();
+        .maybeSingle();
 
       if (currentRound) {
         const { data: roundSessions } = await supabase
@@ -517,7 +525,7 @@ const App: React.FC = () => {
         return;
       }
 
-      const useContractEntry = import.meta.env.VITE_USE_ENTRY_CONTRACT === 'true';
+      const useContractEntry = import.meta.env.VITE_USE_ENTRY_CONTRACT !== 'false';
       const { blockhash } = await connection.getLatestBlockhash();
 
       let instructions;
@@ -586,8 +594,12 @@ const App: React.FC = () => {
 
       // Optimistically update UI based on whether it was a free or paid entry
       if (gameResult.freeEntry) {
-        // Free entry — only increment round entries, do NOT touch lives
         setRoundEntriesUsed(prev => prev + 1);
+        if (gameResult.freeEntryReason === 'new_user') {
+          setFreeEntryNotification('Welcome! This play is free for new users.');
+        } else if (gameResult.freeEntryReason === 'welcome_bonus') {
+          setFreeEntryNotification(`You have ${gameResult.freeEntriesRemaining ?? 0} free play(s) left.`);
+        }
       } else if (!gameResult.resumed) {
         setLives(prev => Math.max(0, (prev ?? 0) - 1));
         setRoundEntriesUsed(prev => prev + 1);
@@ -706,17 +718,28 @@ const App: React.FC = () => {
         );
       case View.QUIZ:
         return connected ? (
-          <QuizView
-            sessionId={currentSessionId}
-            onFinish={handleQuizFinish}
-            onQuit={() => {
-              try {
-                sessionStorage.removeItem('quiz_session_id');
-              } catch (_) {}
-              setCurrentSessionId(null);
-              setCurrentView(View.PLAY);
-            }}
-          />
+          <div className="flex flex-col flex-1">
+            {freeEntryNotification && (
+              <div
+                className="mx-4 mt-2 mb-0 px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-sm text-center"
+                role="alert"
+              >
+                {freeEntryNotification}
+              </div>
+            )}
+            <QuizView
+              sessionId={currentSessionId}
+              onFinish={handleQuizFinish}
+              onQuit={() => {
+                try {
+                  sessionStorage.removeItem('quiz_session_id');
+                } catch (_) {}
+                setCurrentSessionId(null);
+                setFreeEntryNotification(null);
+                setCurrentView(View.PLAY);
+              }}
+            />
+          </div>
         ) : null;
       case View.RESULTS:
         return connected && lastGameResults ? (

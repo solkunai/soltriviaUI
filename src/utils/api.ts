@@ -177,7 +177,7 @@ export async function postWinnersTest(options: { roundIdU64: number; winners: st
 export async function startGame(
   walletAddress: string,
   entryTxSignature: string
-): Promise<{ sessionId: string; roundId: string; totalQuestions: number; resumed: boolean; freeEntry?: boolean; freeEntriesRemaining?: number }> {
+): Promise<{ sessionId: string; roundId: string; totalQuestions: number; resumed: boolean; freeEntry?: boolean; freeEntriesRemaining?: number; freeEntryReason?: 'new_user' | 'welcome_bonus' }> {
   const response = await fetch(`${FUNCTIONS_URL}/start-game`, {
     method: 'POST',
     headers: getAuthHeaders(),

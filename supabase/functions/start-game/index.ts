@@ -156,17 +156,57 @@ serve(async (req) => {
       );
     }
 
-    // Account keys (same order as meta.preBalances/postBalances)
-    const accountKeys = transaction.transaction.message.staticAccountKeys ??
-                       (transaction.transaction.message as any).accountKeys;
-    const accountKeyStrings: string[] = (accountKeys || []).map((k: PublicKey | string) =>
-      typeof k === 'string' ? k : k.toString()
-    );
-
     const meta = transaction.meta;
-    if (!meta || !meta.postBalances || !meta.preBalances || accountKeyStrings.length === 0) {
+    if (!meta || !meta.postBalances || !meta.preBalances) {
       return new Response(
         JSON.stringify({ error: 'Transaction missing balance or account key information' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Account keys in same order as meta.preBalances/postBalances.
+    // Prefer RPC-provided full list (message.accountKeys); else resolve versioned tx LUTs; else static keys.
+    let accountKeyStrings: string[] = [];
+    const msg = transaction.transaction.message as any;
+    const rpcAccountKeys = msg?.accountKeys;
+    if (Array.isArray(rpcAccountKeys) && rpcAccountKeys.length === meta.preBalances.length) {
+      accountKeyStrings = rpcAccountKeys.map((k: PublicKey | string) =>
+        typeof k === 'string' ? k : (k?.toString?.() ?? String(k))
+      );
+    }
+    if (accountKeyStrings.length === 0) {
+      const staticKeys = msg?.staticAccountKeys ?? msg?.accountKeys;
+      const lookups = msg?.addressTableLookups;
+      if (lookups && Array.isArray(lookups) && lookups.length > 0) {
+        try {
+          const lutAccounts = await Promise.all(
+            lookups.map((lut: { accountKey: PublicKey }) => connection.getAddressLookupTable(lut.accountKey))
+          );
+          const resolved = lutAccounts.map((a) => a.value).filter((v) => v != null);
+          const allKeys = msg?.getAccountKeys?.({ addressLookupTableAccounts: resolved });
+          if (allKeys?.keySegments) {
+            const segments = allKeys.keySegments();
+            accountKeyStrings = (segments ?? []).reduce((acc: string[], seg: PublicKey[]) => acc.concat(seg.map((k) => k.toString())), []);
+          }
+        } catch (lutErr) {
+          console.warn('Resolving address lookup tables failed, using static keys only:', lutErr);
+        }
+      }
+      if (accountKeyStrings.length === 0 && staticKeys?.length) {
+        accountKeyStrings = staticKeys.map((k: PublicKey | string) =>
+          typeof k === 'string' ? k : (k?.toString?.() ?? (k as PublicKey).toString())
+        );
+        const loaded = (transaction.meta as any)?.loadedAddresses;
+        if (loaded && (loaded.writable?.length || loaded.readonly?.length)) {
+          const writable = (loaded.writable || []).map((a: PublicKey | string) => typeof a === 'string' ? a : (a as PublicKey).toString());
+          const readonly = (loaded.readonly || []).map((a: PublicKey | string) => typeof a === 'string' ? a : (a as PublicKey).toString());
+          accountKeyStrings = accountKeyStrings.concat(writable).concat(readonly);
+        }
+      }
+    }
+    if (accountKeyStrings.length === 0) {
+      return new Response(
+        JSON.stringify({ error: 'Transaction account keys could not be resolved' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -177,18 +217,27 @@ serve(async (req) => {
     const roundNumber = Math.floor(now.getUTCHours() / 6);
     const roundIdU64 = contractRoundId(today, roundNumber);
     const vaultPda = getVaultPda(roundIdU64);
-    const vaultStr = vaultPda.toString();
+    const vaultStr = vaultPda.toBase58();
+    const revenueStr = new PublicKey(REVENUE_WALLET).toBase58();
+    const walletStrCanon = new PublicKey(walletAddress).toBase58();
+    const accountKeysCanon = accountKeyStrings.map((s) => {
+      try {
+        return new PublicKey(s).toBase58();
+      } catch {
+        return s;
+      }
+    });
 
-    // Path 1: Contract enter_round — player -0.0225, vault +0.02, revenue +0.0025
-    const playerIdx = accountKeyStrings.indexOf(walletAddress);
-    const vaultIdx = accountKeyStrings.indexOf(vaultStr);
-    const revenueIdx = accountKeyStrings.indexOf(REVENUE_WALLET);
+    // Path 1: Contract enter_round — player pays at least 0.0225 (+ tx fee), vault +0.02, revenue +0.0025
+    const playerIdx = accountKeysCanon.indexOf(walletStrCanon);
+    const vaultIdx = accountKeysCanon.indexOf(vaultStr);
+    const revenueIdx = accountKeysCanon.indexOf(revenueStr);
     if (playerIdx !== -1 && vaultIdx !== -1 && revenueIdx !== -1) {
       const playerChange = meta.postBalances[playerIdx] - meta.preBalances[playerIdx];
       const vaultChange = meta.postBalances[vaultIdx] - meta.preBalances[vaultIdx];
       const revenueChange = meta.postBalances[revenueIdx] - meta.preBalances[revenueIdx];
       if (
-        playerChange === -TOTAL_ENTRY_LAMPORTS &&
+        playerChange <= -TOTAL_ENTRY_LAMPORTS &&
         vaultChange === ENTRY_FEE_LAMPORTS &&
         revenueChange === TXN_FEE_LAMPORTS
       ) {
@@ -199,9 +248,10 @@ serve(async (req) => {
 
     // Path 2: Legacy two transfers — prize pool +0.02, revenue +0.0025
     if (!paymentVerified) {
-      const prizePoolIdx = accountKeyStrings.indexOf(PRIZE_POOL_WALLET);
-      const revIdx = accountKeyStrings.indexOf(REVENUE_WALLET);
-      const senderIdx = accountKeyStrings.indexOf(walletAddress);
+      const prizePoolStr = new PublicKey(PRIZE_POOL_WALLET).toBase58();
+      const prizePoolIdx = accountKeysCanon.indexOf(prizePoolStr);
+      const revIdx = accountKeysCanon.indexOf(revenueStr);
+      const senderIdx = accountKeysCanon.indexOf(walletStrCanon);
       if (senderIdx !== -1 && prizePoolIdx !== -1 && revIdx !== -1) {
         const prizePoolChange = meta.postBalances[prizePoolIdx] - meta.preBalances[prizePoolIdx];
         const revChange = meta.postBalances[revIdx] - meta.preBalances[revIdx];
@@ -213,9 +263,12 @@ serve(async (req) => {
     }
 
     if (!paymentVerified) {
+      const contractHint = (playerIdx === -1 || vaultIdx === -1 || revenueIdx === -1)
+        ? ` (contract: player=${playerIdx !== -1}, vault=${vaultIdx !== -1}, revenue=${revenueIdx !== -1}; keys=${accountKeyStrings.length}, balances=${meta.preBalances.length})`
+        : '';
       return new Response(
         JSON.stringify({
-          error: 'Payment verification failed: expected contract enter_round or legacy entry transfers',
+          error: 'Payment verification failed: expected contract enter_round or legacy entry transfers' + contractHint,
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -410,16 +463,24 @@ serve(async (req) => {
     }
 
     // --- FREE ENTRIES + PURCHASED LIVES ---
-    // Every wallet gets 2 free entries per round (deduct on ENTER, not on finish). Beyond that, purchased lives are required.
-    const FREE_ENTRIES_PER_ROUND = 2;
-    const entriesThisRound = entriesThisRoundForCap;
-    const isFreeEntry = TESTING_MODE || entriesThisRound < FREE_ENTRIES_PER_ROUND;
+    // One-time welcome: each wallet gets 2 free entries lifetime (not per round). After that, lives required.
+    const FREE_ENTRIES_LIFETIME = 2;
+    const { count: freeEntriesUsedLifetime } = await supabase
+      .from('game_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('wallet_address', walletAddress)
+      .eq('life_used', false);
+    const freeEntriesUsedSoFar = freeEntriesUsedLifetime ?? 0;
+    const isFreeEntry = TESTING_MODE || freeEntriesUsedSoFar < FREE_ENTRIES_LIFETIME;
+    const isFirstFreeEntry = isFreeEntry && freeEntriesUsedSoFar === 0;
+    const freeEntriesRemainingAfterThis = isFreeEntry ? FREE_ENTRIES_LIFETIME - freeEntriesUsedSoFar - 1 : 0;
 
     console.log('Entry type:', {
       walletAddress,
-      entriesThisRound,
-      freeEntriesPerRound: FREE_ENTRIES_PER_ROUND,
+      freeEntriesUsedLifetime: freeEntriesUsedSoFar,
+      freeEntriesLifetime: FREE_ENTRIES_LIFETIME,
       isFreeEntry,
+      isFirstFreeEntry,
       testingMode: TESTING_MODE,
     });
 
@@ -467,12 +528,12 @@ serve(async (req) => {
       if (livesCount <= 0) {
         return new Response(
           JSON.stringify({
-            error: 'Free entries used! Purchase lives for more plays this round.',
+            error: 'Your 2 free plays are used. Purchase lives for more plays!',
             code: 'NO_LIVES',
             canBuyLives: true,
             livesCount: 0,
-            freeEntriesUsed: entriesThisRound,
-            freeEntriesPerRound: FREE_ENTRIES_PER_ROUND,
+            freeEntriesUsedLifetime: freeEntriesUsedSoFar,
+            freeEntriesLifetime: FREE_ENTRIES_LIFETIME,
           }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -499,7 +560,7 @@ serve(async (req) => {
     }
 
     console.log(isFreeEntry
-      ? `✅ Free entry ${entriesThisRound + 1}/${FREE_ENTRIES_PER_ROUND} for ${walletAddress}`
+      ? `✅ Free entry (${freeEntriesUsedSoFar + 1}/${FREE_ENTRIES_LIFETIME} lifetime) for ${walletAddress}`
       : `✅ Purchased life used. Remaining: ${livesCount - 1}`
     );
 
@@ -559,7 +620,8 @@ serve(async (req) => {
         totalQuestions: 10,
         resumed: false,
         freeEntry: isFreeEntry,
-        freeEntriesRemaining: isFreeEntry ? FREE_ENTRIES_PER_ROUND - entriesThisRound - 1 : 0,
+        freeEntriesRemaining: freeEntriesRemainingAfterThis,
+        freeEntryReason: isFreeEntry ? (isFirstFreeEntry ? 'new_user' : 'welcome_bonus') : undefined,
         ...(isFreeEntry ? {} : { lifeUsed: true, livesRemaining: livesCount - 1 }),
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
