@@ -808,7 +808,8 @@ export async function fetchClaimableRoundPayouts(walletAddress: string): Promise
   const { data: payouts, error: payErr } = await supabase
     .from('round_payouts')
     .select('round_id, rank, prize_lamports')
-    .eq('wallet_address', walletAddress.trim());
+    .eq('wallet_address', walletAddress.trim())
+    .is('paid_at', null);
   if (payErr || !payouts?.length) return [];
   const roundIds = [...new Set((payouts as { round_id: string }[]).map((p) => p.round_id))];
   const { data: rounds, error: roundErr } = await supabase
@@ -866,6 +867,19 @@ export async function markPayoutPaid(
   const json = await res.json().catch(() => ({}));
   if (!res.ok) return { success: false, error: (json as { error?: string }).error || 'Failed to mark paid' };
   return { success: true };
+}
+
+/** Request posting round winners on-chain (Solana contract). Call when round has 5 payouts in DB but claim fails with RoundNotFinalized. */
+export async function postWinnersOnChain(roundId: string): Promise<{ success: boolean; signature?: string; error?: string }> {
+  const url = `${FUNCTIONS_URL}/post-winners-on-chain`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ round_id: roundId }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { success: false, error: (json as { error?: string }).error || 'Failed to post winners on-chain' };
+  return { success: true, signature: (json as { signature?: string }).signature };
 }
 
 /** Realtime subscription: pool and players update when someone enters. Uses polling when Realtime disabled. */

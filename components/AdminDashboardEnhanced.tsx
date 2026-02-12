@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../src/utils/supabase';
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, SUPABASE_FUNCTIONS_URL } from '../src/utils/constants';
-import { getAuthHeaders, fetchRoundPayouts, markPayoutPaid, type RoundPayout } from '../src/utils/api';
+import { getAuthHeaders, fetchRoundPayouts, markPayoutPaid, postWinnersOnChain, type RoundPayout } from '../src/utils/api';
 import { getSolanaRpcEndpoint } from '../src/utils/rpc';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
@@ -347,6 +347,7 @@ const RoundWinnersAdminView: React.FC = () => {
   const [marking, setMarking] = useState<string | null>(null);
   const [paidInput, setPaidInput] = useState<{ roundId: string; rank: number; value: string } | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [postingRoundId, setPostingRoundId] = useState<string | null>(null);
 
   const creds = getAdminCreds();
 
@@ -406,10 +407,41 @@ const RoundWinnersAdminView: React.FC = () => {
     );
   }
 
+  const roundsWithFivePayouts = rounds.filter((r) => payouts.filter((p) => p.round_id === r.id).length >= 5);
+
+  const handlePostWinnersOnChain = async (roundId: string) => {
+    setPostingRoundId(roundId);
+    const result = await postWinnersOnChain(roundId);
+    setPostingRoundId(null);
+    if (result.success) {
+      alert(`Winners posted on-chain. Tx: ${result.signature ?? 'ok'}`);
+    } else {
+      alert(result.error ?? 'Failed to post winners on-chain');
+    }
+  };
+
   return (
     <div className="py-6">
       <h2 className="text-xl font-black text-white mb-2">Round Winners (Top 5, 100% pot)</h2>
       <p className="text-zinc-500 text-sm mb-6">Copy wallet, mark as paid, and set prize amount paid. 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.</p>
+      {roundsWithFivePayouts.length > 0 && (
+        <div className="mb-6 p-4 bg-white/5 border border-white/10 rounded-xl">
+          <p className="text-zinc-400 text-xs font-black uppercase tracking-wider mb-3">Finalize on-chain (so winners can claim from vault)</p>
+          <div className="flex flex-wrap gap-2">
+            {roundsWithFivePayouts.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                disabled={postingRoundId !== null}
+                onClick={() => handlePostWinnersOnChain(r.id)}
+                className="px-3 py-1.5 bg-[#14F195]/20 hover:bg-[#14F195]/30 border border-[#14F195]/40 text-[#14F195] text-xs font-bold rounded disabled:opacity-50"
+              >
+                {postingRoundId === r.id ? '…' : `Post ${getRoundLabel(r.date, r.round_number)} on-chain`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
