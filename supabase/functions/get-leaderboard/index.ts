@@ -141,6 +141,11 @@ serve(async (req) => {
           }
         }
       }
+      const { data: allRounds } = await supabase.from('daily_rounds').select('pot_lamports, player_count');
+      if (allRounds?.length) {
+        potLamports = allRounds.reduce((sum: number, r: { pot_lamports?: number; player_count?: number }) => sum + (Number(r.pot_lamports) || 0), 0);
+        playerCount = allRounds.reduce((sum: number, r: { pot_lamports?: number; player_count?: number }) => sum + (Number(r.player_count) || 0), 0);
+      }
     } else if (period === 'daily') {
       // Use daily_rounds (same as start-game): current 6-hour window by date + round_number.
       // IMPORTANT: Leaderboard list is never filtered by wallet – all connected users see the same full list.
@@ -304,18 +309,17 @@ serve(async (req) => {
         }));
       }
 
-      // Get weekly pot total from rounds in last 7 days
-      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const weekAgoDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const { data: weekRounds } = await supabase
-        .from('rounds')
-        .select('pot_lamports, entry_count')
-        .gte('ends_at', weekAgo);
+        .from('daily_rounds')
+        .select('id, pot_lamports, player_count')
+        .gte('date', weekAgoDate);
 
-      if (weekRounds) {
-        potLamports = weekRounds.reduce((sum, r) => sum + (r.pot_lamports || 0), 0);
-        playerCount = weekRounds.reduce((sum, r) => sum + (r.entry_count || 0), 0);
+      if (weekRounds?.length) {
+        potLamports = weekRounds.reduce((sum: number, r: { pot_lamports?: number; player_count?: number }) => sum + (Number(r.pot_lamports) || 0), 0);
+        playerCount = weekRounds.reduce((sum: number, r: { pot_lamports?: number; player_count?: number }) => sum + (Number(r.player_count) || 0), 0);
       }
-    } else {
+    } else if (period === 'monthly') {
       // All-time: use get_alltime_leaderboard RPC
       const { data: allTimeStats } = await supabase
         .rpc('get_alltime_leaderboard', { p_limit: limit });
@@ -356,6 +360,15 @@ serve(async (req) => {
             userScore = userEntry.score;
           }
         }
+      }
+      const monthAgoDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const { data: monthRounds } = await supabase
+        .from('daily_rounds')
+        .select('id, pot_lamports, player_count')
+        .gte('date', monthAgoDate);
+      if (monthRounds?.length) {
+        potLamports = monthRounds.reduce((sum: number, r: { pot_lamports?: number; player_count?: number }) => sum + (Number(r.pot_lamports) || 0), 0);
+        playerCount = monthRounds.reduce((sum: number, r: { pot_lamports?: number; player_count?: number }) => sum + (Number(r.player_count) || 0), 0);
       }
     }
 
