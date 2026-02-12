@@ -9,7 +9,7 @@ function claimExplorerUrl(signature: string): string {
   const cluster = SOLANA_NETWORK === 'devnet' ? '?cluster=devnet' : '';
   return `${base}/tx/${signature}${cluster}`;
 }
-import { fetchClaimableRoundPayouts, initializeProgram, type ClaimablePayout } from '../src/utils/api';
+import { fetchClaimableRoundPayouts, initializeProgram, postWinnersOnChain, type ClaimablePayout } from '../src/utils/api';
 import { buildClaimPrizeInstruction } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
 
@@ -274,6 +274,28 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         instructions: [ix],
       }).compileToV0Message();
       const tx = new VersionedTransaction(msg);
+      const sim = await connection.simulateTransaction(tx);
+      if (sim.value.err) {
+        const err = sim.value.err as { InstructionError?: [number, { Custom?: number }] };
+        const customCode = err?.InstructionError?.[1]?.Custom;
+        if (customCode === 6002) {
+          const postRes = await postWinnersOnChain(payout.round_id);
+          if (postRes.success) {
+            alert('Prize finalization has been sent on-chain. Please try claiming again in about 30 seconds.');
+          } else {
+            alert(`Round not finalized on-chain. ${postRes.error ?? 'Please try again in a few minutes or contact support.'}`);
+          }
+          return;
+        }
+        if (customCode === 6003) {
+          setClaimablePayouts((prev) => prev.filter((p) => p.round_id !== payout.round_id));
+          alert('This prize has already been claimed.');
+          return;
+        }
+        throw new Error(
+          `Simulation failed: ${JSON.stringify(sim.value.err)}. Ensure you are a winner for this round and the round is finalized on-chain.`
+        );
+      }
       const sig = await sendTransaction(tx, connection);
       await connection.confirmTransaction(sig, 'confirmed');
       setClaimablePayouts((prev) => prev.filter((p) => p.round_id !== payout.round_id));

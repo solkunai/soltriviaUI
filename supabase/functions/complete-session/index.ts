@@ -296,22 +296,37 @@ serve(async (req) => {
         // Migration round_leaderboard_table.sql adds this; non-fatal if not yet run
       }
 
-      // Post winners on-chain (Sol Trivia contract) so winners can claim from the vault. Non-fatal if contract not in use.
-      try {
-        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-        const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-        const base = supabaseUrl.replace(/\/$/, '') + '/functions/v1';
-        const res = await fetch(base + '/post-winners-on-chain', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
-          body: JSON.stringify({ round_id: roundId }),
-        });
-        if (!res.ok) {
-          const t = await res.text();
-          console.warn('post-winners-on-chain failed (non-fatal):', res.status, t);
+      // Post winners on-chain (Sol Trivia contract) so winners can claim from the vault. Retry automatically on failure.
+      const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+      const base = supabaseUrl.replace(/\/$/, '') + '/functions/v1';
+      const maxAttempts = 4;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const res = await fetch(base + '/post-winners-on-chain', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+            body: JSON.stringify({ round_id: roundId }),
+          });
+          const text = await res.text();
+          if (res.ok) {
+            if (attempt > 1) console.log('post-winners-on-chain succeeded on attempt', attempt);
+            break;
+          }
+          if (attempt < maxAttempts) {
+            console.warn(`post-winners-on-chain attempt ${attempt} failed (${res.status}), retrying in 2s...`, text.slice(0, 200));
+            await new Promise((r) => setTimeout(r, 2000));
+          } else {
+            console.warn('post-winners-on-chain failed after', maxAttempts, 'attempts (non-fatal):', res.status, text.slice(0, 200));
+          }
+        } catch (e) {
+          if (attempt < maxAttempts) {
+            console.warn('post-winners-on-chain attempt', attempt, 'request failed, retrying in 2s...', e);
+            await new Promise((r) => setTimeout(r, 2000));
+          } else {
+            console.warn('post-winners-on-chain request failed after', maxAttempts, 'attempts (non-fatal):', e);
+          }
         }
-      } catch (e) {
-        console.warn('post-winners-on-chain request failed (non-fatal):', e);
       }
     }
 

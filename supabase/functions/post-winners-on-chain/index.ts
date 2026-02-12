@@ -141,8 +141,15 @@ serve(async (req) => {
     });
   } catch (e) {
     console.error('post-winners-on-chain error:', e);
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('RoundAlreadyFinalized') || msg.includes('0x1771')) {
+      return new Response(
+        JSON.stringify({ success: true, already_finalized: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : 'Server error' }),
+      JSON.stringify({ error: msg || 'Server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
