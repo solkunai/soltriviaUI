@@ -26,7 +26,7 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
           Terms of Service
         </h1>
         <p className="text-[#14F195] font-black uppercase tracking-widest text-[10px] italic mb-16 border-l-2 border-[#14F195] pl-4">
-          SOL Trivia Last Updated: February 7, 2026
+          SOL Trivia Last Updated: February 11, 2026
         </p>
 
         <div className="space-y-16">
@@ -46,7 +46,9 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
               <li>Pay an entry fee in SOL to participate in trivia rounds</li>
               <li>Answer crypto-related questions to earn points based on accuracy and speed</li>
               <li>Compete for prize pools distributed to top-performing players</li>
+              <li>Claim prizes directly on-chain via the SOL Trivia smart contract</li>
               <li>Purchase extra lives for additional entries within set limits</li>
+              <li>Try free Practice Runs to learn the game without risking SOL</li>
             </ul>
           </section>
 
@@ -81,7 +83,7 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
               <div>
                 <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest mb-3 flex items-center gap-3">4.4 Prize Distribution</h3>
                 <p className="text-white font-medium text-sm leading-relaxed opacity-90">
-                  100% of the prize pool is distributed to the top 5 finishers each round: 1st Place (50%), 2nd Place (20%), 3rd Place (15%), 4th Place (10%), 5th Place (5%). No platform fee is deducted from the pot. Prizes are currently distributed manually by the SOL Trivia team after each round. An in-app claim mechanism may be added in the future.
+                  100% of the prize pool is distributed to the top 5 finishers each round: 1st Place (50%), 2nd Place (20%), 3rd Place (15%), 4th Place (10%), 5th Place (5%). No platform fee is deducted from the pot. Winners are posted on-chain via the SOL Trivia smart contract at the end of each round, and eligible players can claim their prizes directly from the contract vault through the in-app claim button on their Profile page. On-chain claims are final and irreversible once confirmed on the Solana blockchain.
                 </p>
               </div>
             </div>
@@ -120,99 +122,143 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">7. Fair Play & Anti-Cheat</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">7. Practice Mode</h2>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              SOL Trivia offers a free Practice Run mode for users to experience the game before playing for real SOL:
+            </p>
+            <ul className="list-disc list-inside mt-4 space-y-2 marker:text-[#14F195] text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
+              <li><span className="text-[#14F195] font-black">No Wallet Required:</span> Practice runs do not require a connected wallet or any SOL payment.</li>
+              <li><span className="text-[#14F195] font-black">Daily Limit:</span> 5 practice runs per day per device. Usage resets at midnight local time.</li>
+              <li><span className="text-[#14F195] font-black">No Prizes:</span> Practice mode has no prize pool, no leaderboard ranking, and no SOL payouts.</li>
+              <li><span className="text-[#14F195] font-black">Separate Questions:</span> Practice mode uses a separate question pool from the paid game to maintain competitive integrity.</li>
+              <li><span className="text-[#14F195] font-black">Client-Side Scoring:</span> Practice answers are scored locally on your device. This data is not stored on our servers.</li>
+            </ul>
+            <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90 mt-4">
+              Practice mode usage limits are tracked via browser local storage and may be adjusted at our discretion.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">8. Fair Play & Anti-Cheat</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               Prohibited: Bots, scripts, bug exploits, collusion, or multiple wallets used to gain unfair advantage. We implement timing verification, entry limits, and question randomization to detect and prevent suspicious activity. Disqualification results in forfeited prizes and potential permanent bans. We reserve the right to void results and withhold payouts if manipulation is detected.
             </p>
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">8. User Accounts & Profiles</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-6">9. On-Chain Prize Claims</h2>
+            <div className="space-y-10">
+              <div>
+                <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest mb-3 flex items-center gap-3">9.1 Claiming Process</h3>
+                <p className="text-white font-medium text-sm leading-relaxed opacity-90">
+                  At the end of each round, winners are posted to the SOL Trivia smart contract on the Solana blockchain. Eligible players can claim their prize directly from the contract vault via the Claim button on their Profile page. Claims require a connected wallet and a valid Solana transaction signature.
+                </p>
+              </div>
+              <div>
+                <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest mb-3 flex items-center gap-3">9.2 Finality</h3>
+                <p className="text-white font-medium text-sm leading-relaxed opacity-90">
+                  On-chain prize claims are final and irreversible once confirmed on the Solana blockchain. SOL Trivia cannot reverse, modify, or reissue claimed prizes. You are responsible for ensuring you are claiming to the correct wallet.
+                </p>
+              </div>
+              <div>
+                <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest mb-3 flex items-center gap-3">9.3 Unclaimed Prizes</h3>
+                <p className="text-white font-medium text-sm leading-relaxed opacity-90">
+                  Prizes that remain unclaimed after the contract vault is closed for a given round may be forfeited. We recommend claiming prizes promptly after each round ends.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">10. User Accounts & Profiles</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               Your wallet address serves as your account identifier. You may optionally set a display name and upload an avatar image. Display names and avatars are publicly visible on leaderboards. You are responsible for any content you upload and must not use offensive, infringing, or misleading material. We reserve the right to remove inappropriate content.
             </p>
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">9. Intellectual Property</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">11. Intellectual Property</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               All content, design, code, and branding of SOL Trivia (including questions, graphics, logos, and UI) are owned by or licensed to SOL Trivia. You may not copy, modify, distribute, or create derivative works from our content without prior written consent. Your use of the App does not grant you any ownership rights in our intellectual property.
             </p>
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">10. Disclaimers</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">12. Disclaimers</h2>
             <div className="space-y-4">
               <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90 italic">
-                <span className="text-[#14F195] font-black not-italic">10.1 No Guarantees:</span> Outcomes depend on skill and competition; returns are not guaranteed. Past performance does not indicate future results.
+                <span className="text-[#14F195] font-black not-italic">12.1 No Guarantees:</span> Outcomes depend on skill and competition; returns are not guaranteed. Past performance does not indicate future results.
               </p>
               <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90 italic">
-                <span className="text-[#14F195] font-black not-italic">10.2 Crypto Risks:</span> Cryptocurrency values are volatile. Network congestion, RPC outages, or blockchain issues may affect gameplay or transaction processing. We are not responsible for losses caused by network conditions.
+                <span className="text-[#14F195] font-black not-italic">12.2 Crypto Risks:</span> Cryptocurrency values are volatile. Network congestion, RPC outages, or blockchain issues may affect gameplay or transaction processing. We are not responsible for losses caused by network conditions.
               </p>
               <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90 italic">
-                <span className="text-[#14F195] font-black not-italic">10.3 Service Availability:</span> The App is provided &quot;as is&quot; without warranty of any kind. We do not guarantee uninterrupted or error-free operation.
+                <span className="text-[#14F195] font-black not-italic">12.3 Service Availability:</span> The App is provided &quot;as is&quot; without warranty of any kind. We do not guarantee uninterrupted or error-free operation.
               </p>
               <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90 italic">
-                <span className="text-[#14F195] font-black not-italic">10.4 Entertainment:</span> SOL Trivia is intended for entertainment purposes only. Please spend responsibly and never risk more than you can afford to lose.
+                <span className="text-[#14F195] font-black not-italic">12.4 Smart Contract Risk:</span> Prize claims interact with a Solana smart contract. While we take care to ensure correctness, smart contracts carry inherent risk. We are not liable for losses caused by smart contract bugs, exploits, or blockchain-level issues.
+              </p>
+              <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90 italic">
+                <span className="text-[#14F195] font-black not-italic">12.5 Entertainment:</span> SOL Trivia is intended for entertainment purposes only. Please spend responsibly and never risk more than you can afford to lose.
               </p>
             </div>
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">11. Limitation of Liability</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">13. Limitation of Liability</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               To the maximum extent permitted by law, SOL Trivia and its operators shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the App, including but not limited to: loss of funds due to blockchain transactions, wallet security breaches, network failures, or smart contract interactions. Our total liability shall not exceed the amount of entry fees you have paid in the preceding 30 days.
             </p>
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">12. Modifications to Terms</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">14. Modifications to Terms</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               We reserve the right to modify these Terms at any time. Changes will be posted within the App with an updated &quot;Last Updated&quot; date. Continued use of the App after changes constitutes acceptance of the revised Terms. Material changes (such as fee adjustments or rule changes) will be announced in advance where possible.
             </p>
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">13. Termination</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">15. Termination</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               We may suspend or terminate your access to the App at any time for violation of these Terms, suspected fraud, or any other reason at our discretion. Upon termination, any unclaimed prizes may be forfeited. You may stop using the App and disconnect your wallet at any time.
             </p>
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">14. Not Financial Advice</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">16. Not Financial Advice</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               SOL Trivia is an entertainment platform only. Nothing in the App constitutes financial, investment, legal, or tax advice. You should consult qualified professionals before making decisions involving cryptocurrency. We make no representations about the value, stability, or future price of SOL or any digital asset.
             </p>
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">15. Tax Responsibility</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">17. Tax Responsibility</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               You are solely responsible for determining and fulfilling any tax obligations arising from your use of SOL Trivia, including but not limited to prizes won, entry fees paid, and any other transactions. We do not provide tax documentation and recommend consulting a tax professional.
             </p>
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">16. Indemnification</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">18. Indemnification</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               You agree to indemnify, defend, and hold harmless SOL Trivia, its operators, and affiliates from any claims, damages, losses, or expenses (including reasonable legal fees) arising from your use of the App, violation of these Terms, or infringement of any third party&apos;s rights.
             </p>
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">17. Governing Law & Disputes</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">19. Governing Law & Disputes</h2>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               These Terms shall be governed by and construed in accordance with applicable law. Any disputes arising from these Terms or your use of the App shall first be attempted to be resolved informally by contacting us. If informal resolution fails, disputes shall be resolved through binding arbitration on an individual basis. You waive any right to participate in class action lawsuits or class-wide arbitration.
             </p>
           </section>
 
           <section>
-            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">18. Contact</h2>
+            <h2 className="text-[#14F195] text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter mb-4">20. Contact</h2>
             <div className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               Email: <span className="text-[#14F195] font-black italic">soltriviateam@gmail.com</span><br /><br />
               By using SOL Trivia, you acknowledge you have read and agree to these Terms.<br /><br />
-              Effective Date: February 7, 2026.
+              Effective Date: February 11, 2026.
             </div>
           </section>
         </div>

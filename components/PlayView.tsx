@@ -6,9 +6,11 @@ interface PlayViewProps {
   roundEntriesMax: number;
   onStartQuiz: () => void;
   onOpenBuyLives: () => void;
+  onStartPractice: () => void;
+  practiceRunsLeft: number;
 }
 
-const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives }) => {
+const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives, onStartPractice, practiceRunsLeft }) => {
   const roundEntriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
   const livesNum = lives ?? 0;
   const canPlay = roundEntriesLeft > 0 || livesNum > 0;
@@ -53,6 +55,27 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
             {canPlay ? 'START TRIVIA' : 'GET EXTRA LIVES'}
           </span>
         </button>
+
+        {/* Practice Mode Button */}
+        <button
+          onClick={onStartPractice}
+          disabled={practiceRunsLeft <= 0}
+          className={`w-full h-20 bg-[#0A0A0A] border-2 rounded-full flex items-center justify-center px-10 active:scale-[0.98] transition-all group relative overflow-hidden ${practiceRunsLeft > 0 ? 'border-[#14F195]/30 hover:border-[#14F195]/60 shadow-[0_8px_30px_-8px_rgba(20,241,149,0.2)] hover:shadow-[0_12px_40px_-8px_rgba(20,241,149,0.4)]' : 'border-zinc-700/30 opacity-50 cursor-not-allowed'}`}
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#14F195]/5 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
+
+          <div className="flex items-center gap-3 relative z-10">
+            <svg className="w-6 h-6 text-[#14F195]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span className="text-[#14F195] text-2xl md:text-3xl font-[1000] italic leading-none uppercase tracking-tighter">
+              {practiceRunsLeft > 0 ? 'TRY PRACTICE RUN' : 'NO RUNS LEFT TODAY'}
+            </span>
+          </div>
+          {practiceRunsLeft > 0 && (
+            <span className="absolute right-6 text-zinc-500 text-xs font-black italic">{practiceRunsLeft}/5</span>
+          )}
+        </button>
         
         <div className="grid grid-cols-2 gap-4">
             <div className={`bg-[#0A0A0A] border p-4 rounded-full text-center backdrop-blur-md flex flex-col items-center justify-center ${roundEntriesLeft > 0 ? 'border-[#14F195]/20' : 'border-white/5'}`}>
@@ -73,7 +96,7 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
         </div>
 
         <p className="text-[9px] text-zinc-400 text-center font-black uppercase tracking-widest mt-2 px-6 opacity-60 italic leading-tight">
-          * 2 round entries reset every 6h. Entry fee: 0.0225 SOL. <span className="text-[#14F195]">Extra lives</span> are for plays beyond your round entries.
+          * 2 round entries reset every 6h. Entry fee: 0.0225 SOL. <span className="text-[#14F195]">Extra lives</span> are for plays beyond your round entries. <span className="text-[#14F195]">Practice runs</span>: 5 free per day.
         </p>
       </div>
     </div>

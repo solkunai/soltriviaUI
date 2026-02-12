@@ -940,6 +940,65 @@ export async function postWinnersOnChain(roundId: string): Promise<{ success: bo
   return { success: true, signature: (json as { signature?: string }).signature };
 }
 
+// ─── Practice Mode API (Free play, no wallet required) ───────────────────
+
+export interface PracticeGameResponse {
+  practice_session_id: string;
+  question_ids: string[];
+  total_questions: number;
+  mode: 'practice';
+}
+
+export interface PracticeQuestion {
+  index: number;
+  id: string;
+  category: string;
+  difficulty: string;
+  text: string;
+  options: string[];
+  correct_index: number; // Included for client-side scoring
+}
+
+export interface GetPracticeQuestionsResponse {
+  questions: PracticeQuestion[];
+  total_questions: number;
+  time_per_question: number;
+  mode: 'practice';
+}
+
+/** Start a practice game session (no payment required) */
+export async function startPracticeGame(): Promise<PracticeGameResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/practice-game`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({}),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to start practice game');
+  }
+
+  return response.json();
+}
+
+/** Get practice questions for a practice session */
+export async function getPracticeQuestions(question_ids: string[]): Promise<GetPracticeQuestionsResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/get-practice-questions`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ question_ids }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to get practice questions');
+  }
+
+  return response.json();
+}
+
+// ─── Realtime Subscriptions ───────────────────────────────────────────────
 /** Realtime subscription: pool and players update when someone enters. Uses polling when Realtime disabled. */
 export function subscribeCurrentRoundStats(
   onStats: (stats: CurrentRoundStats) => void

@@ -10,6 +10,8 @@ const PATH_TO_VIEW: Record<string, View> = {
   '/profile': View.PROFILE,
   '/quiz': View.QUIZ,
   '/results': View.RESULTS,
+  '/practice': View.PRACTICE,
+  '/practice-results': View.PRACTICE_RESULTS,
   ...(import.meta.env.VITE_ENABLE_CONTRACT_TEST === 'true' ? { '/contract-test': View.CONTRACT_TEST } : {}),
   '/terms': View.TERMS,
   '/privacy': View.PRIVACY,
@@ -40,6 +42,7 @@ import BuyLivesModal from './components/BuyLivesModal';
 import EditProfileModal from './components/EditProfileModal';
 import QuizView from './components/QuizView';
 import ResultsView from './components/ResultsView';
+import PracticeResultsView from './components/PracticeResultsView';
 import WalletRequiredModal from './components/WalletRequiredModal';
 import LegalDisclaimerModal from './components/LegalDisclaimerModal';
 import WalletConnectButton from './components/WalletConnectButton';
@@ -49,7 +52,7 @@ import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
 import LoadingScreen from './components/LoadingScreen';
 import ContractTestView from './components/ContractTestView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame } from './src/utils/api';
 import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK } from './src/utils/constants';
 import { buildEnterRoundInstruction, contractRoundIdFromDateAndNumber } from './src/utils/soltriviaContract';
 
@@ -82,6 +85,10 @@ const App: React.FC = () => {
   
   // Current game session ID
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+
+  // Practice mode state
+  const [practiceQuestionIds, setPracticeQuestionIds] = useState<string[] | null>(null);
+  const [practiceResults, setPracticeResults] = useState<{ score: number; points: number; time: number } | null>(null);
 
   // Ref: current wallet so async fetch can avoid applying stale result for a different wallet (reload race)
   const currentWalletRef = useRef<string | null>(null);
@@ -400,6 +407,52 @@ const App: React.FC = () => {
     }
   };
 
+  const PRACTICE_DAILY_LIMIT = 5;
+
+  const getPracticeUsageToday = (): number => {
+    try {
+      const stored = localStorage.getItem('practice_usage');
+      if (!stored) return 0;
+      const { date, count } = JSON.parse(stored);
+      const today = new Date().toISOString().split('T')[0];
+      return date === today ? count : 0;
+    } catch { return 0; }
+  };
+
+  const incrementPracticeUsage = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const current = getPracticeUsageToday();
+    localStorage.setItem('practice_usage', JSON.stringify({ date: today, count: current + 1 }));
+  };
+
+  const practiceRunsLeft = PRACTICE_DAILY_LIMIT - getPracticeUsageToday();
+
+  const handleStartPractice = async () => {
+    if (practiceRunsLeft <= 0) {
+      alert('You\'ve used all 5 practice runs for today. Come back tomorrow or play for real SOL!');
+      return;
+    }
+    try {
+      console.log('🎮 Starting practice mode...');
+      const response = await startPracticeGame();
+      console.log('✅ Practice session created:', response.practice_session_id);
+      incrementPracticeUsage();
+      setPracticeQuestionIds(response.question_ids);
+      setPracticeResults(null);
+      setCurrentView(View.PRACTICE);
+    } catch (err: any) {
+      console.error('❌ Failed to start practice game:', err);
+      alert('Failed to start practice mode. Please try again.');
+    }
+  };
+
+  const handlePracticeFinish = (correctCount: number, points: number, totalTimeSeconds: number) => {
+    console.log('🎮 Practice finished:', { correctCount, points, totalTimeSeconds });
+    setPracticeResults({ score: correctCount, points, time: totalTimeSeconds });
+    setPracticeQuestionIds(null);
+    setCurrentView(View.PRACTICE_RESULTS);
+  };
+
   const handleQuizFinish = async (correctCount: number, points: number, totalTimeSeconds: number) => {
     const sessionIdToComplete = currentSessionId;
     // Keep currentSessionId set until we switch view so QuizView doesn't see null and log an error
@@ -647,7 +700,7 @@ const App: React.FC = () => {
     switch (currentView) {
       case View.HOME:
         return (
-          <HomeView 
+          <HomeView
             lives={livesDisplayReady ? lives : null}
             onEnterTrivia={() => {
               if (!connected) {
@@ -655,7 +708,7 @@ const App: React.FC = () => {
               } else {
                 setCurrentView(View.PLAY);
               }
-            }} 
+            }}
             onOpenGuide={() => setIsGuideOpen(true)}
             onOpenBuyLives={() => {
               if (!connected) {
@@ -664,6 +717,8 @@ const App: React.FC = () => {
                 setIsBuyLivesOpen(true);
               }
             }}
+            onStartPractice={handleStartPractice}
+            practiceRunsLeft={practiceRunsLeft}
           />
         );
       case View.LEADERBOARD:
@@ -678,7 +733,7 @@ const App: React.FC = () => {
       case View.PLAY:
         return <PlayView lives={livesDisplayReady ? lives : null} roundEntriesUsed={roundEntriesUsed} roundEntriesMax={ROUND_ENTRIES_MAX} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => {
           if (!connected) { setShowWalletRequired(true); } else { setIsBuyLivesOpen(true); }
-        }} />;
+        }} onStartPractice={handleStartPractice} practiceRunsLeft={practiceRunsLeft} />;
       case View.QUESTS:
         return <QuestsView onGoToProfile={() => setCurrentView(View.PROFILE)} onOpenGuide={() => setIsGuideOpen(true)} />;
       case View.PROFILE:
@@ -743,14 +798,53 @@ const App: React.FC = () => {
         ) : null;
       case View.RESULTS:
         return connected && lastGameResults ? (
-          <ResultsView 
-            results={lastGameResults} 
+          <ResultsView
+            results={lastGameResults}
             lives={livesDisplayReady ? lives : null}
             roundEntriesLeft={Math.max(0, ROUND_ENTRIES_MAX - roundEntriesUsed)}
             roundEntriesMax={ROUND_ENTRIES_MAX}
-            onRestart={handleStartQuiz} 
-            onGoHome={() => setCurrentView(View.HOME)} 
+            onRestart={handleStartQuiz}
+            onGoHome={() => setCurrentView(View.HOME)}
             onBuyLives={() => setIsBuyLivesOpen(true)}
+          />
+        ) : null;
+      case View.PRACTICE:
+        return practiceQuestionIds ? (
+          <QuizView
+            sessionId={null}
+            mode="practice"
+            practiceQuestionIds={practiceQuestionIds}
+            onFinish={handlePracticeFinish}
+            onQuit={() => {
+              setPracticeQuestionIds(null);
+              setCurrentView(View.PLAY);
+            }}
+          />
+        ) : null;
+      case View.PRACTICE_RESULTS:
+        return practiceResults ? (
+          <PracticeResultsView
+            score={practiceResults.score}
+            totalQuestions={10}
+            points={practiceResults.points}
+            totalTime={practiceResults.time}
+            onPlayForReal={() => {
+              setPracticeResults(null);
+              setCurrentView(View.PLAY);
+              if (connected) {
+                handleStartQuiz();
+              } else {
+                setShowWalletRequired(true);
+              }
+            }}
+            onTryAgain={() => {
+              setPracticeResults(null);
+              handleStartPractice();
+            }}
+            onBackToHome={() => {
+              setPracticeResults(null);
+              setCurrentView(View.HOME);
+            }}
           />
         ) : null;
       case View.TERMS:
@@ -763,23 +857,25 @@ const App: React.FC = () => {
         return <ContractTestView />;
       default:
         return (
-          <HomeView 
-            lives={livesDisplayReady ? lives : null} 
+          <HomeView
+            lives={livesDisplayReady ? lives : null}
             onEnterTrivia={() => {
               if (!connected) {
                 setShowWalletRequired(true);
               } else {
                 setCurrentView(View.PLAY);
               }
-            }} 
-            onOpenGuide={() => setIsGuideOpen(true)} 
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
             onOpenBuyLives={() => {
               if (!connected) {
                 setShowWalletRequired(true);
               } else {
                 setIsBuyLivesOpen(true);
               }
-            }} 
+            }}
+            onStartPractice={handleStartPractice}
+            practiceRunsLeft={practiceRunsLeft}
           />
         );
     }

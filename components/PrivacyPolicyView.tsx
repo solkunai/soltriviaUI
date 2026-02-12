@@ -26,7 +26,7 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
           Privacy Policy
         </h1>
         <p className="text-[#14F195] font-black uppercase tracking-widest text-[10px] italic mb-16 border-l-2 border-[#14F195] pl-4">
-          SOL Trivia Last Updated: February 7, 2026
+          SOL Trivia Last Updated: February 11, 2026
         </p>
 
         <div className="space-y-16">
@@ -91,6 +91,16 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
                 <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
                   <li>Session identifiers stored temporarily in your browser to maintain game state during active play.</li>
                   <li>Wallet connection preferences for reconnecting on return visits.</li>
+                  <li><span className="text-white font-bold italic">Practice Run Usage:</span> Daily practice run count and date stored locally to enforce the 5-per-day limit. This data never leaves your device.</li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">Practice Mode Data</h3>
+                <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
+                  <li>Practice mode does not require a wallet connection and collects no wallet information.</li>
+                  <li>Practice answers are scored client-side (on your device) and are not sent to or stored on our servers.</li>
+                  <li>Practice questions are fetched from a separate database table that is isolated from the paid game.</li>
                 </ul>
               </div>
             </div>
@@ -101,7 +111,7 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
             <div className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               We use collected information to:
               <ul className="list-disc list-inside mt-4 space-y-2 marker:text-[#14F195]">
-                <li>Process entry fees, lives purchases, and distribute prizes</li>
+                <li>Process entry fees, lives purchases, and distribute prizes (including on-chain claim transactions)</li>
                 <li>Display leaderboards and rankings with your display name or wallet address</li>
                 <li>Calculate scores, streaks, and track quest/achievement progress</li>
                 <li>Enforce entry limits (5 per round, 20 per 24 hours) to ensure fair play</li>
@@ -190,7 +200,7 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
             <div className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               If you have questions about this Privacy Policy, contact us at:<br /><br />
               <span className="text-[#14F195] font-black italic">Email: soltriviateam@gmail.com</span><br /><br />
-              Effective Date: February 7, 2026.
+              Effective Date: February 11, 2026.
             </div>
           </section>
         </div>
