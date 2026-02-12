@@ -11,7 +11,9 @@ export enum View {
   ADMIN = 'ADMIN',
   CONTRACT_TEST = 'CONTRACT_TEST',
   TERMS = 'TERMS',
-  PRIVACY = 'PRIVACY'
+  PRIVACY = 'PRIVACY',
+  PRACTICE = 'PRACTICE',
+  PRACTICE_RESULTS = 'PRACTICE_RESULTS'
 }
 
 export interface Player {

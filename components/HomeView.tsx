@@ -9,9 +9,11 @@ interface HomeViewProps {
   onEnterTrivia: () => void;
   onOpenGuide: () => void;
   onOpenBuyLives: () => void;
+  onStartPractice: () => void;
+  practiceRunsLeft: number;
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives }) => {
+const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives, onStartPractice, practiceRunsLeft }) => {
   const { publicKey, connected } = useWallet();
   const { connection } = useConnection();
   const [balance, setBalance] = useState<number | null>(null);
@@ -192,26 +194,47 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
             </div>
 
             {/* Play Now Area */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full sm:max-w-2xl">
-              <button 
-                onClick={onEnterTrivia}
-                className="flex-1 h-20 md:h-24 bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#14F195] rounded-full flex items-center justify-between px-8 md:px-10 active:scale-[0.98] transition-all group shadow-[0_15px_40px_-10px_rgba(153,69,255,0.4)] hover:shadow-[0_20px_60px_-10px_rgba(20,241,149,0.5)] border-t border-white/20 relative overflow-hidden"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
-                
-                <div className="flex flex-col items-start relative z-10">
-                  <span className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] text-white/60 mb-1 group-hover:text-white/80 transition-colors">INITIALIZE ARENA</span>
-                  <div className="text-white text-2xl md:text-4xl font-[1000] italic leading-none uppercase tracking-tighter">
-                    PLAY NOW
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-4 w-full sm:max-w-2xl">
+              {/* Buttons Stack - always vertical */}
+              <div className="flex flex-col gap-3 flex-1">
+                <button
+                  onClick={onEnterTrivia}
+                  className="h-20 md:h-24 bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#14F195] rounded-full flex items-center justify-between px-8 md:px-10 active:scale-[0.98] transition-all group shadow-[0_15px_40px_-10px_rgba(153,69,255,0.4)] hover:shadow-[0_20px_60px_-10px_rgba(20,241,149,0.5)] border-t border-white/20 relative overflow-hidden"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
+
+                  <div className="flex flex-col items-start relative z-10">
+                    <span className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] text-white/60 mb-1 group-hover:text-white/80 transition-colors">COMPETE FOR SOL</span>
+                    <div className="text-white text-2xl md:text-4xl font-[1000] italic leading-none uppercase tracking-tighter">
+                      PLAY FOR SOL
+                    </div>
                   </div>
-                </div>
-                
-                <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center transition-all group-hover:bg-white/20 group-hover:scale-110 relative z-10">
-                  <svg className="w-5 h-5 md:w-6 md:h-6 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                </div>
-              </button>
+
+                  <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center transition-all group-hover:bg-white/20 group-hover:scale-110 relative z-10">
+                    <svg className="w-5 h-5 md:w-6 md:h-6 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                  </div>
+                </button>
+
+                {/* Practice Mode */}
+                <button
+                  onClick={onStartPractice}
+                  disabled={practiceRunsLeft <= 0}
+                  className={`h-14 md:h-16 bg-[#0A0A0A] border-2 rounded-full flex items-center justify-between px-6 md:px-8 active:scale-[0.98] transition-all group relative overflow-hidden ${practiceRunsLeft > 0 ? 'border-[#14F195]/30 hover:border-[#14F195]/60 shadow-[0_8px_30px_-8px_rgba(20,241,149,0.15)] hover:shadow-[0_12px_40px_-8px_rgba(20,241,149,0.3)]' : 'border-zinc-700/30 opacity-50 cursor-not-allowed'}`}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#14F195]/5 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
+                  <div className="flex flex-col items-start relative z-10">
+                    <span className="text-[7px] md:text-[8px] font-black uppercase tracking-[0.3em] text-[#14F195]/50 mb-0.5">FREE TO PLAY</span>
+                    <div className="text-[#14F195] text-lg md:text-2xl font-[1000] italic leading-none uppercase tracking-tighter">
+                      {practiceRunsLeft > 0 ? 'TRY PRACTICE RUN' : 'NO RUNS LEFT TODAY'}
+                    </div>
+                  </div>
+                  {practiceRunsLeft > 0 && (
+                    <span className="text-zinc-500 text-[10px] font-black italic relative z-10">{practiceRunsLeft}/5</span>
+                  )}
+                </button>
+              </div>
 
               <div className="bg-[#0A0A0A] border border-white/5 rounded-xl p-4 flex flex-col justify-center gap-2 min-w-[180px] shadow-xl">
                 <div className="mb-0.5">

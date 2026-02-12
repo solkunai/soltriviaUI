@@ -2,13 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Question } from '../types';
 import { HapticFeedback } from '../src/utils/haptics';
 import { playCorrectSound, playWrongSound } from '../src/utils/sounds';
-import { getQuestions, submitAnswer } from '../src/utils/api';
+import { getQuestions, submitAnswer, getPracticeQuestions, type PracticeQuestion } from '../src/utils/api';
 import { supabase } from '../src/utils/supabase';
 
 interface QuizViewProps {
   sessionId: string | null;
   onFinish: (score: number, points: number, totalTime: number) => void;
   onQuit: () => void;
+  mode?: 'paid' | 'practice';
+  practiceQuestionIds?: string[];
 }
 
 const BASE_POINTS = 500;
@@ -17,7 +19,8 @@ const SPEED_BONUS_DECAY_SEC = 7; // Match per-question timer
 const SECONDS_PER_QUESTION = 7; // Timer shown to user; auto-submit wrong if no answer
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const; // Display labels; indices 0–3 sent to API
 
-const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
+const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode = 'paid', practiceQuestionIds }) => {
+  const isPracticeMode = mode === 'practice';
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,58 +41,81 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
   // Fetch questions from Supabase when component mounts
   useEffect(() => {
     const fetchQuestions = async () => {
-      if (!sessionId) {
+      if (!sessionId && !isPracticeMode) {
         // Parent may have cleared session after quiz finished; avoid error state and noisy log
         setLoading(false);
         return;
       }
 
-      console.log('🎮 QuizView mounted with session:', sessionId);
+      console.log('🎮 QuizView mounted with session:', isPracticeMode ? 'PRACTICE' : sessionId);
 
       try {
         setLoading(true);
-        const response = await getQuestions(sessionId);
-        console.log('📚 Questions fetched:', response.questions.length, 'questions');
-        
-        // Transform API response to Question format; keep real id (UUID string) for submit-answer
-        // NOTE: correct_index is NOT sent from API for security (prevents cheating)
-        // Answer validation happens server-side only; option indices 0-3 match DB order
-        const transformedQuestions: Question[] = response.questions.map((q: any, idx: number) => ({
-          id: q.id != null ? String(q.id) : String(idx),
-          text: q.text || q.question || '',
-          options: Array.isArray(q.options) ? [...q.options] : (Array.isArray(q.answers) ? [...q.answers] : []),
-          correctAnswer: -1, // Never exposed to client - validated server-side only
-        }));
 
-        if (transformedQuestions.length === 0) {
-          setError('No questions available');
-          return;
+        if (isPracticeMode) {
+          // Practice mode: fetch questions with correct answers included
+          if (!practiceQuestionIds || practiceQuestionIds.length === 0) {
+            setError('No practice questions available');
+            return;
+          }
+
+          const response = await getPracticeQuestions(practiceQuestionIds);
+          console.log('📚 Practice questions fetched:', response.questions.length, 'questions');
+
+          const transformedQuestions: Question[] = response.questions.map((q: PracticeQuestion) => ({
+            id: String(q.id),
+            text: q.text || '',
+            options: [...q.options],
+            correctAnswer: q.correct_index, // Include correct answer for client-side scoring
+          }));
+
+          setQuestions(transformedQuestions);
+          setError(null);
+        } else {
+          // Paid mode: fetch questions without correct answers (server-side validation)
+          const response = await getQuestions(sessionId!);
+          console.log('📚 Questions fetched:', response.questions.length, 'questions');
+
+          // Transform API response to Question format; keep real id (UUID string) for submit-answer
+          // NOTE: correct_index is NOT sent from API for security (prevents cheating)
+          // Answer validation happens server-side only; option indices 0-3 match DB order
+          const transformedQuestions: Question[] = response.questions.map((q: any, idx: number) => ({
+            id: q.id != null ? String(q.id) : String(idx),
+            text: q.text || q.question || '',
+            options: Array.isArray(q.options) ? [...q.options] : (Array.isArray(q.answers) ? [...q.answers] : []),
+            correctAnswer: -1, // Never exposed to client - validated server-side only
+          }));
+
+          if (transformedQuestions.length === 0) {
+            setError('No questions available');
+            return;
+          }
+
+          // For resumed sessions, the backend may have advanced current_question_index
+          // beyond 0. Fetch it so we start from the right question instead of re-asking
+          // already-answered questions (which causes QUESTION_INDEX_MISMATCH errors).
+          const { data: sessionRow } = await supabase
+            .from('game_sessions')
+            .select('current_question_index')
+            .eq('id', sessionId!)
+            .single();
+
+          const startIdx = sessionRow?.current_question_index || 0;
+          if (startIdx >= transformedQuestions.length) {
+            // All questions were already answered but session wasn't properly completed.
+            // Auto-finish with 0 score so the user can start a fresh game.
+            console.log('⚠️ Resumed session already answered all questions, auto-finishing');
+            onFinish(0, 0, 0);
+            return;
+          }
+          if (startIdx > 0) {
+            console.log(`🔄 Resuming session at question ${startIdx + 1}/${transformedQuestions.length}`);
+            setCurrentIdx(startIdx);
+          }
+
+          setQuestions(transformedQuestions);
+          setError(null);
         }
-
-        // For resumed sessions, the backend may have advanced current_question_index
-        // beyond 0. Fetch it so we start from the right question instead of re-asking
-        // already-answered questions (which causes QUESTION_INDEX_MISMATCH errors).
-        const { data: sessionRow } = await supabase
-          .from('game_sessions')
-          .select('current_question_index')
-          .eq('id', sessionId)
-          .single();
-
-        const startIdx = sessionRow?.current_question_index || 0;
-        if (startIdx >= transformedQuestions.length) {
-          // All questions were already answered but session wasn't properly completed.
-          // Auto-finish with 0 score so the user can start a fresh game.
-          console.log('⚠️ Resumed session already answered all questions, auto-finishing');
-          onFinish(0, 0, 0);
-          return;
-        }
-        if (startIdx > 0) {
-          console.log(`🔄 Resuming session at question ${startIdx + 1}/${transformedQuestions.length}`);
-          setCurrentIdx(startIdx);
-        }
-
-        setQuestions(transformedQuestions);
-        setError(null);
       } catch (err: any) {
         console.error('Failed to fetch questions:', err);
         setError(err.message || 'Failed to load questions');
@@ -99,7 +125,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
     };
 
     fetchQuestions();
-  }, [sessionId]);
+  }, [sessionId, isPracticeMode, practiceQuestionIds]);
 
   useEffect(() => {
     if (questions.length > 0) {
@@ -135,7 +161,8 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
   // When questionTimeLeft hits 0, submit time_expired and advance
   const timeoutFiredRef = useRef(false);
   useEffect(() => {
-    if (questionTimeLeft !== 0 || selectedOption !== null || timedOut || !sessionId || questions.length === 0) return;
+    if (questionTimeLeft !== 0 || selectedOption !== null || timedOut || questions.length === 0) return;
+    if (!isPracticeMode && !sessionId) return;
     if (timeoutFiredRef.current) return;
     timeoutFiredRef.current = true;
     setTimedOut(true);
@@ -143,13 +170,16 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
     const timeTaken = (Date.now() - questionStartTime) / 1000;
     (async () => {
       try {
-        await submitAnswer({
-          session_id: sessionId,
-          question_id: currentQuestion.id.toString(),
-          question_index: currentIdx,
-          time_taken_ms: Math.floor(timeTaken * 1000),
-          time_expired: true,
-        });
+        // Only submit to backend in paid mode
+        if (!isPracticeMode && sessionId) {
+          await submitAnswer({
+            session_id: sessionId,
+            question_id: currentQuestion.id.toString(),
+            question_index: currentIdx,
+            time_taken_ms: Math.floor(timeTaken * 1000),
+            time_expired: true,
+          });
+        }
         if (questionTimerRef.current) clearInterval(questionTimerRef.current);
         questionTimerRef.current = null;
         HapticFeedback.error();
@@ -175,57 +205,76 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
         setTimedOut(false);
       }
     })();
-  }, [questionTimeLeft, selectedOption, timedOut, sessionId, questions, currentIdx, questionStartTime, score, totalPoints, sessionTimer, onFinish]);
+  }, [questionTimeLeft, selectedOption, timedOut, sessionId, isPracticeMode, questions, currentIdx, questionStartTime, score, totalPoints, sessionTimer, onFinish]);
 
   const handleOptionSelect = async (optionIdx: number) => {
-    if (selectedOption !== null || !sessionId || questions.length === 0) return;
-    
+    if (selectedOption !== null || questions.length === 0) return;
+    if (!isPracticeMode && !sessionId) return;
+
     const timeTaken = (Date.now() - questionStartTime) / 1000;
     setSelectedOption(optionIdx);
-    
+
     const currentQuestion = questions[currentIdx];
-    
-    // Submit answer to backend for validation (ONLY source of truth)
+
     let correct = false;
     let pointsEarned = 0;
     let actualCorrectIndex = -1;
-    
-    try {
-      if (!sessionId || !currentQuestion.id) {
-        throw new Error('Missing session or question ID');
+
+    if (isPracticeMode) {
+      // Practice mode: client-side scoring
+      actualCorrectIndex = currentQuestion.correctAnswer;
+      correct = optionIdx === actualCorrectIndex;
+
+      if (correct) {
+        const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / SPEED_BONUS_DECAY_SEC)));
+        pointsEarned = BASE_POINTS + speedBonus;
       }
-      
-      // Debug logging
-      console.log('📤 Submitting answer:', {
-        session_id: sessionId,
-        question_id: currentQuestion.id.toString(),
-        question_index: currentIdx,
-        selected_index: optionIdx,
+
+      console.log('🎮 Practice mode answer:', {
+        selected: optionIdx,
+        correct: actualCorrectIndex,
+        isCorrect: correct,
+        points: pointsEarned,
       });
-      
-      const answerResponse = await submitAnswer({
-        session_id: sessionId,
-        question_id: currentQuestion.id.toString(),
-        question_index: currentIdx,
-        selected_index: optionIdx,
-        time_taken_ms: Math.floor(timeTaken * 1000),
-      });
-      
-      console.log('📥 Answer response:', answerResponse);
-      
-      correct = answerResponse.correct; // Backend returns 'correct', not 'is_correct'
-      pointsEarned = answerResponse.pointsEarned || 0; // Backend returns camelCase
-      actualCorrectIndex = answerResponse.correctIndex !== undefined ? answerResponse.correctIndex : -1; // Backend returns camelCase
-      
-    } catch (err) {
-      console.error('❌ Failed to submit answer:', err);
-      console.error('Session ID:', sessionId);
-      console.error('Question:', currentQuestion);
-      setError('Failed to submit answer. Please try again.');
-      setLoading(false);
-      return;
+    } else {
+      // Paid mode: Submit answer to backend for validation (ONLY source of truth)
+      try {
+        if (!sessionId || !currentQuestion.id) {
+          throw new Error('Missing session or question ID');
+        }
+
+        // Debug logging
+        console.log('📤 Submitting answer:', {
+          session_id: sessionId,
+          question_id: currentQuestion.id.toString(),
+          question_index: currentIdx,
+          selected_index: optionIdx,
+        });
+
+        const answerResponse = await submitAnswer({
+          session_id: sessionId,
+          question_id: currentQuestion.id.toString(),
+          question_index: currentIdx,
+          selected_index: optionIdx,
+          time_taken_ms: Math.floor(timeTaken * 1000),
+        });
+
+        console.log('📥 Answer response:', answerResponse);
+
+        correct = answerResponse.correct; // Backend returns 'correct', not 'is_correct'
+        pointsEarned = answerResponse.pointsEarned || 0; // Backend returns camelCase
+        actualCorrectIndex = answerResponse.correctIndex !== undefined ? answerResponse.correctIndex : -1; // Backend returns camelCase
+
+      } catch (err) {
+        console.error('❌ Failed to submit answer:', err);
+        console.error('Session ID:', sessionId);
+        console.error('Question:', currentQuestion);
+        setError('Failed to submit answer. Please try again.');
+        setLoading(false);
+        return;
+      }
     }
-    
+
     setIsCorrect(correct);
 
     // Haptic feedback and sound effects
@@ -238,23 +287,23 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit }) => {
     }
 
     // ALWAYS store the correct answer for display (especially when user gets it wrong)
-    if (actualCorrectIndex >= 0) {
+    if (actualCorrectIndex >= 0 && !isPracticeMode) {
       const updatedQuestions = [...questions];
       updatedQuestions[currentIdx].correctAnswer = actualCorrectIndex;
       setQuestions(updatedQuestions);
       console.log('✅ Correct answer set:', OPTION_LABELS[actualCorrectIndex], '(index:', actualCorrectIndex, ')');
-    } else {
+    } else if (actualCorrectIndex < 0 && !isPracticeMode) {
       console.warn('⚠️ Backend did not return correctIndex');
     }
 
     let pointsForThisQuestion = pointsEarned || 0;
     if (correct) {
       // Use points from backend if available, otherwise calculate
-      if (pointsEarned === 0) {
+      if (pointsEarned === 0 && !isPracticeMode) {
         const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / SPEED_BONUS_DECAY_SEC)));
         pointsForThisQuestion = BASE_POINTS + speedBonus;
       }
-      
+
       setScore(prev => prev + 1);
       setTotalPoints(prev => prev + pointsForThisQuestion);
       setLastGainedPoints(pointsForThisQuestion);
