@@ -9,7 +9,7 @@ function claimExplorerUrl(signature: string): string {
   const cluster = SOLANA_NETWORK === 'devnet' ? '?cluster=devnet' : '';
   return `${base}/tx/${signature}${cluster}`;
 }
-import { fetchClaimableRoundPayouts, initializeProgram, postWinnersOnChain, type ClaimablePayout } from '../src/utils/api';
+import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, type ClaimablePayout, type ClaimedPayout } from '../src/utils/api';
 import { buildClaimPrizeInstruction } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
 
@@ -49,6 +49,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const [stats, setStats] = useState<PlayerStats | null>(null);
   const [history, setHistory] = useState<GameHistory[]>([]);
   const [claimablePayouts, setClaimablePayouts] = useState<ClaimablePayout[]>([]);
+  const [claimedPayouts, setClaimedPayouts] = useState<ClaimedPayout[]>([]);
   const [claimingRoundId, setClaimingRoundId] = useState<string | null>(null);
   const [lastClaimTx, setLastClaimTx] = useState<{ signature: string; solAmount: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -247,6 +248,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         // Round wins eligible for on-chain claim (winners acknowledged at round end)
         const claimable = await fetchClaimableRoundPayouts(walletAddress);
         setClaimablePayouts(claimable);
+        const claimed = await fetchClaimedRoundPayouts(walletAddress);
+        setClaimedPayouts(claimed);
       } catch (error) {
         console.error('Error fetching profile data:', error);
       } finally {
@@ -288,7 +291,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           return;
         }
         if (customCode === 6003) {
+          await markPayoutClaimed(payout.round_id, publicKey.toBase58()).catch(() => {});
           setClaimablePayouts((prev) => prev.filter((p) => p.round_id !== payout.round_id));
+          const claimed = await fetchClaimedRoundPayouts(publicKey.toBase58());
+          setClaimedPayouts(claimed);
           alert('This prize has already been claimed.');
           return;
         }
@@ -298,7 +304,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
       }
       const sig = await sendTransaction(tx, connection);
       await connection.confirmTransaction(sig, 'confirmed');
+      await markPayoutClaimed(payout.round_id, publicKey.toBase58()).catch(() => {});
       setClaimablePayouts((prev) => prev.filter((p) => p.round_id !== payout.round_id));
+      const claimed = await fetchClaimedRoundPayouts(publicKey.toBase58());
+      setClaimedPayouts(claimed);
       setLastClaimTx({
         signature: sig,
         solAmount: (payout.prize_lamports / 1_000_000_000).toFixed(4),
@@ -446,7 +455,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           </div>
         )}
 
-        {/* Round wins – claim on-chain (winners acknowledged when round ends) */}
+        {/* Round wins – claim on-chain (winners acknowledged when round ends). First claimer can trigger post-winners if round not yet finalized (optional alongside complete-session). */}
         {claimablePayouts.length > 0 && (
           <div className="mb-8 md:mb-12 relative z-10">
             <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">Round wins</h2>
@@ -471,6 +480,33 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                     >
                       {claimingRoundId === p.round_id ? 'Claiming…' : 'Claim'}
                     </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Already claimed – show so user does not try to claim again */}
+        {claimedPayouts.length > 0 && (
+          <div className="mb-8 md:mb-12 relative z-10">
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">Claimed</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">Prizes you have already claimed.</p>
+            <div className="space-y-3">
+              {claimedPayouts.map((p) => (
+                <div
+                  key={p.round_id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 md:px-6 bg-[#0A0A0A] border border-white/5 rounded-xl"
+                >
+                  <div>
+                    <span className="text-zinc-400 font-bold text-sm md:text-base">{p.round_title}</span>
+                    <span className="text-zinc-600 text-xs ml-2">#{p.rank}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-zinc-500 font-bold">{(p.prize_lamports / 1_000_000_000).toFixed(4)} SOL</span>
+                    <span className="px-4 py-2 bg-[#14F195]/20 text-[#14F195] font-[1000] text-xs uppercase italic rounded-lg border border-[#14F195]/40">
+                      Claimed
+                    </span>
                   </div>
                 </div>
               ))}

@@ -273,58 +273,71 @@ serve(async (req) => {
       }
       // Skip calculate_rankings_and_winner so no prize payouts are created; players will be refunded.
     } else {
-      // Use current pot so payouts match the actual prize pool (run migration round_payouts_use_pot_override.sql)
       const { data: roundRow } = await supabase
         .from('daily_rounds')
-        .select('pot_lamports')
+        .select('date, round_number, pot_lamports')
         .eq('id', roundId)
         .single();
       const potLamports = roundRow?.pot_lamports != null ? Number(roundRow.pot_lamports) : null;
+      const dateStr = roundRow?.date as string | undefined;
+      const roundNumber = roundRow?.round_number != null ? Number(roundRow.round_number) : 0;
+      const now = new Date();
+      const roundEndTime = (date: string, rn: number): Date => {
+        const [y, m, d] = date.split('-').map(Number);
+        const endHour = (rn + 1) * 6;
+        if (endHour >= 24) {
+          return new Date(Date.UTC(y, m - 1, d + 1, 0, 0, 0));
+        }
+        return new Date(Date.UTC(y, m - 1, d, endHour, 0, 0));
+      };
+      const roundEnded = dateStr ? now >= roundEndTime(dateStr, roundNumber) : false;
+
       try {
         await supabase.rpc('calculate_rankings_and_winner', {
           p_round_id: roundId,
           p_pot_lamports: potLamports,
+          p_finalize: roundEnded,
         });
       } catch (_) {
-        // RPC might not exist yet (run migration leaderboard_and_round_winners.sql); rank/winner computed on read
+        // RPC might not exist or use old signature (run migration calculate_rankings_finalize_after_round_end.sql)
       }
 
-      // Refresh dedicated round_leaderboard table so all users see the same list in real time
       try {
         await supabase.rpc('refresh_round_leaderboard', { p_round_id: roundId });
       } catch (_) {
         // Migration round_leaderboard_table.sql adds this; non-fatal if not yet run
       }
 
-      // Post winners on-chain (Sol Trivia contract) so winners can claim from the vault. Retry automatically on failure.
-      const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-      const base = supabaseUrl.replace(/\/$/, '') + '/functions/v1';
-      const maxAttempts = 4;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          const res = await fetch(base + '/post-winners-on-chain', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
-            body: JSON.stringify({ round_id: roundId }),
-          });
-          const text = await res.text();
-          if (res.ok) {
-            if (attempt > 1) console.log('post-winners-on-chain succeeded on attempt', attempt);
-            break;
-          }
-          if (attempt < maxAttempts) {
-            console.warn(`post-winners-on-chain attempt ${attempt} failed (${res.status}), retrying in 2s...`, text.slice(0, 200));
-            await new Promise((r) => setTimeout(r, 2000));
-          } else {
-            console.warn('post-winners-on-chain failed after', maxAttempts, 'attempts (non-fatal):', res.status, text.slice(0, 200));
-          }
-        } catch (e) {
-          if (attempt < maxAttempts) {
-            console.warn('post-winners-on-chain attempt', attempt, 'request failed, retrying in 2s...', e);
-            await new Promise((r) => setTimeout(r, 2000));
-          } else {
-            console.warn('post-winners-on-chain request failed after', maxAttempts, 'attempts (non-fatal):', e);
+      if (roundEnded) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+        const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+        const base = supabaseUrl.replace(/\/$/, '') + '/functions/v1';
+        const maxAttempts = 4;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const res = await fetch(base + '/post-winners-on-chain', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceKey}` },
+              body: JSON.stringify({ round_id: roundId }),
+            });
+            const text = await res.text();
+            if (res.ok) {
+              if (attempt > 1) console.log('post-winners-on-chain succeeded on attempt', attempt);
+              break;
+            }
+            if (attempt < maxAttempts) {
+              console.warn(`post-winners-on-chain attempt ${attempt} failed (${res.status}), retrying in 2s...`, text.slice(0, 200));
+              await new Promise((r) => setTimeout(r, 2000));
+            } else {
+              console.warn('post-winners-on-chain failed after', maxAttempts, 'attempts (non-fatal):', res.status, text.slice(0, 200));
+            }
+          } catch (e) {
+            if (attempt < maxAttempts) {
+              console.warn('post-winners-on-chain attempt', attempt, 'request failed, retrying in 2s...', e);
+              await new Promise((r) => setTimeout(r, 2000));
+            } else {
+              console.warn('post-winners-on-chain request failed after', maxAttempts, 'attempts (non-fatal):', e);
+            }
           }
         }
       }
