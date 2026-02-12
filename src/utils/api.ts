@@ -869,7 +869,65 @@ export async function markPayoutPaid(
   return { success: true };
 }
 
-/** Request posting round winners on-chain (Solana contract). Call when round has 5 payouts in DB but claim fails with RoundNotFinalized. */
+/** Mark payout as claimed (self-service after user claims on-chain). So profile shows "Claimed" and does not show Claim again. */
+export async function markPayoutClaimed(roundId: string, walletAddress: string): Promise<{ success: boolean; error?: string }> {
+  const url = `${FUNCTIONS_URL}/mark-payout-claimed`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ round_id: roundId, wallet_address: walletAddress }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { success: false, error: (json as { error?: string }).error || 'Failed to mark claimed' };
+  return { success: true };
+}
+
+/** Same shape as ClaimablePayout but for already-claimed (paid_at set). */
+export interface ClaimedPayout {
+  round_id: string;
+  date: string;
+  round_number: number;
+  rank: number;
+  prize_lamports: number;
+  round_title: string;
+  paid_at: string | null;
+}
+
+/** Fetch round payouts for a wallet that are already claimed (paid_at set). */
+export async function fetchClaimedRoundPayouts(walletAddress: string): Promise<ClaimedPayout[]> {
+  if (!isSupabaseConfigured || !walletAddress?.trim()) return [];
+  const { data: payouts, error: payErr } = await supabase
+    .from('round_payouts')
+    .select('round_id, rank, prize_lamports, paid_at')
+    .eq('wallet_address', walletAddress.trim())
+    .not('paid_at', 'is', null);
+  if (payErr || !payouts?.length) return [];
+  const roundIds = [...new Set((payouts as { round_id: string }[]).map((p) => p.round_id))];
+  const { data: rounds, error: roundErr } = await supabase
+    .from('daily_rounds')
+    .select('id, date, round_number')
+    .in('id', roundIds);
+  if (roundErr || !rounds?.length) return [];
+  const byId = Object.fromEntries((rounds as { id: string; date: string; round_number: number }[]).map((r) => [r.id, r]));
+  return (payouts as { round_id: string; rank: number; prize_lamports: number; paid_at: string | null }[])
+    .map((p) => {
+      const r = byId[p.round_id];
+      if (!r) return null;
+      return {
+        round_id: p.round_id,
+        date: r.date,
+        round_number: r.round_number,
+        rank: p.rank,
+        prize_lamports: p.prize_lamports ?? 0,
+        round_title: `${r.date} Round ${r.round_number + 1}`,
+        paid_at: p.paid_at,
+      };
+    })
+    .filter((x): x is ClaimedPayout => x != null)
+    .sort((a, b) => (b.date + b.round_number).localeCompare(a.date + a.round_number));
+}
+
+/** Request posting round winners on-chain (Solana contract). Optional path when claim fails with RoundNotFinalized (first claimer can trigger it alongside complete-session). */
 export async function postWinnersOnChain(roundId: string): Promise<{ success: boolean; signature?: string; error?: string }> {
   const url = `${FUNCTIONS_URL}/post-winners-on-chain`;
   const res = await fetch(url, {
