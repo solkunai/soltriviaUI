@@ -52,7 +52,7 @@ import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
 import LoadingScreen from './components/LoadingScreen';
 import ContractTestView from './components/ContractTestView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile } from './src/utils/api';
 import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK } from './src/utils/constants';
 import { buildEnterRoundInstruction, contractRoundIdFromDateAndNumber } from './src/utils/soltriviaContract';
 
@@ -80,6 +80,9 @@ const App: React.FC = () => {
   const [freeEntryNotification, setFreeEntryNotification] = useState<string | null>(null);
   const ROUND_ENTRIES_MAX = 2;
   
+  // Seeker Genesis Token verification status (for discounted lives pricing)
+  const [isSeekerVerified, setIsSeekerVerified] = useState(false);
+
   // Quiz results state
   const [lastGameResults, setLastGameResults] = useState<{ score: number, points: number, time: number, rank?: number; scoreSaveFailed?: boolean } | null>(null);
   
@@ -219,6 +222,24 @@ const App: React.FC = () => {
     const t = setTimeout(() => setFreeEntryNotification(null), 5000);
     return () => clearTimeout(t);
   }, [freeEntryNotification]);
+
+  // Fetch Seeker verification status when wallet connects
+  useEffect(() => {
+    if (!connected || !publicKey) {
+      setIsSeekerVerified(false);
+      return;
+    }
+    const walletAddr = publicKey.toBase58();
+    getSeekerProfile(walletAddr)
+      .then((profile) => {
+        if (currentWalletRef.current === walletAddr) {
+          setIsSeekerVerified(profile?.is_seeker_verified ?? false);
+        }
+      })
+      .catch(() => {
+        // Non-fatal — default to non-Seeker pricing
+      });
+  }, [connected, publicKey]);
 
   // Referral: capture ?ref=CODE from URL on mount → store in localStorage → clean URL
   useEffect(() => {
@@ -972,7 +993,7 @@ const App: React.FC = () => {
         onOpenTerms={() => setCurrentView(View.TERMS)}
         onOpenPrivacy={() => setCurrentView(View.PRIVACY)}
       />
-      <BuyLivesModal isOpen={isBuyLivesOpen} onClose={() => setIsBuyLivesOpen(false)} onBuySuccess={handleBuyLivesSuccess} />
+      <BuyLivesModal isOpen={isBuyLivesOpen} onClose={() => setIsBuyLivesOpen(false)} onBuySuccess={handleBuyLivesSuccess} isSeekerVerified={isSeekerVerified} />
       <EditProfileModal 
         isOpen={isEditProfileOpen} 
         onClose={() => setIsEditProfileOpen(false)} 

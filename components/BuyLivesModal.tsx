@@ -2,16 +2,17 @@ import React, { useState } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { purchaseLives } from '../src/utils/api';
-import { REVENUE_WALLET, LIVES_TIERS, type LivesTierId } from '@/src/utils/constants';
+import { REVENUE_WALLET, LIVES_TIERS, SEEKER_LIVES_TIERS, type LivesTierId } from '@/src/utils/constants';
 
 
 interface BuyLivesModalProps {
   isOpen: boolean;
   onClose: () => void;
   onBuySuccess?: (newLivesCount?: number) => void;
+  isSeekerVerified?: boolean;
 }
 
-const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuccess }) => {
+const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuccess, isSeekerVerified = false }) => {
   const { publicKey, sendTransaction, connected } = useWallet();
   const { connection } = useConnection();
   const [purchasing, setPurchasing] = useState(false);
@@ -22,7 +23,8 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
 
   if (!isOpen) return null;
 
-  const tier = LIVES_TIERS.find(t => t.id === selectedTier) || LIVES_TIERS[0];
+  const activeTiers = isSeekerVerified ? SEEKER_LIVES_TIERS : LIVES_TIERS;
+  const tier = activeTiers.find(t => t.id === selectedTier) || activeTiers[0];
 
   const handlePurchase = async () => {
     if (!connected || !publicKey) {
@@ -141,9 +143,18 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
             Unlock multi-entry access. Unused lives roll over indefinitely.
           </p>
 
+          {/* Seeker Discount Banner */}
+          {isSeekerVerified && (
+            <div className="bg-[#14F195]/10 border border-[#14F195]/30 p-3 rounded-lg mb-4">
+              <p className="text-[#14F195] text-[9px] font-black uppercase tracking-wider text-center italic leading-tight">
+                Seeker discount applied — exclusive pricing for SGT holders
+              </p>
+            </div>
+          )}
+
           {/* Tier Selection */}
           <div className="space-y-3 mb-5">
-            {LIVES_TIERS.map((t) => {
+            {activeTiers.map((t) => {
               const isSelected = selectedTier === t.id;
               const pricePerLife = (t.sol / t.lives).toFixed(4);
               return (
