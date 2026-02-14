@@ -343,7 +343,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
     if (!publicKey || !seekerProfile?.skr_domain) return;
     const newValue = !seekerProfile.use_skr_as_display;
     try {
-      await toggleSkrDisplay(publicKey.toBase58(), newValue);
+      await toggleSkrDisplay(publicKey.toBase58(), newValue, seekerProfile.skr_domain ?? undefined);
       setSeekerProfile(prev => prev ? { ...prev, use_skr_as_display: newValue } : prev);
       if (newValue && seekerProfile.skr_domain) {
         setCurrentUsername(seekerProfile.skr_domain);

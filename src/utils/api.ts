@@ -1118,11 +1118,18 @@ export async function getSeekerProfile(walletAddress: string): Promise<SeekerPro
   };
 }
 
-/** Toggle .skr domain as display name on/off. */
-export async function toggleSkrDisplay(walletAddress: string, useSkr: boolean): Promise<void> {
+/** Toggle .skr domain as display name on/off. Also updates username so leaderboard reflects the change. */
+export async function toggleSkrDisplay(walletAddress: string, useSkr: boolean, skrDomain?: string): Promise<void> {
+  const update: Record<string, any> = {
+    use_skr_as_display: useSkr,
+    updated_at: new Date().toISOString(),
+  };
+  if (useSkr && skrDomain) {
+    update.username = skrDomain;
+  }
   const { error } = await supabase
     .from('player_profiles')
-    .update({ use_skr_as_display: useSkr, updated_at: new Date().toISOString() })
+    .update(update)
     .eq('wallet_address', walletAddress);
   if (error) throw new Error(error.message);
 }
