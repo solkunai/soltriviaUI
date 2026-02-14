@@ -260,24 +260,23 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
 
       // Referral stats — independent from main profile fetch so it never breaks existing features
       try {
-        const refStats = await getReferralStats(walletAddress);
+        let refStats = await getReferralStats(walletAddress);
+        // If no code exists yet, generate one first then re-fetch
+        if (!refStats.code) {
+          await getReferralCode(walletAddress);
+          refStats = await getReferralStats(walletAddress);
+        }
         setReferralStats(refStats);
       } catch {
-        try {
-          await getReferralCode(walletAddress);
-          const refStats = await getReferralStats(walletAddress);
-          setReferralStats(refStats);
-        } catch {
-          setReferralStats({
-            code: '--------',
-            referral_url: `https://soltrivia.app?ref=--------`,
-            total_referrals: 0,
-            completed_referrals: 0,
-            pending_referrals: 0,
-            referral_points: 0,
-            recent_referrals: [],
-          });
-        }
+        setReferralStats({
+          code: '--------',
+          referral_url: `https://soltrivia.app?ref=--------`,
+          total_referrals: 0,
+          completed_referrals: 0,
+          pending_referrals: 0,
+          referral_points: 0,
+          recent_referrals: [],
+        });
       }
     };
 
