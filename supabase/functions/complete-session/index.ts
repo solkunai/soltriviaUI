@@ -250,6 +250,32 @@ serve(async (req) => {
       console.error('Player profile sync failed (non-fatal):', profileErr);
     }
 
+    // Seeker XP Boost: +25% bonus on profile total_points only (NOT game_sessions score / leaderboard)
+    let seekerBonusXp = 0;
+    try {
+      const { data: seekerCheck } = await supabase
+        .from('player_profiles')
+        .select('is_seeker_verified, total_points')
+        .eq('wallet_address', wallet)
+        .maybeSingle();
+
+      if ((seekerCheck as any)?.is_seeker_verified === true && total_score > 0) {
+        seekerBonusXp = Math.floor(total_score * 0.25);
+        if (seekerBonusXp > 0) {
+          const currentTP = (seekerCheck as any)?.total_points ?? 0;
+          await supabase
+            .from('player_profiles')
+            .update({
+              total_points: currentTP + seekerBonusXp,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('wallet_address', wallet);
+        }
+      }
+    } catch (seekerErr) {
+      console.error('Seeker XP boost failed (non-fatal):', seekerErr);
+    }
+
     // Recalculate ranks for the round and set daily_rounds.winner_wallet/winner_score to current #1
     const roundId = (session as Record<string, unknown>).round_id as string;
     const MIN_PLAYERS_FOR_PAYOUT = 5;
@@ -358,7 +384,7 @@ serve(async (req) => {
       const { data: round } = await supabase.from('daily_rounds').select('date').eq('id', session.round_id).single();
       const roundDate = round?.date;
       if (wallet && roundDate) {
-        const { data: questRows } = await supabase.from('quests').select('id, slug, reward_tp, requirement_config').in('slug', ['trivia_nerd', 'daily_quizzer', 'trivia_genius', 'genesis_streak']);
+        const { data: questRows } = await supabase.from('quests').select('id, slug, reward_tp, requirement_config').in('slug', ['trivia_nerd', 'daily_quizzer', 'trivia_genius', 'genesis_streak', 'seeker_champion']);
         const bySlug: Record<string, { id: string; reward_tp?: number; max?: number }> = {};
         (questRows || []).forEach((q: any) => {
           bySlug[q.slug] = { id: q.id, reward_tp: q.reward_tp, max: (q.requirement_config?.max ?? 1) };
@@ -398,9 +424,24 @@ serve(async (req) => {
           );
         }
 
+        // Seeker Champion: win 5 rounds (rank === 1) as verified Seeker
+        if (bySlug.seeker_champion && rank === 1) {
+          const { data: seekerProfile } = await supabase.from('player_profiles').select('is_seeker_verified').eq('wallet_address', wallet).maybeSingle();
+          if ((seekerProfile as any)?.is_seeker_verified === true) {
+            const { data: seekerProg } = await supabase.from('user_quest_progress').select('progress').eq('wallet_address', wallet).eq('quest_id', bySlug.seeker_champion.id).maybeSingle();
+            const seekerMax = bySlug.seeker_champion.max ?? 5;
+            const newProgress = Math.min(((seekerProg as any)?.progress ?? 0) + 1, seekerMax);
+            const completedAt = newProgress >= seekerMax ? new Date().toISOString() : undefined;
+            await supabase.from('user_quest_progress').upsert(
+              { wallet_address: wallet, quest_id: bySlug.seeker_champion.id, progress: newProgress, ...(completedAt && { completed_at: completedAt }), updated_at: new Date().toISOString() },
+              { onConflict: 'wallet_address,quest_id' }
+            );
+          }
+        }
+
         // Auto-claim: for any completed quest (progress >= max), set claimed_at and add TP if not already claimed
         const now = new Date().toISOString();
-        for (const slug of ['trivia_nerd', 'daily_quizzer', 'trivia_genius', 'genesis_streak']) {
+        for (const slug of ['trivia_nerd', 'daily_quizzer', 'trivia_genius', 'genesis_streak', 'seeker_champion']) {
           const q = bySlug[slug];
           if (!q?.id || q.reward_tp == null || q.reward_tp <= 0) continue;
           const max = q.max ?? 1;
@@ -490,6 +531,7 @@ serve(async (req) => {
         score: total_score,
         correct_count,
         time_taken_ms,
+        seeker_bonus_xp: seekerBonusXp,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

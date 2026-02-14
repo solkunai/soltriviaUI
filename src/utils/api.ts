@@ -81,6 +81,7 @@ export interface LeaderboardEntry {
   score: number;
   correct_count: number;
   time_taken_ms: number;
+  is_seeker_verified?: boolean;
 }
 
 export interface PlayerLivesResponse {
@@ -1069,6 +1070,61 @@ export async function getReferralStats(walletAddress: string): Promise<ReferralS
   }
 
   return response.json();
+}
+
+// ─── Seeker Perks ─────────────────────────────────────────────────────────
+
+export interface SeekerVerificationResponse {
+  is_seeker_verified: boolean;
+  skr_domain: string | null;
+  seeker_verified_at: string | null;
+  already_verified: boolean;
+}
+
+export interface SeekerProfile {
+  is_seeker_verified: boolean;
+  skr_domain: string | null;
+  use_skr_as_display: boolean;
+  seeker_verified_at: string | null;
+}
+
+/** Verify SGT ownership and resolve .skr domain for a wallet. */
+export async function verifySeekerStatus(walletAddress: string): Promise<SeekerVerificationResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/verify-seeker`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ wallet_address: walletAddress }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to verify Seeker status');
+  }
+  return response.json();
+}
+
+/** Get Seeker-specific profile fields from player_profiles. */
+export async function getSeekerProfile(walletAddress: string): Promise<SeekerProfile> {
+  const { data, error } = await supabase
+    .from('player_profiles')
+    .select('is_seeker_verified, skr_domain, use_skr_as_display, seeker_verified_at')
+    .eq('wallet_address', walletAddress)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return {
+    is_seeker_verified: (data as any)?.is_seeker_verified ?? false,
+    skr_domain: (data as any)?.skr_domain ?? null,
+    use_skr_as_display: (data as any)?.use_skr_as_display ?? false,
+    seeker_verified_at: (data as any)?.seeker_verified_at ?? null,
+  };
+}
+
+/** Toggle .skr domain as display name on/off. */
+export async function toggleSkrDisplay(walletAddress: string, useSkr: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('player_profiles')
+    .update({ use_skr_as_display: useSkr, updated_at: new Date().toISOString() })
+    .eq('wallet_address', walletAddress);
+  if (error) throw new Error(error.message);
 }
 
 // ─── Realtime Subscriptions ───────────────────────────────────────────────

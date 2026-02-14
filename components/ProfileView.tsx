@@ -9,7 +9,7 @@ function claimExplorerUrl(signature: string): string {
   const cluster = SOLANA_NETWORK === 'devnet' ? '?cluster=devnet' : '';
   return `${base}/tx/${signature}${cluster}`;
 }
-import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse } from '../src/utils/api';
+import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile } from '../src/utils/api';
 import { buildClaimPrizeInstruction } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
 
@@ -58,6 +58,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const [currentUsername, setCurrentUsername] = useState(username);
   const [referralStats, setReferralStats] = useState<ReferralStatsResponse | null>(null);
   const [referralCopied, setReferralCopied] = useState(false);
+  const [seekerProfile, setSeekerProfile] = useState<SeekerProfile | null>(null);
+  const [seekerVerifying, setSeekerVerifying] = useState(false);
+  const [seekerError, setSeekerError] = useState<string | null>(null);
 
   const displayAvatar = (currentAvatar || avatar) && profileCacheBuster
     ? (currentAvatar || avatar) + ((currentAvatar || avatar).includes('?') ? '&' : '?') + 'v=' + profileCacheBuster
@@ -258,6 +261,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         setLoading(false);
       }
 
+      // Seeker perks — fetch verification status
+      try {
+        const seekerData = await getSeekerProfile(walletAddress);
+        setSeekerProfile(seekerData);
+      } catch {
+        setSeekerProfile({ is_seeker_verified: false, skr_domain: null, use_skr_as_display: false, seeker_verified_at: null });
+      }
+
       // Referral stats — independent from main profile fetch so it never breaks existing features
       try {
         let refStats = await getReferralStats(walletAddress);
@@ -283,6 +294,40 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   useEffect(() => {
     fetchProfileData();
   }, [publicKey]);
+
+  const handleVerifySeeker = async () => {
+    if (!publicKey) return;
+    setSeekerVerifying(true);
+    setSeekerError(null);
+    try {
+      const result = await verifySeekerStatus(publicKey.toBase58());
+      setSeekerProfile({
+        is_seeker_verified: result.is_seeker_verified,
+        skr_domain: result.skr_domain,
+        use_skr_as_display: false,
+        seeker_verified_at: result.seeker_verified_at,
+      });
+      if (!result.is_seeker_verified) {
+        setSeekerError('No Seeker Genesis Token found in this wallet.');
+      }
+    } catch (err: any) {
+      setSeekerError(err.message || 'Verification failed');
+    } finally {
+      setSeekerVerifying(false);
+    }
+  };
+
+  const handleToggleSkr = async () => {
+    if (!publicKey || !seekerProfile?.skr_domain) return;
+    const newValue = !seekerProfile.use_skr_as_display;
+    try {
+      await toggleSkrDisplay(publicKey.toBase58(), newValue);
+      setSeekerProfile(prev => prev ? { ...prev, use_skr_as_display: newValue } : prev);
+      if (newValue && seekerProfile.skr_domain) {
+        setCurrentUsername(seekerProfile.skr_domain);
+      }
+    } catch { /* non-fatal */ }
+  };
 
   const handleClaimPrize = async (payout: ClaimablePayout) => {
     if (!publicKey || !sendTransaction || !connection) return;
@@ -451,6 +496,85 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
               <ProfileStatCard label="POINTS" value={stats?.total_points.toLocaleString() || "0"} />
             </>
           )}
+        </div>
+
+        {/* Seeker Perks Section */}
+        <div className="mb-8 md:mb-12 relative z-10">
+          <div className="bg-[#0A0A0A] border border-[#9945FF]/20 rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl">
+            <div className="px-6 py-4 md:px-10 md:py-6 border-b border-white/5 bg-gradient-to-r from-[#9945FF]/10 to-transparent">
+              <h2 className="text-xl md:text-3xl font-[1000] italic uppercase tracking-tighter text-white">Seeker Perks</h2>
+              <p className="text-zinc-500 text-[10px] md:text-xs font-bold uppercase tracking-wider mt-1">
+                Exclusive benefits for Solana Seeker device owners
+              </p>
+            </div>
+            <div className="p-6 md:p-10">
+              {seekerProfile?.is_seeker_verified ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#9945FF] to-[#14F195] flex items-center justify-center">
+                      <span className="text-white font-[1000] text-sm italic">S</span>
+                    </div>
+                    <div>
+                      <span className="text-[#14F195] font-[1000] text-lg italic">VERIFIED SEEKER</span>
+                      {seekerProfile.seeker_verified_at && (
+                        <span className="text-zinc-600 text-[9px] font-bold block">
+                          Since {new Date(seekerProfile.seeker_verified_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center">
+                      <span className="text-[#14F195] text-xl font-[1000] italic block">+25%</span>
+                      <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic">XP Boost</span>
+                    </div>
+                    <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center">
+                      <span className="text-[#14F195] text-xl font-[1000] italic block">Discount</span>
+                      <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic">Lives</span>
+                    </div>
+                    <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center">
+                      <span className="text-[#14F195] text-xl font-[1000] italic block">Badge</span>
+                      <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic">Leaderboard</span>
+                    </div>
+                  </div>
+                  {seekerProfile.skr_domain && (
+                    <div className="flex items-center justify-between bg-black/30 border border-white/5 rounded-xl p-4">
+                      <div>
+                        <span className="text-white font-bold text-sm">{seekerProfile.skr_domain}</span>
+                        <span className="text-zinc-500 text-[9px] font-bold block">Use as display name</span>
+                      </div>
+                      <button
+                        onClick={handleToggleSkr}
+                        className={`w-12 h-6 rounded-full transition-colors ${
+                          seekerProfile.use_skr_as_display ? 'bg-[#14F195]' : 'bg-zinc-700'
+                        } relative`}
+                      >
+                        <span className={`block w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform ${
+                          seekerProfile.use_skr_as_display ? 'translate-x-6' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-zinc-400 text-sm mb-4">
+                    Own a Solana Seeker? Verify your Genesis Token to unlock exclusive perks.
+                  </p>
+                  {seekerError && (
+                    <p className="text-red-400 text-xs mb-4">{seekerError}</p>
+                  )}
+                  <button
+                    onClick={handleVerifySeeker}
+                    disabled={seekerVerifying}
+                    className="px-8 py-3 bg-gradient-to-r from-[#9945FF] to-[#14F195] text-white font-[1000] text-sm uppercase italic tracking-wider rounded-xl transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {seekerVerifying ? 'Verifying...' : 'Verify Seeker'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Refer & Earn Section */}

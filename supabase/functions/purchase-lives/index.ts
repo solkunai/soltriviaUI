@@ -21,6 +21,11 @@ const LIVES_TIERS: Record<string, { lives: number; lamports: number }> = {
   value: { lives: 15, lamports: 100_000_000 },  // 0.1 SOL
   bulk:  { lives: 35, lamports: 250_000_000 },  // 0.25 SOL
 };
+const SEEKER_LIVES_TIERS: Record<string, { lives: number; lamports: number }> = {
+  basic: { lives: 3, lamports: 20_000_000 },   // 0.02 SOL
+  value: { lives: 15, lamports: 80_000_000 },   // 0.08 SOL
+  bulk:  { lives: 35, lamports: 200_000_000 },  // 0.2 SOL
+};
 const DEFAULT_TIER = 'basic';
 const REVENUE_WALLET = Deno.env.get('REVENUE_WALLET') || '4u1UTyMBX8ghSQBagZHCzArt32XMFSw4CUXbdgo2Cv74';
 const SOLANA_RPC_URL = Deno.env.get('SOLANA_RPC_URL') || 'https://api.mainnet-beta.solana.com';
@@ -113,22 +118,34 @@ serve(async (req) => {
       );
     }
 
-    // Resolve tier (default to basic for backwards compatibility)
-    // Use hasOwnProperty to prevent prototype pollution attacks (e.g. tier: "__proto__")
-    const tierKey = requestedTier && Object.prototype.hasOwnProperty.call(LIVES_TIERS, requestedTier)
-      ? requestedTier
-      : DEFAULT_TIER;
-    const selectedTier = LIVES_TIERS[tierKey];
-    const EXPECTED_AMOUNT_LAMPORTS = selectedTier.lamports;
-    const LIVES_PER_PURCHASE = selectedTier.lives;
-    console.log('Tier selected:', { tierKey, lives: LIVES_PER_PURCHASE, lamports: EXPECTED_AMOUNT_LAMPORTS });
-
     if (!isValidSolanaAddress(walletAddress)) {
       return new Response(
         JSON.stringify({ error: 'Invalid wallet address' }),
         { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Check if wallet is Seeker-verified for discounted pricing
+    let isSeekerVerified = false;
+    try {
+      const { data: seekerProfile } = await supabase
+        .from('player_profiles')
+        .select('is_seeker_verified')
+        .eq('wallet_address', walletAddress)
+        .maybeSingle();
+      isSeekerVerified = (seekerProfile as any)?.is_seeker_verified === true;
+    } catch (_) { /* non-fatal */ }
+
+    // Resolve tier (default to basic for backwards compatibility)
+    // Use hasOwnProperty to prevent prototype pollution attacks (e.g. tier: "__proto__")
+    const activeTiers = isSeekerVerified ? SEEKER_LIVES_TIERS : LIVES_TIERS;
+    const tierKey = requestedTier && Object.prototype.hasOwnProperty.call(activeTiers, requestedTier)
+      ? requestedTier
+      : DEFAULT_TIER;
+    const selectedTier = activeTiers[tierKey];
+    const EXPECTED_AMOUNT_LAMPORTS = selectedTier.lamports;
+    const LIVES_PER_PURCHASE = selectedTier.lives;
+    console.log('Tier selected:', { tierKey, lives: LIVES_PER_PURCHASE, lamports: EXPECTED_AMOUNT_LAMPORTS, seekerDiscount: isSeekerVerified });
 
     const base58Signature = convertSignatureToBase58(txSignature);
 

@@ -16,6 +16,13 @@ export const LIVES_TIERS = [
   { id: 'bulk', lives: 35, lamports: 250_000_000, sol: 0.25, label: '35 Lives', badge: 'BEST VALUE' },
 ] as const;
 
+// Seeker Genesis Token holders get discounted lives
+export const SEEKER_LIVES_TIERS = [
+  { id: 'basic', lives: 3, lamports: 20_000_000, sol: 0.02, label: '3 Lives' },
+  { id: 'value', lives: 15, lamports: 80_000_000, sol: 0.08, label: '15 Lives', badge: 'POPULAR' },
+  { id: 'bulk', lives: 35, lamports: 200_000_000, sol: 0.2, label: '35 Lives', badge: 'BEST VALUE' },
+] as const;
+
 export type LivesTierId = typeof LIVES_TIERS[number]['id'];
 
 export const APP_IDENTITY = {

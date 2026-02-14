@@ -372,6 +372,23 @@ serve(async (req) => {
       }
     }
 
+    // Enrich leaderboard entries with Seeker verification status
+    if (leaderboard.length > 0) {
+      try {
+        const wallets = leaderboard.map((e: any) => e.wallet_address);
+        const { data: seekerRows } = await supabase
+          .from('player_profiles')
+          .select('wallet_address, is_seeker_verified')
+          .in('wallet_address', wallets)
+          .eq('is_seeker_verified', true);
+        const seekerSet = new Set((seekerRows || []).map((r: any) => r.wallet_address));
+        leaderboard = leaderboard.map((e: any) => ({
+          ...e,
+          is_seeker_verified: seekerSet.has(e.wallet_address),
+        }));
+      } catch (_) { /* non-fatal */ }
+    }
+
     return new Response(
       JSON.stringify({
         period,

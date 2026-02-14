@@ -15,7 +15,17 @@ interface PlayerStats {
   time: string;
   gamesPlayed: string;
   wallet_address?: string;
+  is_seeker_verified?: boolean;
 }
+
+const SeekerBadge: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <span
+    className={`inline-flex items-center justify-center w-4 h-4 md:w-5 md:h-5 rounded-full bg-gradient-to-br from-[#9945FF] to-[#14F195] flex-shrink-0 ${className}`}
+    title="Seeker Genesis Token Holder"
+  >
+    <span className="text-white text-[7px] md:text-[8px] font-[1000] italic leading-none">S</span>
+  </span>
+);
 
 interface LeaderboardViewProps {
   onOpenGuide?: () => void;
@@ -137,6 +147,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
       time: `${Math.floor((entry.time_taken_ms ?? 0) / 1000)}s`,
       gamesPlayed: '1',
       wallet_address: entry.wallet_address,
+      is_seeker_verified: entry.is_seeker_verified ?? false,
     };
   });
 
@@ -420,7 +431,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                       </div>
                    </div>
                    <div className="text-center space-y-1">
-                     <p className="text-[11px] font-black italic uppercase text-white truncate w-full">{player.username}</p>
+                     <p className="text-[11px] font-black italic uppercase text-white truncate w-full flex items-center gap-1">{player.username}{player.is_seeker_verified && <SeekerBadge className="ml-0.5" />}</p>
                      <p className="text-[#14F195] font-[1000] text-lg italic leading-none">{player.score}</p>
                      
                      {/* Mobile top 3 extra stats */}
@@ -489,7 +500,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                       </div>
                    </div>
                    <div className="text-center">
-                     <p className="font-[1000] italic uppercase text-white text-base lg:text-2xl mb-1 tracking-tight">{player.username}</p>
+                     <p className="font-[1000] italic uppercase text-white text-base lg:text-2xl mb-1 tracking-tight flex items-center gap-1.5">{player.username}{player.is_seeker_verified && <SeekerBadge className="ml-0.5" />}</p>
                      <p className="text-[#14F195] font-[1000] text-2xl lg:text-5xl italic leading-none">{player.score} <span className="text-xs text-[#14F195]/60">XP</span></p>
                      <div className="flex items-center justify-center gap-3 mt-3">
                         <span className="text-zinc-500 font-black italic text-[10px] uppercase">{player.winnings}</span>
@@ -523,7 +534,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                         <img src={avatarFor(player.wallet_address, player.avatar)} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                     </div>
                     <div className="flex-1 truncate">
-                        <p className="font-[1000] italic text-2xl uppercase text-white truncate tracking-tight">{player.username}</p>
+                        <p className="font-[1000] italic text-2xl uppercase text-white truncate tracking-tight flex items-center gap-2">{player.username}{player.is_seeker_verified && <SeekerBadge />}</p>
                         <p className="text-xs font-bold text-zinc-500 mt-1 uppercase">Sol Won: {player.winnings}</p>
                     </div>
                     <div className="w-32 text-center font-black italic text-xl text-[#14F195]">{player.time}</div>
@@ -561,7 +572,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                   </div>
                   
                   <div className="flex-1 min-w-0">
-                      <p className="font-[1000] italic text-[13px] uppercase text-white truncate tracking-tight leading-tight mb-0.5">{player.username}</p>
+                      <p className="font-[1000] italic text-[13px] uppercase text-white truncate tracking-tight leading-tight mb-0.5 flex items-center gap-1">{player.username}{player.is_seeker_verified && <SeekerBadge className="ml-0.5" />}</p>
                       <div className="flex items-center gap-2">
                          <span className="text-[#14F195]/60 text-[7px] font-black uppercase italic tracking-tighter">{player.time}</span>
                          <span className="w-0.5 h-0.5 rounded-full bg-zinc-700"></span>
