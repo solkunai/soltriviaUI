@@ -1,7 +1,7 @@
 // Verify Seeker Edge Function
 // 1. Verify wallet ownership via Ed25519 signature (signMessage proof)
 // 2. Verify SGT ownership via Helius RPC (Token-2022 mint authority check)
-// 3. Resolve .skr domain via AllDomains API
+// 3. Resolve .skr domain via @onsol/tldparser (on-chain lookup)
 // Follows Solana Mobile docs: https://docs.solanamobile.com/marketing/engaging-seeker-users
 
 // @ts-ignore - Deno URL imports are valid at runtime
@@ -12,6 +12,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import nacl from 'https://esm.sh/tweetnacl@1.0.3';
 // @ts-ignore - Deno URL imports are valid at runtime
 import * as base58 from 'https://esm.sh/bs58@5.0.0';
+// @ts-ignore - Deno URL imports are valid at runtime
+import { TldParser } from 'https://esm.sh/@onsol/tldparser@0.6.7';
+// @ts-ignore - Deno URL imports are valid at runtime
+import { Connection, PublicKey } from 'https://esm.sh/@solana/web3.js@1.95.3';
 
 // @ts-ignore - Deno is available at runtime
 const ALLOWED_ORIGINS_STRING = Deno.env.get('ALLOWED_ORIGINS') ||
@@ -163,26 +167,27 @@ async function verifySGT(walletAddress: string): Promise<boolean> {
 }
 
 /**
- * Resolve .skr domain for a wallet via AllDomains API.
+ * Resolve .skr domain for a wallet via @onsol/tldparser (on-chain lookup).
  * Returns the domain name (without .skr suffix) or null.
  */
 async function resolveSkrDomain(walletAddress: string): Promise<string | null> {
   try {
-    const url = `https://api.alldomains.id/domains/${walletAddress}?tld=skr`;
-    console.log('AllDomains lookup:', url);
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) {
-      console.log('AllDomains API error:', res.status, res.statusText);
-      return null;
-    }
-    const data = await res.json();
-    console.log('AllDomains response:', JSON.stringify(data));
-    if (data.domains && data.domains.length > 0) {
-      return data.domains[0].domain;
+    const rpcUrl = HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com';
+    const connection = new Connection(rpcUrl);
+    const parser = new TldParser(connection);
+    const owner = new PublicKey(walletAddress);
+
+    console.log('TldParser .skr lookup for:', walletAddress);
+    const domains = await parser.getParsedAllUserDomainsFromTld(owner, 'skr');
+    console.log('TldParser result:', JSON.stringify(domains));
+
+    if (domains && domains.length > 0) {
+      // domains[0] has { domain: string, tld: string } shape
+      return domains[0].domain;
     }
     return null;
   } catch (err) {
-    console.error('AllDomains lookup failed:', err);
+    console.error('.skr domain lookup failed:', err);
     return null;
   }
 }
