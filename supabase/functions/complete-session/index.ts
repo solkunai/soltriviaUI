@@ -417,6 +417,72 @@ serve(async (req) => {
       console.error('Quest progress update failed:', questErr);
     }
 
+    // Referral completion: if this is the referred user's first completed game, award 1000 XP to referrer
+    const REFERRAL_POINTS = 1000;
+    try {
+      const { data: pendingRef } = await supabase
+        .from('referrals')
+        .select('id, referrer_wallet')
+        .eq('referred_wallet', wallet)
+        .eq('status', 'pending')
+        .single();
+
+      if (pendingRef) {
+        const refNow = new Date().toISOString();
+
+        // Mark referral as completed
+        await supabase
+          .from('referrals')
+          .update({ status: 'completed', points_awarded: REFERRAL_POINTS, completed_at: refNow })
+          .eq('id', pendingRef.id);
+
+        // Award points to referrer's profile
+        const { data: referrerProfile } = await supabase
+          .from('player_profiles')
+          .select('referral_points, total_referrals, total_points')
+          .eq('wallet_address', pendingRef.referrer_wallet)
+          .single();
+
+        if (referrerProfile) {
+          await supabase
+            .from('player_profiles')
+            .update({
+              referral_points: ((referrerProfile as any).referral_points ?? 0) + REFERRAL_POINTS,
+              total_referrals: ((referrerProfile as any).total_referrals ?? 0) + 1,
+              total_points: ((referrerProfile as any).total_points ?? 0) + REFERRAL_POINTS,
+              updated_at: refNow,
+            })
+            .eq('wallet_address', pendingRef.referrer_wallet);
+        }
+        console.log('Referral completed, XP awarded');
+
+        // Update referral quest progress for the referrer
+        const newTotalReferrals = ((referrerProfile as any)?.total_referrals ?? 0) + 1;
+        const { data: referralQuest } = await supabase
+          .from('quests')
+          .select('id, requirement_config')
+          .eq('slug', 'referral_ambassador')
+          .eq('is_active', true)
+          .single();
+
+        if (referralQuest) {
+          const max = (referralQuest.requirement_config as any)?.max ?? 15;
+          const completed = newTotalReferrals >= max;
+
+          await supabase
+            .from('user_quest_progress')
+            .upsert({
+              wallet_address: pendingRef.referrer_wallet,
+              quest_id: referralQuest.id,
+              progress: Math.min(newTotalReferrals, max),
+              ...(completed ? { completed_at: refNow } : {}),
+            }, { onConflict: 'wallet_address,quest_id' });
+        }
+      }
+    } catch (refErr) {
+      console.error('Referral completion failed (non-fatal):', refErr);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,

@@ -998,6 +998,79 @@ export async function getPracticeQuestions(question_ids: string[]): Promise<GetP
   return response.json();
 }
 
+// ─── Referral System ──────────────────────────────────────────────────────
+
+export interface ReferralCodeResponse {
+  code: string;
+  referral_url: string;
+  total_referrals: number;
+  referral_points: number;
+}
+
+export interface ReferralStatsResponse {
+  code: string;
+  referral_url: string;
+  total_referrals: number;
+  completed_referrals: number;
+  pending_referrals: number;
+  referral_points: number;
+  recent_referrals: {
+    referred_wallet: string;
+    status: string;
+    points_awarded: number;
+    referred_at: string;
+    completed_at: string | null;
+  }[];
+}
+
+/** Get or create a referral code for a wallet. Returns the code + shareable URL. */
+export async function getReferralCode(walletAddress: string): Promise<ReferralCodeResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/get-referral-code`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ wallet_address: walletAddress }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to get referral code');
+  }
+
+  return response.json();
+}
+
+/** Register a referral when a new wallet connects with a stored referral code. */
+export async function registerReferral(walletAddress: string, referralCode: string): Promise<{ success: boolean; message?: string }> {
+  const response = await fetch(`${FUNCTIONS_URL}/register-referral`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ wallet_address: walletAddress, referral_code: referralCode }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to register referral');
+  }
+
+  return response.json();
+}
+
+/** Get referral stats for the profile page (totals, points, recent referrals). */
+export async function getReferralStats(walletAddress: string): Promise<ReferralStatsResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/get-referral-stats`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ wallet_address: walletAddress }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to get referral stats');
+  }
+
+  return response.json();
+}
+
 // ─── Realtime Subscriptions ───────────────────────────────────────────────
 /** Realtime subscription: pool and players update when someone enters. Uses polling when Realtime disabled. */
 export function subscribeCurrentRoundStats(

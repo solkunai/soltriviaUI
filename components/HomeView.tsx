@@ -268,6 +268,23 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               </div>
             </div>
 
+            {/* Referral Welcome Banner (shown when user arrived via referral link) */}
+            {(() => {
+              try {
+                const hasRef = localStorage.getItem('soltrivia_referral_code');
+                if (!hasRef) return null;
+                return (
+                  <div className="mt-6 px-4 py-3 bg-[#14F195]/10 border border-[#14F195]/25 rounded-xl flex items-center gap-3">
+                    <span className="text-[#14F195] text-lg">&#127873;</span>
+                    <div>
+                      <span className="text-[#14F195] text-xs font-[1000] italic uppercase">You were referred!</span>
+                      <p className="text-zinc-400 text-[10px] font-bold">Connect your wallet and play your first game to activate the referral.</p>
+                    </div>
+                  </div>
+                );
+              } catch { return null; }
+            })()}
+
             {/* Social: Discord & X (mobile) */}
             <div className="flex lg:hidden items-center gap-3 mt-6">
               <a
