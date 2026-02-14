@@ -20,6 +20,7 @@ interface ProfileViewProps {
   onEdit: () => void;
   onOpenGuide?: () => void;
   onAvatarUpdated?: (url: string) => void;
+  onSeekerVerified?: (verified: boolean) => void;
 }
 
 interface PlayerStats {
@@ -43,8 +44,8 @@ interface GameHistory {
   finished_at: string;
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated }) => {
-  const { publicKey, sendTransaction } = useWallet();
+const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified }) => {
+  const { publicKey, sendTransaction, signMessage } = useWallet();
   const { connection } = useConnection();
   const [stats, setStats] = useState<PlayerStats | null>(null);
   const [history, setHistory] = useState<GameHistory[]>([]);
@@ -297,21 +298,40 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
 
   const handleVerifySeeker = async () => {
     if (!publicKey) return;
+    if (!signMessage) {
+      setSeekerError('Your wallet does not support message signing. Please use Phantom, Solflare, or Backpack.');
+      return;
+    }
     setSeekerVerifying(true);
     setSeekerError(null);
     try {
-      const result = await verifySeekerStatus(publicKey.toBase58());
+      // Step 1: Sign a message to prove wallet ownership (triggers wallet popup)
+      const message = `Verify Seeker Genesis Token ownership for SolTrivia\nWallet: ${publicKey.toBase58()}\nTimestamp: ${Date.now()}`;
+      const messageBytes = new TextEncoder().encode(message);
+      const signature = await signMessage(messageBytes);
+
+      // Step 2: Encode signature as base58 (standard Solana encoding) and send to server
+      const bs58 = (await import('bs58')).default;
+      const signatureBase58 = bs58.encode(signature);
+
+      // Step 3: Server verifies signature + checks SGT on-chain
+      const result = await verifySeekerStatus(publicKey.toBase58(), message, signatureBase58);
       setSeekerProfile({
         is_seeker_verified: result.is_seeker_verified,
         skr_domain: result.skr_domain,
         use_skr_as_display: false,
         seeker_verified_at: result.seeker_verified_at,
       });
+      onSeekerVerified?.(result.is_seeker_verified);
       if (!result.is_seeker_verified) {
         setSeekerError('No Seeker Genesis Token found in this wallet.');
       }
     } catch (err: any) {
-      setSeekerError(err.message || 'Verification failed');
+      if (err.message?.includes('User rejected') || err.message?.includes('rejected')) {
+        setSeekerError('Signature request was cancelled.');
+      } else {
+        setSeekerError(err.message || 'Verification failed');
+      }
     } finally {
       setSeekerVerifying(false);
     }
@@ -529,7 +549,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic">XP Boost</span>
                     </div>
                     <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center">
-                      <span className="text-[#14F195] text-xl font-[1000] italic block">Discount</span>
+                      <span className="text-[#14F195] text-sm font-[1000] italic block">Discount</span>
                       <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic">Lives</span>
                     </div>
                     <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center">

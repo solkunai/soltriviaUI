@@ -1088,12 +1088,12 @@ export interface SeekerProfile {
   seeker_verified_at: string | null;
 }
 
-/** Verify SGT ownership and resolve .skr domain for a wallet. */
-export async function verifySeekerStatus(walletAddress: string): Promise<SeekerVerificationResponse> {
+/** Verify SGT ownership via signed message proof + on-chain RPC check. */
+export async function verifySeekerStatus(walletAddress: string, message: string, signature: string): Promise<SeekerVerificationResponse> {
   const response = await fetch(`${FUNCTIONS_URL}/verify-seeker`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ wallet_address: walletAddress }),
+    body: JSON.stringify({ wallet_address: walletAddress, message, signature }),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
