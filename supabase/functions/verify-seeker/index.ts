@@ -1,11 +1,17 @@
 // Verify Seeker Edge Function
-// Verifies Seeker Genesis Token (SGT) ownership via Helius RPC and resolves .skr domain.
-// Stores results in player_profiles for use by other functions (XP boost, lives discount, badge).
+// 1. Verify wallet ownership via Ed25519 signature (signMessage proof)
+// 2. Verify SGT ownership via Helius RPC (Token-2022 mint authority check)
+// 3. Resolve .skr domain via AllDomains API
+// Follows Solana Mobile docs: https://docs.solanamobile.com/marketing/engaging-seeker-users
 
 // @ts-ignore - Deno URL imports are valid at runtime
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 // @ts-ignore - Deno URL imports are valid at runtime
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// @ts-ignore - Deno URL imports are valid at runtime
+import nacl from 'https://esm.sh/tweetnacl@1.0.3';
+// @ts-ignore - Deno URL imports are valid at runtime
+import * as base58 from 'https://esm.sh/bs58@5.0.0';
 
 // @ts-ignore - Deno is available at runtime
 const ALLOWED_ORIGINS_STRING = Deno.env.get('ALLOWED_ORIGINS') ||
@@ -74,6 +80,18 @@ function isValidSolanaAddress(address: string): boolean {
     if (!BASE58_CHARS.includes(char)) return false;
   }
   return true;
+}
+
+/**
+ * Verify Ed25519 signature to prove wallet ownership.
+ * Uses tweetnacl — the standard Solana approach per:
+ * https://solana.com/developers/cookbook/wallets/sign-message
+ */
+function verifySignature(walletAddress: string, message: string, signatureBase58: string): boolean {
+  const messageBytes = new TextEncoder().encode(message);
+  const signatureBytes = base58.decode(signatureBase58);
+  const publicKeyBytes = base58.decode(walletAddress);
+  return nacl.sign.detached.verify(messageBytes, signatureBytes, publicKeyBytes);
 }
 
 /**
@@ -165,7 +183,7 @@ async function resolveSkrDomain(walletAddress: string): Promise<string | null> {
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const corsHeaders = getCorsHeadersFromRequest(req);
 
   if (req.method === 'OPTIONS') {
@@ -174,7 +192,7 @@ serve(async (req) => {
 
   try {
     const supabase = getSupabaseClient();
-    const { wallet_address } = await req.json();
+    const { wallet_address, message, signature } = await req.json();
 
     if (!isValidSolanaAddress(wallet_address)) {
       return new Response(
@@ -182,6 +200,32 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
+
+    // Step 1: Verify wallet ownership via Ed25519 signature
+    if (!message || !signature) {
+      return new Response(
+        JSON.stringify({ error: 'Message and signature are required for verification' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Verify the message contains the correct wallet address (prevent replay with different wallet)
+    if (!message.includes(wallet_address)) {
+      return new Response(
+        JSON.stringify({ error: 'Message does not match wallet address' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    const isValidSig = verifySignature(wallet_address, message, signature);
+    if (!isValidSig) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid signature — wallet ownership not proved' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    console.log('Wallet ownership verified via signature for:', wallet_address);
 
     // Check if already verified in last 24 hours (rate limit)
     const { data: existingProfile } = await supabase
@@ -206,7 +250,7 @@ serve(async (req) => {
       }
     }
 
-    // Verify SGT ownership and resolve .skr domain in parallel
+    // Step 2: Verify SGT ownership on-chain and resolve .skr domain in parallel
     const [hasSGT, skrName] = await Promise.all([
       verifySGT(wallet_address),
       resolveSkrDomain(wallet_address),

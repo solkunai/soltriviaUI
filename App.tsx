@@ -833,6 +833,7 @@ const App: React.FC = () => {
               setProfileCacheBuster(Date.now());
               refetchProfile();
             }}
+            onSeekerVerified={(verified: boolean) => setIsSeekerVerified(verified)}
           />
         );
       case View.QUIZ:
