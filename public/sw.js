@@ -1,15 +1,13 @@
 // Service Worker for SOL Trivia PWA
-const CACHE_NAME = 'sol-trivia-v1';
+const CACHE_NAME = 'sol-trivia-v2';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.json',
   '/favicon.png',
   '/android-chrome-192x192.png',
   '/android-chrome-512x512.png',
 ];
 
-// Install: Cache static assets
+// Install: Cache static assets and activate immediately
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME)
@@ -18,7 +16,7 @@ self.addEventListener('install', (e) => {
   );
 });
 
-// Activate: Clean old caches
+// Activate: Clean old caches (v1 etc.) and take control immediately
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
@@ -33,43 +31,60 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Fetch: Only GET requests can be cached (Cache API does not support POST/PATCH/etc.)
+// Fetch strategies per resource type
 self.addEventListener('fetch', (e) => {
   const { request } = e;
-  if (request.method !== 'GET') {
+  if (request.method !== 'GET') return;
+
+  const url = new URL(request.url);
+
+  // API / Supabase calls: network-only (never cache)
+  if (url.pathname.startsWith('/api/') || url.hostname.includes('supabase')) {
     e.respondWith(fetch(request));
     return;
   }
 
-  const url = new URL(request.url);
-
-  // API calls: network-only (do not cache)
-  if (url.pathname.startsWith('/api/') || url.pathname.includes('supabase')) {
+  // Vite hashed assets (/assets/*): cache-first (filenames change per deploy)
+  if (url.pathname.startsWith('/assets/')) {
     e.respondWith(
-      fetch(request)
-        .catch(() => caches.match(request))
-    );
-    return;
-  }
-
-  // Static assets: cache-first
-  e.respondWith(
-    caches.match(request)
-      .then((cached) => {
+      caches.match(request).then((cached) => {
         if (cached) return cached;
         return fetch(request).then((response) => {
-          if (response.ok && response.type === 'basic') {
+          if (response.ok) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           }
           return response;
         });
       })
-      .catch(() => {
-        if (request.mode === 'navigate') {
-          return caches.match('/index.html');
+    );
+    return;
+  }
+
+  // HTML navigation (index.html, /): network-first so users always get latest deploy
+  if (request.mode === 'navigate') {
+    e.respondWith(
+      fetch(request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          return response;
+        })
+        .catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // Everything else: network-first with cache fallback
+  e.respondWith(
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         }
-        return fetch(request);
+        return response;
       })
+      .catch(() => caches.match(request))
   );
 });
