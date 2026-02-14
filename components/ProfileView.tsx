@@ -531,9 +531,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
               {seekerProfile?.is_seeker_verified ? (
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#9945FF] to-[#14F195] flex items-center justify-center">
-                      <span className="text-white font-[1000] text-sm italic">S</span>
-                    </div>
+                    <span className="inline-flex items-center justify-center w-10 h-10 shrink-0">
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L3 7V12C3 17.25 6.75 22.08 12 23C17.25 22.08 21 17.25 21 12V7L12 2Z" fill="#14F195" fillOpacity="0.15" stroke="#14F195" strokeWidth="1.5" strokeLinejoin="round"/>
+                        <path d="M8.5 12.5L11 15L16 9.5" stroke="#14F195" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </span>
                     <div>
                       <span className="text-[#14F195] font-[1000] text-lg italic">VERIFIED SEEKER</span>
                       {seekerProfile.seeker_verified_at && (
