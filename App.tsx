@@ -642,6 +642,24 @@ const App: React.FC = () => {
         return;
       }
 
+      // Pre-check: verify player has lives or free entries BEFORE sending payment
+      try {
+        const livesData = await getPlayerLives(walletAddr);
+        // Free entries: count game_sessions where life_used = false (2 lifetime free entries)
+        const { count: freeEntriesUsed } = await supabase
+          .from('game_sessions')
+          .select('id', { count: 'exact', head: true })
+          .eq('wallet_address', walletAddr)
+          .eq('life_used', false);
+        const isFreeEntry = (freeEntriesUsed ?? 0) < 2;
+        if (!isFreeEntry && (livesData.lives_count ?? 0) <= 0) {
+          setIsBuyLivesOpen(true);
+          return;
+        }
+      } catch (livesCheckErr) {
+        console.warn('Lives pre-check failed, proceeding anyway:', livesCheckErr);
+      }
+
       const useContractEntry = import.meta.env.VITE_USE_ENTRY_CONTRACT !== 'false';
       const { blockhash } = await connection.getLatestBlockhash();
 
