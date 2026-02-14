@@ -9,7 +9,7 @@ function claimExplorerUrl(signature: string): string {
   const cluster = SOLANA_NETWORK === 'devnet' ? '?cluster=devnet' : '';
   return `${base}/tx/${signature}${cluster}`;
 }
-import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, type ClaimablePayout, type ClaimedPayout } from '../src/utils/api';
+import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse } from '../src/utils/api';
 import { buildClaimPrizeInstruction } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
 
@@ -56,6 +56,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const [showAvatarUpload, setShowAvatarUpload] = useState(false);
   const [currentAvatar, setCurrentAvatar] = useState(avatar);
   const [currentUsername, setCurrentUsername] = useState(username);
+  const [referralStats, setReferralStats] = useState<ReferralStatsResponse | null>(null);
+  const [referralCopied, setReferralCopied] = useState(false);
 
   const displayAvatar = (currentAvatar || avatar) && profileCacheBuster
     ? (currentAvatar || avatar) + ((currentAvatar || avatar).includes('?') ? '&' : '?') + 'v=' + profileCacheBuster
@@ -255,6 +257,28 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
       } finally {
         setLoading(false);
       }
+
+      // Referral stats — independent from main profile fetch so it never breaks existing features
+      try {
+        const refStats = await getReferralStats(walletAddress);
+        setReferralStats(refStats);
+      } catch {
+        try {
+          await getReferralCode(walletAddress);
+          const refStats = await getReferralStats(walletAddress);
+          setReferralStats(refStats);
+        } catch {
+          setReferralStats({
+            code: '--------',
+            referral_url: `https://soltrivia.app?ref=--------`,
+            total_referrals: 0,
+            completed_referrals: 0,
+            pending_referrals: 0,
+            referral_points: 0,
+            recent_referrals: [],
+          });
+        }
+      }
     };
 
   useEffect(() => {
@@ -429,6 +453,85 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
             </>
           )}
         </div>
+
+        {/* Refer & Earn Section */}
+        {referralStats && (
+          <div className="mb-8 md:mb-12 relative z-10">
+            <div className="bg-[#0A0A0A] border border-[#14F195]/20 rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl">
+              <div className="px-6 py-4 md:px-10 md:py-6 border-b border-white/5 bg-gradient-to-r from-[#14F195]/5 to-transparent">
+                <h2 className="text-xl md:text-3xl font-[1000] italic uppercase tracking-tighter text-white">Refer & Earn</h2>
+                <p className="text-zinc-500 text-[10px] md:text-xs font-bold uppercase tracking-wider mt-1">Share your link. Earn 1,000 XP per referral.</p>
+              </div>
+
+              <div className="p-6 md:p-10 space-y-6">
+                {/* Referral Link */}
+                <div>
+                  <label className="text-zinc-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] italic block mb-2">Your Referral Link</label>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white/80 text-sm md:text-base font-mono truncate">
+                      {referralStats.referral_url}
+                    </div>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(referralStats.referral_url);
+                        setReferralCopied(true);
+                        setTimeout(() => setReferralCopied(false), 2000);
+                      }}
+                      className="px-4 md:px-6 py-3 bg-[#14F195] hover:bg-[#14F195]/90 text-black font-[1000] text-xs uppercase italic rounded-xl transition-all active:scale-95 whitespace-nowrap"
+                    >
+                      {referralCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Referral Stats Row */}
+                <div className="grid grid-cols-3 gap-3 md:gap-6">
+                  <div className="bg-black/30 border border-white/5 rounded-xl p-4 md:p-6 text-center">
+                    <span className="text-[#14F195] text-2xl md:text-4xl font-[1000] italic block">{referralStats.completed_referrals}</span>
+                    <span className="text-zinc-500 text-[8px] md:text-[10px] font-black uppercase tracking-widest italic">Completed</span>
+                  </div>
+                  <div className="bg-black/30 border border-white/5 rounded-xl p-4 md:p-6 text-center">
+                    <span className="text-yellow-400 text-2xl md:text-4xl font-[1000] italic block">{referralStats.pending_referrals}</span>
+                    <span className="text-zinc-500 text-[8px] md:text-[10px] font-black uppercase tracking-widest italic">Pending</span>
+                  </div>
+                  <div className="bg-black/30 border border-white/5 rounded-xl p-4 md:p-6 text-center">
+                    <span className="text-white text-2xl md:text-4xl font-[1000] italic block">{referralStats.referral_points.toLocaleString()}</span>
+                    <span className="text-zinc-500 text-[8px] md:text-[10px] font-black uppercase tracking-widest italic">XP Earned</span>
+                  </div>
+                </div>
+
+                {/* Share to X Button */}
+                <button
+                  onClick={() => {
+                    const text = `I'm playing SOL Trivia — crypto trivia where you win real SOL! 🧠💰\n\nJoin using my link and let's compete:\n${referralStats.referral_url}\n\n@SolTriviaApp`;
+                    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
+                  }}
+                  className="w-full py-3 md:py-4 bg-white/[0.03] border border-white/10 hover:bg-white/[0.06] rounded-xl text-white font-[1000] text-xs md:text-sm uppercase italic tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  <span>Share on</span>
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                </button>
+
+                {/* Recent Referrals */}
+                {referralStats.recent_referrals.length > 0 && (
+                  <div>
+                    <label className="text-zinc-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] italic block mb-3">Recent Referrals</label>
+                    <div className="space-y-2">
+                      {referralStats.recent_referrals.map((ref, i) => (
+                        <div key={i} className="flex items-center justify-between py-2 px-4 bg-black/20 border border-white/5 rounded-lg">
+                          <span className="text-zinc-400 text-xs md:text-sm font-mono">{ref.referred_wallet}</span>
+                          <span className={`text-[10px] md:text-xs font-[1000] italic uppercase ${ref.status === 'completed' ? 'text-[#14F195]' : 'text-yellow-400'}`}>
+                            {ref.status === 'completed' ? `+${ref.points_awarded} XP` : 'Pending'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Last claim success – verify SOL received via Explorer */}
         {lastClaimTx && (

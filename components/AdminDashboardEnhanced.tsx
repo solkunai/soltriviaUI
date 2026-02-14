@@ -20,7 +20,7 @@ function getAdminCreds(): { u: string; p: string } {
   };
 }
 
-type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'answer_debug';
+type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'referrals' | 'answer_debug';
 
 interface Question {
   id?: string;
@@ -155,6 +155,7 @@ const AdminDashboardEnhanced: React.FC = () => {
           { id: 'users', label: '👥 Users', icon: '👥' },
           { id: 'rounds', label: '🎮 Rounds', icon: '🎮' },
           { id: 'lives', label: '❤️ Lives', icon: '❤️' },
+          { id: 'referrals', label: '🔗 Referrals', icon: '🔗' },
           { id: 'answer_debug', label: '🔬 Answer debug', icon: '🔬' },
         ].map((tab) => (
           <button
@@ -181,6 +182,7 @@ const AdminDashboardEnhanced: React.FC = () => {
         {activeTab === 'users' && <UsersView />}
         {activeTab === 'rounds' && <RoundsView />}
         {activeTab === 'lives' && <LivesView />}
+        {activeTab === 'referrals' && <ReferralsView />}
         {activeTab === 'answer_debug' && <AnswerDebugView functionsUrl={SUPABASE_FUNCTIONS_URL} />}
       </div>
     </div>
@@ -1645,6 +1647,180 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
           })}
         </div>
       )}
+    </div>
+  );
+};
+
+const ReferralsView: React.FC = () => {
+  const [topReferrers, setTopReferrers] = useState<Array<{
+    wallet_address: string;
+    username: string | null;
+    total_referrals: number;
+    referral_points: number;
+  }>>([]);
+  const [recentReferrals, setRecentReferrals] = useState<Array<{
+    referrer_wallet: string;
+    referred_wallet: string;
+    referral_code: string;
+    status: string;
+    points_awarded: number;
+    referred_at: string;
+    completed_at: string | null;
+  }>>([]);
+  const [totalStats, setTotalStats] = useState({ total: 0, pending: 0, completed: 0, totalPoints: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    (async () => {
+      // Fetch top referrers from player_profiles
+      const { data: profiles } = await supabase
+        .from('player_profiles')
+        .select('wallet_address, username, total_referrals, referral_points')
+        .gt('total_referrals', 0)
+        .order('total_referrals', { ascending: false })
+        .limit(50);
+
+      // Fetch recent referrals
+      const { data: referrals } = await supabase
+        .from('referrals')
+        .select('referrer_wallet, referred_wallet, referral_code, status, points_awarded, referred_at, completed_at')
+        .order('referred_at', { ascending: false })
+        .limit(100);
+
+      // Fetch totals
+      const { count: total } = await supabase
+        .from('referrals')
+        .select('id', { count: 'exact', head: true });
+
+      const { count: pending } = await supabase
+        .from('referrals')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending');
+
+      const { count: completed } = await supabase
+        .from('referrals')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'completed');
+
+      if (mounted) {
+        setTopReferrers((profiles as typeof topReferrers) || []);
+        setRecentReferrals((referrals as typeof recentReferrals) || []);
+        const totalPts = (profiles || []).reduce((sum, p) => sum + ((p as any).referral_points ?? 0), 0);
+        setTotalStats({
+          total: total ?? 0,
+          pending: pending ?? 0,
+          completed: completed ?? 0,
+          totalPoints: totalPts,
+        });
+        setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  if (loading) {
+    return <div className="py-12 text-center text-zinc-400"><p className="font-black uppercase tracking-widest">Loading referrals...</p></div>;
+  }
+
+  const truncate = (w: string) => w ? `${w.slice(0, 6)}...${w.slice(-4)}` : '—';
+
+  return (
+    <div className="py-6 space-y-8">
+      {/* Summary stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="p-4 bg-white/5 border border-white/10 rounded-xl text-center">
+          <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider">Total Referrals</p>
+          <p className="text-white text-2xl font-[1000] italic mt-1">{totalStats.total}</p>
+        </div>
+        <div className="p-4 bg-white/5 border border-white/10 rounded-xl text-center">
+          <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider">Pending</p>
+          <p className="text-yellow-400 text-2xl font-[1000] italic mt-1">{totalStats.pending}</p>
+        </div>
+        <div className="p-4 bg-white/5 border border-white/10 rounded-xl text-center">
+          <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider">Completed</p>
+          <p className="text-[#14F195] text-2xl font-[1000] italic mt-1">{totalStats.completed}</p>
+        </div>
+        <div className="p-4 bg-white/5 border border-white/10 rounded-xl text-center">
+          <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider">Total XP Awarded</p>
+          <p className="text-white text-2xl font-[1000] italic mt-1">{totalStats.totalPoints.toLocaleString()}</p>
+        </div>
+      </div>
+
+      {/* Top Referrers */}
+      <div>
+        <h2 className="text-xl font-black text-white mb-4">Top Referrers</h2>
+        {topReferrers.length === 0 ? (
+          <p className="text-zinc-500 text-sm">No referrals yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="py-3 px-3 text-zinc-500 font-black text-[10px] uppercase tracking-wider">#</th>
+                  <th className="py-3 px-3 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Wallet</th>
+                  <th className="py-3 px-3 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Username</th>
+                  <th className="py-3 px-3 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Referrals</th>
+                  <th className="py-3 px-3 text-zinc-500 font-black text-[10px] uppercase tracking-wider">XP Earned</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topReferrers.map((r, i) => (
+                  <tr key={r.wallet_address} className="border-b border-white/5 hover:bg-white/5">
+                    <td className="py-2 px-3 text-zinc-400 font-black">{i + 1}</td>
+                    <td className="py-2 px-3 font-mono text-xs text-zinc-300">{truncate(r.wallet_address)}</td>
+                    <td className="py-2 px-3 text-white text-sm">{r.username || '—'}</td>
+                    <td className="py-2 px-3 text-[#14F195] font-black text-sm">{r.total_referrals}</td>
+                    <td className="py-2 px-3 text-white text-sm">{(r.referral_points ?? 0).toLocaleString()} XP</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Recent Referral Activity */}
+      <div>
+        <h2 className="text-xl font-black text-white mb-4">Recent Referral Activity</h2>
+        {recentReferrals.length === 0 ? (
+          <p className="text-zinc-500 text-sm">No referral activity yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="py-3 px-3 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Referrer</th>
+                  <th className="py-3 px-3 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Referred</th>
+                  <th className="py-3 px-3 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Code</th>
+                  <th className="py-3 px-3 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Status</th>
+                  <th className="py-3 px-3 text-zinc-500 font-black text-[10px] uppercase tracking-wider">XP</th>
+                  <th className="py-3 px-3 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentReferrals.map((r, i) => (
+                  <tr key={`${r.referrer_wallet}-${r.referred_wallet}-${i}`} className="border-b border-white/5 hover:bg-white/5">
+                    <td className="py-2 px-3 font-mono text-xs text-zinc-300">{truncate(r.referrer_wallet)}</td>
+                    <td className="py-2 px-3 font-mono text-xs text-zinc-300">{truncate(r.referred_wallet)}</td>
+                    <td className="py-2 px-3 text-white text-xs font-bold">{r.referral_code}</td>
+                    <td className="py-2 px-3">
+                      {r.status === 'completed' ? (
+                        <span className="text-[#14F195] text-[10px] font-bold uppercase">Completed</span>
+                      ) : (
+                        <span className="text-yellow-400 text-[10px] font-bold uppercase">Pending</span>
+                      )}
+                    </td>
+                    <td className="py-2 px-3 text-white text-xs">{r.points_awarded > 0 ? `+${r.points_awarded.toLocaleString()}` : '—'}</td>
+                    <td className="py-2 px-3 text-zinc-400 text-xs">{new Date(r.referred_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

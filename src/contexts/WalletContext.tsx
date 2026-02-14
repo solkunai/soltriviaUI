@@ -57,3 +57,4 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
 // Re-export wallet adapter hooks for easy use in components
 export { useSolanaWallet as useWallet, useSolanaConnection as useConnection, WalletMultiButton };
+export { useWalletModal } from '@solana/wallet-adapter-react-ui';

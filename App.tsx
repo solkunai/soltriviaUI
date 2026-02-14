@@ -52,7 +52,7 @@ import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
 import LoadingScreen from './components/LoadingScreen';
 import ContractTestView from './components/ContractTestView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral } from './src/utils/api';
 import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK } from './src/utils/constants';
 import { buildEnterRoundInstruction, contractRoundIdFromDateAndNumber } from './src/utils/soltriviaContract';
 
@@ -219,6 +219,49 @@ const App: React.FC = () => {
     const t = setTimeout(() => setFreeEntryNotification(null), 5000);
     return () => clearTimeout(t);
   }, [freeEntryNotification]);
+
+  // Referral: capture ?ref=CODE from URL on mount → store in localStorage → clean URL
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const refCode = params.get('ref');
+      if (refCode && refCode.trim()) {
+        localStorage.setItem('soltrivia_referral_code', refCode.trim());
+        // Remove ?ref= from URL without page reload
+        params.delete('ref');
+        const cleanUrl = params.toString()
+          ? `${window.location.pathname}?${params.toString()}`
+          : window.location.pathname;
+        window.history.replaceState(null, '', cleanUrl);
+      }
+    } catch (_) {}
+  }, []);
+
+  // Referral: register referral when wallet connects (if stored code exists)
+  const referralRegisteredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!connected || !publicKey) return;
+    const walletAddr = publicKey.toBase58();
+    // Only attempt once per wallet per session
+    if (referralRegisteredRef.current === walletAddr) return;
+    try {
+      const storedCode = localStorage.getItem('soltrivia_referral_code');
+      if (!storedCode) return;
+      referralRegisteredRef.current = walletAddr;
+      registerReferral(walletAddr, storedCode)
+        .then(() => {
+          // Successfully registered — clear stored code
+          localStorage.removeItem('soltrivia_referral_code');
+        })
+        .catch((err) => {
+          // Non-fatal: self-referral, already referred, invalid code, etc.
+          // Clear code on known non-retryable errors
+          if (err.message?.includes('self-referral') || err.message?.includes('already been referred')) {
+            localStorage.removeItem('soltrivia_referral_code');
+          }
+        });
+    } catch (_) {}
+  }, [connected, publicKey]);
 
   // Admin access: Check URL on mount for /adminlogin
   useEffect(() => {
