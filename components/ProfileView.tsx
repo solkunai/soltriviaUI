@@ -316,10 +316,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
 
       // Step 3: Server verifies signature + checks SGT on-chain
       const result = await verifySeekerStatus(publicKey.toBase58(), message, signatureBase58);
+      // Re-fetch full profile from DB to get accurate use_skr_as_display (server may have auto-set it)
+      const freshProfile = await getSeekerProfile(publicKey.toBase58());
       setSeekerProfile({
         is_seeker_verified: result.is_seeker_verified,
         skr_domain: result.skr_domain,
-        use_skr_as_display: false,
+        use_skr_as_display: freshProfile.use_skr_as_display,
         seeker_verified_at: result.seeker_verified_at,
       });
       onSeekerVerified?.(result.is_seeker_verified);

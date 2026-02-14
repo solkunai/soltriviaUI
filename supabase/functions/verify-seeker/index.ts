@@ -168,17 +168,21 @@ async function verifySGT(walletAddress: string): Promise<boolean> {
  */
 async function resolveSkrDomain(walletAddress: string): Promise<string | null> {
   try {
-    const res = await fetch(
-      `https://api.alldomains.id/domains/${walletAddress}?tld=skr`,
-      { signal: AbortSignal.timeout(5000) },
-    );
-    if (!res.ok) return null;
+    const url = `https://api.alldomains.id/domains/${walletAddress}?tld=skr`;
+    console.log('AllDomains lookup:', url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) {
+      console.log('AllDomains API error:', res.status, res.statusText);
+      return null;
+    }
     const data = await res.json();
+    console.log('AllDomains response:', JSON.stringify(data));
     if (data.domains && data.domains.length > 0) {
       return data.domains[0].domain;
     }
     return null;
-  } catch {
+  } catch (err) {
+    console.error('AllDomains lookup failed:', err);
     return null;
   }
 }
@@ -238,10 +242,26 @@ serve(async (req: Request) => {
       const verifiedAt = new Date(existingProfile.seeker_verified_at);
       const hoursSince = (Date.now() - verifiedAt.getTime()) / (1000 * 60 * 60);
       if (hoursSince < 24) {
+        // If .skr domain is missing, try resolving it now (may have failed on first verify)
+        let skrDomain = existingProfile.skr_domain;
+        if (!skrDomain) {
+          console.log('Cached verification missing .skr domain, retrying lookup for:', wallet_address);
+          const skrName = await resolveSkrDomain(wallet_address);
+          if (skrName) {
+            skrDomain = `${skrName}.skr`;
+            await supabase
+              .from('player_profiles')
+              .update({ skr_domain: skrDomain, updated_at: new Date().toISOString() })
+              .eq('wallet_address', wallet_address);
+            console.log('Resolved and saved .skr domain:', skrDomain);
+          } else {
+            console.log('No .skr domain found for wallet:', wallet_address);
+          }
+        }
         return new Response(
           JSON.stringify({
             is_seeker_verified: true,
-            skr_domain: existingProfile.skr_domain,
+            skr_domain: skrDomain,
             seeker_verified_at: existingProfile.seeker_verified_at,
             already_verified: true,
           }),
@@ -255,6 +275,8 @@ serve(async (req: Request) => {
       verifySGT(wallet_address),
       resolveSkrDomain(wallet_address),
     ]);
+
+    console.log('SGT check:', hasSGT, '| .skr resolve:', skrName, '| wallet:', wallet_address);
 
     const now = new Date().toISOString();
     const skrDomain = skrName ? `${skrName}.skr` : null;
