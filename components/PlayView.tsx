@@ -1,4 +1,5 @@
 import React from 'react';
+import { PAID_TRIVIA_ENABLED } from '../src/utils/constants';
 
 interface PlayViewProps {
   lives: number | null;
@@ -8,9 +9,10 @@ interface PlayViewProps {
   onOpenBuyLives: () => void;
   onStartPractice: () => void;
   practiceRunsLeft: number;
+  hasGamePass?: boolean;
 }
 
-const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives, onStartPractice, practiceRunsLeft }) => {
+const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass }) => {
   const roundEntriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
   const livesNum = lives ?? 0;
   const canPlay = roundEntriesLeft > 0 || livesNum > 0;
@@ -45,22 +47,28 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
 
       {/* Big Play CTA */}
       <div className="flex flex-col gap-6 w-full max-md relative z-10 max-w-md">
+        {!PAID_TRIVIA_ENABLED && (
+          <div className="px-4 py-3 bg-yellow-500/10 border border-yellow-500/25 rounded-xl text-center">
+            <span className="text-yellow-400 text-[10px] font-[1000] italic uppercase tracking-wide">Compete for SOL is temporarily paused while we upgrade the smart contract. Free play is still available!</span>
+          </div>
+        )}
         <button
-          onClick={canPlay ? onStartQuiz : onOpenBuyLives}
-          className="w-full h-24 bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#14F195] rounded-full flex items-center justify-center px-10 active:scale-[0.98] transition-all group shadow-[0_15px_40px_-10px_rgba(153,69,255,0.4)] hover:shadow-[0_20px_60px_-10px_rgba(20,241,149,0.5)] border-t border-white/20 relative overflow-hidden"
+          onClick={PAID_TRIVIA_ENABLED ? (canPlay ? onStartQuiz : onOpenBuyLives) : undefined}
+          disabled={!PAID_TRIVIA_ENABLED}
+          className={`w-full h-24 rounded-full flex items-center justify-center px-10 transition-all border-t relative overflow-hidden ${PAID_TRIVIA_ENABLED ? 'bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#14F195] active:scale-[0.98] group shadow-[0_15px_40px_-10px_rgba(153,69,255,0.4)] hover:shadow-[0_20px_60px_-10px_rgba(20,241,149,0.5)] border-white/20' : 'bg-zinc-800/50 border-zinc-700/30 cursor-not-allowed opacity-50'}`}
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
+          {PAID_TRIVIA_ENABLED && <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>}
 
           <span className="text-white text-3xl md:text-4xl font-[1000] italic leading-none uppercase tracking-tighter relative z-10">
-            {canPlay ? 'START TRIVIA' : 'GET EXTRA LIVES'}
+            {canPlay ? 'COMPETE FOR SOL' : 'GET EXTRA LIVES'}
           </span>
         </button>
 
         {/* Practice Mode Button */}
         <button
           onClick={onStartPractice}
-          disabled={practiceRunsLeft <= 0}
-          className={`w-full h-20 bg-[#0A0A0A] border-2 rounded-full flex items-center justify-center px-10 active:scale-[0.98] transition-all group relative overflow-hidden ${practiceRunsLeft > 0 ? 'border-[#14F195]/30 hover:border-[#14F195]/60 shadow-[0_8px_30px_-8px_rgba(20,241,149,0.2)] hover:shadow-[0_12px_40px_-8px_rgba(20,241,149,0.4)]' : 'border-zinc-700/30 opacity-50 cursor-not-allowed'}`}
+          disabled={!hasGamePass && practiceRunsLeft <= 0}
+          className={`w-full h-20 bg-[#0A0A0A] border-2 rounded-full flex items-center justify-center px-10 active:scale-[0.98] transition-all group relative overflow-hidden ${(hasGamePass || practiceRunsLeft > 0) ? 'border-[#14F195]/30 hover:border-[#14F195]/60 shadow-[0_8px_30px_-8px_rgba(20,241,149,0.2)] hover:shadow-[0_12px_40px_-8px_rgba(20,241,149,0.4)]' : 'border-zinc-700/30 opacity-50 cursor-not-allowed'}`}
         >
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#14F195]/5 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
 
@@ -69,12 +77,14 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
             <span className="text-[#14F195] text-2xl md:text-3xl font-[1000] italic leading-none uppercase tracking-tighter">
-              {practiceRunsLeft > 0 ? 'TRY PRACTICE RUN' : 'NO RUNS LEFT TODAY'}
+              {hasGamePass ? 'PLAY NOW' : practiceRunsLeft > 0 ? 'TRY FREE PLAY' : 'NO RUNS LEFT TODAY'}
             </span>
           </div>
-          {practiceRunsLeft > 0 && (
+          {hasGamePass ? (
+            <span className="absolute right-6 text-[#14F195] text-[9px] font-black italic uppercase tracking-wider">Unlimited</span>
+          ) : practiceRunsLeft > 0 ? (
             <span className="absolute right-6 text-zinc-500 text-xs font-black italic">{practiceRunsLeft}/5</span>
-          )}
+          ) : null}
         </button>
         
         <div className="grid grid-cols-2 gap-4">
@@ -96,7 +106,7 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
         </div>
 
         <p className="text-[9px] text-zinc-400 text-center font-black uppercase tracking-widest mt-2 px-6 opacity-60 italic leading-tight">
-          * 2 round entries reset every 6h. Entry fee: 0.0225 SOL. <span className="text-[#14F195]">Extra lives</span> are for plays beyond your round entries. <span className="text-[#14F195]">Practice runs</span>: 5 free per day.
+          * 2 round entries reset every 6h. Entry fee: 0.0225 SOL. <span className="text-[#14F195]">Extra lives</span> are for plays beyond your round entries. <span className="text-[#14F195]">Free play</span>: {hasGamePass ? 'unlimited with Game Pass.' : '5 free per day.'}
         </p>
       </div>
     </div>

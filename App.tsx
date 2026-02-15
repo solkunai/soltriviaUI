@@ -52,8 +52,9 @@ import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
 import LoadingScreen from './components/LoadingScreen';
 import ContractTestView from './components/ContractTestView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile } from './src/utils/api';
-import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK } from './src/utils/constants';
+import CategorySelectorModal from './components/CategorySelectorModal';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass } from './src/utils/api';
+import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED } from './src/utils/constants';
 import { buildEnterRoundInstruction, contractRoundIdFromDateAndNumber } from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
@@ -82,6 +83,10 @@ const App: React.FC = () => {
   
   // Seeker Genesis Token verification status (for discounted lives pricing)
   const [isSeekerVerified, setIsSeekerVerified] = useState(false);
+
+  // Game Pass state (unlocks premium practice categories)
+  const [hasGamePass, setHasGamePass] = useState(false);
+  const [showCategorySelector, setShowCategorySelector] = useState(false);
 
   // Quiz results state
   const [lastGameResults, setLastGameResults] = useState<{ score: number, points: number, time: number, rank?: number; scoreSaveFailed?: boolean } | null>(null);
@@ -223,10 +228,11 @@ const App: React.FC = () => {
     return () => clearTimeout(t);
   }, [freeEntryNotification]);
 
-  // Fetch Seeker verification status when wallet connects
+  // Fetch Seeker verification status + Game Pass when wallet connects
   useEffect(() => {
     if (!connected || !publicKey) {
       setIsSeekerVerified(false);
+      setHasGamePass(false);
       return;
     }
     const walletAddr = publicKey.toBase58();
@@ -236,9 +242,14 @@ const App: React.FC = () => {
           setIsSeekerVerified(profile?.is_seeker_verified ?? false);
         }
       })
-      .catch(() => {
-        // Non-fatal — default to non-Seeker pricing
-      });
+      .catch(() => {});
+    checkGamePass(walletAddr)
+      .then((status) => {
+        if (currentWalletRef.current === walletAddr) {
+          setHasGamePass(status.is_active);
+        }
+      })
+      .catch(() => {});
   }, [connected, publicKey]);
 
   // Referral: capture ?ref=CODE from URL on mount → store in localStorage → clean URL
@@ -491,22 +502,37 @@ const App: React.FC = () => {
 
   const practiceRunsLeft = PRACTICE_DAILY_LIMIT - getPracticeUsageToday();
 
-  const handleStartPractice = async () => {
-    if (practiceRunsLeft <= 0) {
-      alert('You\'ve used all 5 practice runs for today. Come back tomorrow or play for real SOL!');
+  const handleStartPractice = () => {
+    // Game pass holders get unlimited practice runs
+    if (!hasGamePass && practiceRunsLeft <= 0) {
+      alert('You\'ve used all 5 practice runs for today. Come back tomorrow, get a Game Pass for unlimited plays, or play for real SOL!');
       return;
     }
+    setShowCategorySelector(true);
+  };
+
+  const handleCategorySelected = async (category: string) => {
+    setShowCategorySelector(false);
     try {
-      console.log('🎮 Starting practice mode...');
-      const response = await startPracticeGame();
+      console.log('🎮 Starting practice mode...', { category });
+      const walletAddr = publicKey?.toBase58() ?? undefined;
+      const response = await startPracticeGame({
+        category: category === 'all' ? undefined : category,
+        wallet_address: walletAddr,
+      });
       console.log('✅ Practice session created:', response.practice_session_id);
-      incrementPracticeUsage();
+      if (!hasGamePass) incrementPracticeUsage();
       setPracticeQuestionIds(response.question_ids);
       setPracticeResults(null);
       setCurrentView(View.PRACTICE);
     } catch (err: any) {
       console.error('❌ Failed to start practice game:', err);
-      alert('Failed to start practice mode. Please try again.');
+      if (err.requires_pass) {
+        alert('Game Pass required for this category. Get a Game Pass to unlock all categories!');
+        setShowCategorySelector(true);
+      } else {
+        alert(err.message || 'Failed to start practice mode. Please try again.');
+      }
     }
   };
 
@@ -587,6 +613,7 @@ const App: React.FC = () => {
   };
 
   const handleStartQuiz = async () => {
+    if (!PAID_TRIVIA_ENABLED) return;
     if (!connected || !publicKey) {
       setShowWalletRequired(true);
       return;
@@ -801,6 +828,7 @@ const App: React.FC = () => {
             }}
             onStartPractice={handleStartPractice}
             practiceRunsLeft={practiceRunsLeft}
+            hasGamePass={hasGamePass}
           />
         );
       case View.LEADERBOARD:
@@ -815,7 +843,7 @@ const App: React.FC = () => {
       case View.PLAY:
         return <PlayView lives={livesDisplayReady ? lives : null} roundEntriesUsed={roundEntriesUsed} roundEntriesMax={ROUND_ENTRIES_MAX} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => {
           if (!connected) { setShowWalletRequired(true); } else { setIsBuyLivesOpen(true); }
-        }} onStartPractice={handleStartPractice} practiceRunsLeft={practiceRunsLeft} />;
+        }} onStartPractice={handleStartPractice} practiceRunsLeft={practiceRunsLeft} hasGamePass={hasGamePass} />;
       case View.QUESTS:
         return <QuestsView onGoToProfile={() => setCurrentView(View.PROFILE)} onOpenGuide={() => setIsGuideOpen(true)} />;
       case View.PROFILE:
@@ -959,6 +987,7 @@ const App: React.FC = () => {
             }}
             onStartPractice={handleStartPractice}
             practiceRunsLeft={practiceRunsLeft}
+            hasGamePass={hasGamePass}
           />
         );
     }
@@ -1011,6 +1040,14 @@ const App: React.FC = () => {
         onClose={() => setIsGuideOpen(false)}
         onOpenTerms={() => setCurrentView(View.TERMS)}
         onOpenPrivacy={() => setCurrentView(View.PRIVACY)}
+      />
+      <CategorySelectorModal
+        isOpen={showCategorySelector}
+        onClose={() => setShowCategorySelector(false)}
+        onSelectCategory={handleCategorySelected}
+        hasGamePass={hasGamePass}
+        isSeekerVerified={isSeekerVerified}
+        onGamePassPurchased={() => setHasGamePass(true)}
       />
       <BuyLivesModal isOpen={isBuyLivesOpen} onClose={() => setIsBuyLivesOpen(false)} onBuySuccess={handleBuyLivesSuccess} isSeekerVerified={isSeekerVerified} />
       <EditProfileModal 

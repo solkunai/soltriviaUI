@@ -948,6 +948,8 @@ export interface PracticeGameResponse {
   question_ids: string[];
   total_questions: number;
   mode: 'practice';
+  category: string;
+  has_game_pass: boolean;
 }
 
 export interface PracticeQuestion {
@@ -967,17 +969,24 @@ export interface GetPracticeQuestionsResponse {
   mode: 'practice';
 }
 
-/** Start a practice game session (no payment required) */
-export async function startPracticeGame(): Promise<PracticeGameResponse> {
+/** Start a practice game session (no payment required). Optional category + wallet for game pass gating. */
+export async function startPracticeGame(options?: { category?: string; wallet_address?: string }): Promise<PracticeGameResponse> {
+  const body: Record<string, string> = {};
+  if (options?.category) body.category = options.category;
+  if (options?.wallet_address) body.wallet_address = options.wallet_address;
+
   const response = await fetch(`${FUNCTIONS_URL}/practice-game`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({}),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || 'Failed to start practice game');
+    const err = new Error(error.error || 'Failed to start practice game');
+    (err as any).requires_pass = error.requires_pass ?? false;
+    (err as any).category = error.category ?? null;
+    throw err;
   }
 
   return response.json();
@@ -997,6 +1006,56 @@ export async function getPracticeQuestions(question_ids: string[]): Promise<GetP
   }
 
   return response.json();
+}
+
+// ─── Game Pass (Category Unlock) ──────────────────────────────────────────
+
+export interface GamePassResponse {
+  success: boolean;
+  wallet_address: string;
+  is_active: boolean;
+  purchased_at: string;
+}
+
+export interface GamePassStatus {
+  has_pass: boolean;
+  is_active: boolean;
+  purchased_at: string | null;
+}
+
+/** Purchase a game pass (unlocks premium categories + unlimited practice). */
+export async function purchaseGamePass(walletAddress: string, txSignature: string): Promise<GamePassResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/purchase-game-pass`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ wallet_address: walletAddress, tx_signature: txSignature }),
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = body.details ? `${body.error || 'Failed to purchase game pass'}: ${body.details}` : (body.error || 'Failed to purchase game pass');
+    throw new Error(msg);
+  }
+  return body as GamePassResponse;
+}
+
+/** Check if a wallet has an active game pass. Direct Supabase read. */
+export async function checkGamePass(walletAddress: string): Promise<GamePassStatus> {
+  const empty: GamePassStatus = { has_pass: false, is_active: false, purchased_at: null };
+  if (!isSupabaseConfigured || !walletAddress?.trim()) return empty;
+
+  const { data, error } = await supabase
+    .from('game_passes')
+    .select('is_active, purchased_at')
+    .eq('wallet_address', walletAddress.trim())
+    .maybeSingle();
+
+  if (error || !data) return empty;
+  return {
+    has_pass: true,
+    is_active: data.is_active === true,
+    purchased_at: data.purchased_at ?? null,
+  };
 }
 
 // ─── Referral System ──────────────────────────────────────────────────────

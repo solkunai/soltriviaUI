@@ -78,21 +78,48 @@ serve(async (req) => {
   try {
     const supabase = getSupabaseClient();
 
-    // No wallet or payment required for practice mode
-    // Just generate a unique practice session ID
+    // Parse optional params (backwards compatible — old clients send empty body)
+    const body = await req.json().catch(() => ({}));
+    const category = typeof body.category === 'string' ? body.category.trim().toLowerCase() : null;
+    const walletAddress = typeof body.wallet_address === 'string' ? body.wallet_address.trim() : null;
+
+    // Free categories available to everyone; premium categories require game pass
+    const FREE_CATEGORIES = ['general', 'crypto'];
+
+    // Check game pass if requesting a premium category
+    let hasGamePass = false;
+    if (walletAddress) {
+      const { data: pass } = await supabase
+        .from('game_passes')
+        .select('is_active')
+        .eq('wallet_address', walletAddress)
+        .maybeSingle();
+      hasGamePass = pass?.is_active === true;
+    }
+
+    if (category && !FREE_CATEGORIES.includes(category) && !hasGamePass) {
+      return new Response(
+        JSON.stringify({ error: 'Game pass required for this category', requires_pass: true, category }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const practiceSessionId = `practice_${crypto.randomUUID()}`;
 
-    // Get 10 random practice question IDs from practice_questions table
-    const { data: questions, error: questionsError } = await supabase
-      .from('practice_questions')
-      .select('id')
-      .limit(250); // Get all available questions
+    // Build query — filter by category if specified, otherwise get all
+    let query = supabase.from('practice_questions').select('id');
+    if (category) {
+      query = query.eq('category', category);
+    }
+    const { data: questions, error: questionsError } = await query.limit(500);
 
     if (questionsError || !questions || questions.length < 10) {
       console.error('Failed to fetch practice questions:', questionsError);
       return new Response(
         JSON.stringify({
-          error: 'Not enough practice questions available',
+          error: category
+            ? `Not enough questions for category "${category}" (found ${questions?.length ?? 0}, need 10)`
+            : 'Not enough practice questions available',
           details: questionsError?.message
         }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -109,6 +136,8 @@ serve(async (req) => {
         question_ids: selectedQuestionIds,
         total_questions: 10,
         mode: 'practice',
+        category: category || 'all',
+        has_game_pass: hasGamePass,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
