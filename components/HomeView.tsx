@@ -13,9 +13,11 @@ interface HomeViewProps {
   onStartPractice: () => void;
   practiceRunsLeft: number;
   hasGamePass?: boolean;
+  isSeekerVerified?: boolean;
+  onBuyGamePass?: () => void;
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass }) => {
+const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, isSeekerVerified, onBuyGamePass }) => {
   const { publicKey, connected } = useWallet();
   const { connection } = useConnection();
   const [balance, setBalance] = useState<number | null>(null);
@@ -278,6 +280,31 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               </div>
             </div>
 
+            {/* Game Pass Promo (mobile only — desktop uses sidebar card) */}
+            {!hasGamePass && (
+              <button
+                onClick={onBuyGamePass}
+                className="lg:hidden mt-4 w-full bg-[#0A0A0A] border border-[#9945FF]/30 active:border-[#14F195]/50 rounded-xl p-3.5 flex items-center gap-3 transition-all text-left"
+              >
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#9945FF] to-[#14F195] flex items-center justify-center flex-shrink-0">
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-white text-xs font-[1000] italic uppercase tracking-tight block">GAME PASS</span>
+                  <span className="text-zinc-500 text-[9px] font-bold block">Unlimited plays + all categories</span>
+                </div>
+                <div className="flex items-baseline gap-0.5 flex-shrink-0">
+                  <span className="text-[#14F195] text-base font-[1000] italic leading-none">{isSeekerVerified ? '0.1' : '0.2'}</span>
+                  <span className="text-[#14F195] text-[7px] font-black italic uppercase">SOL</span>
+                </div>
+                <svg className="w-4 h-4 text-zinc-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+
             {/* Referral Welcome Banner (shown when user arrived via referral link) */}
             {(() => {
               try {
@@ -359,6 +386,35 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 </div>
               </div>
             </div>
+
+            {/* Game Pass Card (desktop sidebar) */}
+            {!hasGamePass && (
+              <button
+                onClick={onBuyGamePass}
+                className="bg-[#0A0A0A] border border-[#9945FF]/30 hover:border-[#14F195]/50 p-6 rounded-xl min-h-[140px] flex flex-col justify-center shadow-xl transition-all group relative overflow-hidden text-left"
+              >
+                <div className="absolute inset-0 bg-gradient-to-br from-[#9945FF]/5 to-[#14F195]/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="relative z-10">
+                  <span className="text-zinc-300 text-[10px] font-black uppercase tracking-widest block mb-2 italic">GAME PASS</span>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-white text-sm font-[1000] italic uppercase leading-tight">Unlimited plays</div>
+                      <div className="text-zinc-500 text-[10px] font-bold mt-0.5">All 7 categories unlocked</div>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-[#14F195] text-[28px] font-[1000] italic tabular-nums leading-none">{isSeekerVerified ? '0.1' : '0.2'}</span>
+                        <span className="text-[#14F195] text-xs font-[1000] italic uppercase">SOL</span>
+                      </div>
+                      {isSeekerVerified && <span className="text-[#9945FF] text-[8px] font-bold italic mt-1">SEEKER DISCOUNT</span>}
+                    </div>
+                  </div>
+                  <div className="mt-3 w-full py-2 bg-gradient-to-r from-[#9945FF] to-[#14F195] rounded-full text-center">
+                    <span className="text-black text-[10px] font-black uppercase tracking-wider">GET PASS NOW</span>
+                  </div>
+                </div>
+              </button>
+            )}
 
             {/* Social: Discord & X */}
             <div className="flex items-center gap-3 pt-2">
