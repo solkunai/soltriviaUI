@@ -1028,7 +1028,7 @@ export async function purchaseGamePass(walletAddress: string, txSignature: strin
   const response = await fetch(`${FUNCTIONS_URL}/purchase-game-pass`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ wallet_address: walletAddress, tx_signature: txSignature }),
+    body: JSON.stringify({ walletAddress, txSignature }),
   });
 
   const body = await response.json().catch(() => ({}));
