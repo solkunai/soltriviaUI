@@ -1,3 +1,6 @@
+// Feature flag: disable paid trivia while smart contract upgrade is pending
+export const PAID_TRIVIA_ENABLED = false;
+
 // Wallet addresses (from environment variables)
 export const PRIZE_POOL_WALLET = import.meta.env.VITE_PRIZE_POOL_WALLET || 'C9U6pL7FcroUBcSGQR2iCEGmAydVjzEE7ZYaJuVJuEEo'; // Entry fees (0.02 SOL) go here
 export const REVENUE_WALLET = import.meta.env.VITE_REVENUE_WALLET || '4u1UTyMBX8ghSQBagZHCzArt32XMFSw4CUXbdgo2Cv74'; // Transaction fees (0.0025 SOL) and lives purchases (0.03 SOL)
@@ -24,6 +27,28 @@ export const SEEKER_LIVES_TIERS = [
 ] as const;
 
 export type LivesTierId = typeof LIVES_TIERS[number]['id'];
+
+// Game Pass pricing (one-time purchase, all goes to revenue wallet)
+export const GAME_PASS_PRICE_LAMPORTS = 200_000_000; // 0.2 SOL regular
+export const GAME_PASS_PRICE_SOL = 0.2;
+export const SEEKER_GAME_PASS_PRICE_LAMPORTS = 100_000_000; // 0.1 SOL for SGT holders
+export const SEEKER_GAME_PASS_PRICE_SOL = 0.1;
+
+// Practice mode categories
+export const FREE_CATEGORIES = ['general', 'crypto'] as const;
+export const PREMIUM_CATEGORIES = ['sports', 'history', 'geography', 'entertainment', 'science'] as const;
+export const ALL_CATEGORIES = [...FREE_CATEGORIES, ...PREMIUM_CATEGORIES] as const;
+export type PracticeCategory = typeof ALL_CATEGORIES[number];
+
+export const CATEGORY_LABELS: Record<PracticeCategory, string> = {
+  general: 'General Knowledge',
+  crypto: 'Crypto & Web3',
+  sports: 'Sports',
+  history: 'History',
+  geography: 'Geography',
+  entertainment: 'Entertainment',
+  science: 'Science & Tech',
+};
 
 export const APP_IDENTITY = {
   name: 'SOL Trivia',
