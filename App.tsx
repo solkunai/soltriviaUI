@@ -829,6 +829,8 @@ const App: React.FC = () => {
             onStartPractice={handleStartPractice}
             practiceRunsLeft={practiceRunsLeft}
             hasGamePass={hasGamePass}
+            isSeekerVerified={isSeekerVerified}
+            onBuyGamePass={() => setShowCategorySelector(true)}
           />
         );
       case View.LEADERBOARD:
@@ -988,6 +990,8 @@ const App: React.FC = () => {
             onStartPractice={handleStartPractice}
             practiceRunsLeft={practiceRunsLeft}
             hasGamePass={hasGamePass}
+            isSeekerVerified={isSeekerVerified}
+            onBuyGamePass={() => setShowCategorySelector(true)}
           />
         );
     }
