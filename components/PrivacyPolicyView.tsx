@@ -26,7 +26,7 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
           Privacy Policy
         </h1>
         <p className="text-[#14F195] font-black uppercase tracking-widest text-[10px] italic mb-16 border-l-2 border-[#14F195] pl-4">
-          SOL Trivia Last Updated: February 11, 2026
+          SOL Trivia Last Updated: February 17, 2026
         </p>
 
         <div className="space-y-16">
@@ -74,6 +74,35 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
                   <li>Lives purchase history (wallet, amount, transaction signature).</li>
                   <li>Current lives balance, total purchased, and total used.</li>
                   <li>Entry counts per round and per 24-hour period for limit enforcement.</li>
+                  <li><span className="text-white font-bold italic">Game Pass Purchases:</span> Wallet, transaction signature, payment token (SOL/USDC/SKR), USD amount, and purchase date.</li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">Custom Games Data</h3>
+                <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
+                  <li><span className="text-white font-bold italic">User-Generated Content:</span> Custom game names, question text, answer options, and correct answer indices that you create. This content is publicly visible to anyone who accesses the game link.</li>
+                  <li>Game metadata: slug, settings (question count, rounds, time limit), creation date, expiry date, total plays.</li>
+                  <li>Custom game session data: player wallet, scores, answers, completion status, and timestamps.</li>
+                  <li>Content disclaimer acceptance stored in browser local storage.</li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">Seeker Verification Data</h3>
+                <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
+                  <li>Seeker Genesis Token verification status and verification date.</li>
+                  <li>Signed message used for wallet ownership verification (not stored permanently).</li>
+                  <li>.skr domain name if detected, and display name preference.</li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">Referral Data</h3>
+                <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
+                  <li>Your unique referral code and referral link.</li>
+                  <li>Wallet addresses of users referred by you and their completion status.</li>
+                  <li>Referral points earned and referral activity timestamps.</li>
                 </ul>
               </div>
 
@@ -144,6 +173,8 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
             <ul className="list-disc list-inside mt-4 space-y-2 marker:text-[#14F195] text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               <li><span className="text-[#14F195] font-black">Supabase:</span> Database hosting, authentication, and file storage (avatars).</li>
               <li><span className="text-[#14F195] font-black">Solana RPC Providers:</span> Transaction verification and blockchain interaction.</li>
+              <li><span className="text-[#14F195] font-black">Helius:</span> Solana RPC provider used for Seeker Genesis Token verification (Token-2022 holdings check).</li>
+              <li><span className="text-[#14F195] font-black">Price APIs (CoinGecko/Jupiter):</span> Real-time token price data for USDC and SKR payment calculations. No user data is sent to these services.</li>
               <li><span className="text-[#14F195] font-black">Render:</span> Frontend application hosting.</li>
             </ul>
             <p className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90 mt-4">
@@ -200,7 +231,7 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
             <div className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               If you have questions about this Privacy Policy, contact us at:<br /><br />
               <span className="text-[#14F195] font-black italic">Email: soltriviateam@gmail.com</span><br /><br />
-              Effective Date: February 11, 2026.
+              Effective Date: February 17, 2026.
             </div>
           </section>
         </div>

@@ -62,6 +62,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const [seekerProfile, setSeekerProfile] = useState<SeekerProfile | null>(null);
   const [seekerVerifying, setSeekerVerifying] = useState(false);
   const [seekerError, setSeekerError] = useState<string | null>(null);
+  const [claimablePage, setClaimablePage] = useState(0);
+  const [claimedPage, setClaimedPage] = useState(0);
+  const [historyPage, setHistoryPage] = useState(0);
+  const WINS_PER_PAGE = 3;
+  const HISTORY_PER_PAGE = 5;
 
   const displayAvatar = (currentAvatar || avatar) && profileCacheBuster
     ? (currentAvatar || avatar) + ((currentAvatar || avatar).includes('?') ? '&' : '?') + 'v=' + profileCacheBuster
@@ -712,7 +717,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
             <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">Round wins</h2>
             <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">Winners are set when the round ends. Claim your prize below.</p>
             <div className="space-y-3">
-              {claimablePayouts.map((p) => (
+              {claimablePayouts.slice(claimablePage * WINS_PER_PAGE, (claimablePage + 1) * WINS_PER_PAGE).map((p) => (
                 <div
                   key={p.round_id}
                   className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 md:px-6 bg-[#0A0A0A] border border-white/10 rounded-xl"
@@ -735,6 +740,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 </div>
               ))}
             </div>
+            {claimablePayouts.length > WINS_PER_PAGE && (
+              <div className="flex items-center justify-between mt-3">
+                <button onClick={() => setClaimablePage(p => Math.max(0, p - 1))} disabled={claimablePage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Prev</button>
+                <span className="text-zinc-500 text-[10px] font-bold italic">{claimablePage + 1} / {Math.ceil(claimablePayouts.length / WINS_PER_PAGE)}</span>
+                <button onClick={() => setClaimablePage(p => Math.min(Math.ceil(claimablePayouts.length / WINS_PER_PAGE) - 1, p + 1))} disabled={claimablePage >= Math.ceil(claimablePayouts.length / WINS_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Next</button>
+              </div>
+            )}
           </div>
         )}
 
@@ -744,7 +756,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
             <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">Claimed</h2>
             <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">Prizes you have already claimed.</p>
             <div className="space-y-3">
-              {claimedPayouts.map((p) => (
+              {claimedPayouts.slice(claimedPage * WINS_PER_PAGE, (claimedPage + 1) * WINS_PER_PAGE).map((p) => (
                 <div
                   key={p.round_id}
                   className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 md:px-6 bg-[#0A0A0A] border border-white/5 rounded-xl"
@@ -762,6 +774,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 </div>
               ))}
             </div>
+            {claimedPayouts.length > WINS_PER_PAGE && (
+              <div className="flex items-center justify-between mt-3">
+                <button onClick={() => setClaimedPage(p => Math.max(0, p - 1))} disabled={claimedPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Prev</button>
+                <span className="text-zinc-500 text-[10px] font-bold italic">{claimedPage + 1} / {Math.ceil(claimedPayouts.length / WINS_PER_PAGE)}</span>
+                <button onClick={() => setClaimedPage(p => Math.min(Math.ceil(claimedPayouts.length / WINS_PER_PAGE) - 1, p + 1))} disabled={claimedPage >= Math.ceil(claimedPayouts.length / WINS_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Next</button>
+              </div>
+            )}
           </div>
         )}
 
@@ -793,7 +812,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                         </td>
                       </tr>
                     ) : (
-                      history.map((row, i) => (
+                      history.slice(historyPage * HISTORY_PER_PAGE, (historyPage + 1) * HISTORY_PER_PAGE).map((row, i) => (
                         <tr key={i} className="hover:bg-white/[0.01] transition-colors group">
                           <td className="px-6 py-5 md:px-10 md:py-8 font-[1000] uppercase text-[#14F195] text-sm md:text-lg italic tracking-tight">
                             #{row.round_id.slice(0, 6)}
@@ -820,6 +839,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
             </table>
             )}
           </div>
+          {history.length > HISTORY_PER_PAGE && (
+            <div className="flex items-center justify-between px-6 py-3 md:px-10 md:py-4 border-t border-white/5">
+              <button onClick={() => setHistoryPage(p => Math.max(0, p - 1))} disabled={historyPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Prev</button>
+              <span className="text-zinc-500 text-[10px] font-bold italic">{historyPage + 1} / {Math.ceil(history.length / HISTORY_PER_PAGE)}</span>
+              <button onClick={() => setHistoryPage(p => Math.min(Math.ceil(history.length / HISTORY_PER_PAGE) - 1, p + 1))} disabled={historyPage >= Math.ceil(history.length / HISTORY_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Next</button>
+            </div>
+          )}
         </div>
       </div>
 

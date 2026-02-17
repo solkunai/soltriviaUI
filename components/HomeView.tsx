@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import WalletConnectButton from './WalletConnectButton';
+import FAQModal from './FAQModal';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { getBalanceSafely } from '../src/utils/balance';
 import { fetchCurrentRoundStats, subscribeCurrentRoundStats, getCurrentRoundKey, getRoundLabel } from '../src/utils/api';
 import { PAID_TRIVIA_ENABLED } from '../src/utils/constants';
+
+// Toggle to false to hide the "Next Round In" countdown timer (re-enable when smart contract is ready)
+const SHOW_ROUND_TIMER = false;
 
 interface HomeViewProps {
   lives: number | null;
@@ -23,6 +27,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
   const { connection } = useConnection();
   const [balance, setBalance] = useState<number | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
+  const [showFAQ, setShowFAQ] = useState(false);
   const [prizePool, setPrizePool] = useState(0);
   const [playersEntered, setPlayersEntered] = useState(0);
   const [nextRoundCountdown, setNextRoundCountdown] = useState('');
@@ -169,7 +174,14 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
             className="flex-1 md:flex-none flex items-center justify-center gap-2 md:gap-1.5 bg-[#14F195] hover:bg-[#14F195]/90 h-11 md:h-10 px-4 md:px-6 rounded-full transition-all group shadow-[0_0_15px_rgba(20,241,149,0.15)] active:scale-95 min-h-[44px] md:min-h-0"
           >
             <span className="text-[10px] md:text-[10px] font-black uppercase tracking-wider text-black whitespace-nowrap">HOW TO PLAY</span>
-            <div className="flex w-4 h-4 md:w-5 md:h-5 rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] items-center justify-center text-white font-black text-[9px] md:text-[10px] italic shadow-sm">?</div>
+          </button>
+
+          {/* FAQ */}
+          <button
+            onClick={() => setShowFAQ(true)}
+            className="h-11 md:h-10 px-4 md:px-5 bg-[#14F195] hover:bg-[#14F195]/90 rounded-full flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-[0_0_15px_rgba(20,241,149,0.15)] min-h-[44px] md:min-h-0"
+          >
+            <span className="text-[10px] font-black uppercase tracking-wider text-black whitespace-nowrap">FAQ</span>
           </button>
 
           {/* Desktop Balance Pill */}
@@ -203,7 +215,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 TRIVIA
               </h1>
               <div className="h-0.5 w-16 md:w-32 bg-[#00FFA3] opacity-30 mt-4 shadow-[0_0_10px_#00FFA3]"></div>
-              <p className="text-zinc-300 font-black uppercase tracking-[0.3em] text-[10px] md:text-[11px] mt-6 max-w-sm leading-relaxed italic">
+              <p className="text-zinc-100 font-black uppercase tracking-[0.3em] text-[10px] md:text-[11px] mt-6 max-w-sm leading-relaxed italic">
                 TEST YOUR CRYPTO KNOWLEDGE | THE HIGH-STAKES INTELLIGENCE TRIVIA ON SOLANA
               </p>
             </div>
@@ -260,28 +272,28 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 {onCreateCustomGame && (
                   <button
                     onClick={onCreateCustomGame}
-                    className="h-12 md:h-14 bg-[#0A0A0A] border border-[#38BDF8]/30 hover:border-[#38BDF8]/60 rounded-full flex items-center justify-between px-6 md:px-8 active:scale-[0.98] transition-all group relative overflow-hidden shadow-[0_8px_30px_-8px_rgba(56,189,248,0.15)] hover:shadow-[0_12px_40px_-8px_rgba(56,189,248,0.3)]"
+                    className="h-10 md:h-14 bg-[#0A0A0A] border border-[#38BDF8]/30 hover:border-[#38BDF8]/60 rounded-full flex items-center justify-between px-5 md:px-8 active:scale-[0.98] transition-all group relative overflow-hidden shadow-[0_8px_30px_-8px_rgba(56,189,248,0.15)] hover:shadow-[0_12px_40px_-8px_rgba(56,189,248,0.3)]"
                   >
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#38BDF8]/5 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
-                    <div className="flex items-center gap-2.5 relative z-10">
-                      <div className="w-6 h-6 rounded-full bg-[#38BDF8]/20 flex items-center justify-center">
+                    <div className="flex items-center gap-2 md:gap-2.5 relative z-10">
+                      <div className="hidden md:flex w-6 h-6 rounded-full bg-[#38BDF8]/20 items-center justify-center">
                         <svg className="w-3.5 h-3.5 text-[#38BDF8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
                         </svg>
                       </div>
                       <div className="flex flex-col items-start">
-                        <span className="text-[7px] md:text-[8px] font-black uppercase tracking-[0.3em] text-[#38BDF8]/50 mb-0.5">CREATE & SHARE</span>
-                        <span className="text-[#38BDF8] text-base md:text-lg font-[1000] italic leading-none uppercase tracking-tighter">
+                        <span className="hidden md:block text-[8px] font-black uppercase tracking-[0.3em] text-[#38BDF8]/50 mb-0.5">CREATE & SHARE</span>
+                        <span className="text-[#38BDF8] text-sm md:text-lg font-[1000] italic leading-none uppercase tracking-tighter">
                           CUSTOM GAME
                         </span>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-0.5 relative z-10">
-                      <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[8px] font-black italic uppercase tracking-wider px-2 py-1 rounded-full">NEW</span>
+                    <div className="flex items-center md:flex-col gap-1.5 md:gap-0.5 relative z-10">
+                      <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[7px] md:text-[8px] font-black italic uppercase tracking-wider px-1.5 md:px-2 py-0.5 md:py-1 rounded-full">NEW</span>
                       {hasGamePass ? (
-                        <span className="text-[#14F195] text-[8px] font-black italic">FREE</span>
+                        <span className="text-[#14F195] text-[7px] md:text-[8px] font-black italic">FREE</span>
                       ) : (
-                        <span className="text-zinc-500 text-[8px] font-black italic">0.0225 SOL</span>
+                        <span className="text-zinc-500 text-[7px] md:text-[8px] font-black italic">0.0225 SOL</span>
                       )}
                     </div>
                   </button>
@@ -309,6 +321,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                      {playersEntered.toLocaleString()} <span className="text-[8px] text-zinc-500">UNIT</span>
                    </span>
                 </div>
+                {SHOW_ROUND_TIMER && (
                 <div className="pt-2 border-t border-white/5">
                    <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic leading-none block mb-1">NEXT ROUND IN</span>
                    <div className="flex items-center gap-1">
@@ -318,6 +331,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                      <div className="w-1.5 h-1.5 rounded-full bg-[#00FFA3] animate-pulse"></div>
                    </div>
                 </div>
+                )}
               </div>
             </div>
 
@@ -454,6 +468,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">PLAYERS</span>
                 <span className="text-white text-lg font-black italic tabular-nums leading-none">{playersEntered.toLocaleString()}</span>
               </div>
+              {SHOW_ROUND_TIMER && (
               <div className="text-right">
                 <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">NEXT ROUND</span>
                 <div className="flex items-center gap-1 justify-end">
@@ -461,6 +476,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                   <div className="w-1.5 h-1.5 rounded-full bg-[#00FFA3] animate-pulse"></div>
                 </div>
               </div>
+              )}
             </div>
 
             {/* Social: Discord & X */}
@@ -491,6 +507,9 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
           </div>
         </div>
       </div>
+
+      {/* FAQ Modal */}
+      <FAQModal isOpen={showFAQ} onClose={() => setShowFAQ(false)} />
     </div>
   );
 };
