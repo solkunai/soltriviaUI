@@ -17,16 +17,26 @@ const PATH_TO_VIEW: Record<string, View> = {
   '/privacy': View.PRIVACY,
   '/admin': View.ADMIN,
   '/adminlogin': View.ADMIN,
+  '/create-game': View.CUSTOM_GAME_CREATE,
 };
 function viewFromPath(): View {
   if (typeof window === 'undefined') return View.HOME;
   const path = window.location.pathname.replace(/\/$/, '') || '/';
+  // Dynamic route: /game/:slug → custom game lobby
+  if (path.startsWith('/game/') && path.length > 6) return View.CUSTOM_GAME_LOBBY;
   return PATH_TO_VIEW[path] ?? View.HOME;
 }
-function pathForView(view: View): string {
+function pathForView(view: View, customSlug?: string | null): string {
   if (view === View.HOME) return '/';
   if (view === View.ADMIN) return '/admin';
   if (view === View.CONTRACT_TEST) return import.meta.env.VITE_ENABLE_CONTRACT_TEST === 'true' ? '/contract-test' : '/';
+  if (view === View.CUSTOM_GAME_CREATE) return '/create-game';
+  if ([View.CUSTOM_GAME_LOBBY, View.CUSTOM_GAME_PLAY, View.CUSTOM_GAME_RESULTS].includes(view)) {
+    if (customSlug) return `/game/${customSlug}`;
+    const current = window.location.pathname;
+    if (current.startsWith('/game/')) return current;
+    return '/';
+  }
   return '/' + view.toLowerCase();
 }
 import { useWallet, useConnection } from './src/contexts/WalletContext';
@@ -53,8 +63,13 @@ import PrivacyPolicyView from './components/PrivacyPolicyView';
 import LoadingScreen from './components/LoadingScreen';
 import ContractTestView from './components/ContractTestView';
 import CategorySelectorModal from './components/CategorySelectorModal';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass } from './src/utils/api';
-import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED } from './src/utils/constants';
+import ContentDisclaimerModal, { hasAcceptedContentDisclaimer } from './components/ContentDisclaimerModal';
+import CreateCustomGameView from './components/CreateCustomGameView';
+import CustomGameLobbyView from './components/CustomGameLobbyView';
+import CustomGameQuizView from './components/CustomGameQuizView';
+import CustomGameResultsView from './components/CustomGameResultsView';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, type CustomGameData } from './src/utils/api';
+import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS } from './src/utils/constants';
 import { buildEnterRoundInstruction, contractRoundIdFromDateAndNumber } from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
@@ -98,6 +113,22 @@ const App: React.FC = () => {
   const [practiceQuestionIds, setPracticeQuestionIds] = useState<string[] | null>(null);
   const [practiceResults, setPracticeResults] = useState<{ score: number; points: number; time: number } | null>(null);
 
+  // Custom Games state
+  const [customGameSlug, setCustomGameSlug] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const path = window.location.pathname;
+    if (path.startsWith('/game/') && path.length > 6) return path.slice(6);
+    return null;
+  });
+  const [customGameSessionId, setCustomGameSessionId] = useState<string | null>(null);
+  const [customGameData, setCustomGameData] = useState<{ name: string; questionCount: number; roundCount: number; timeLimitSeconds: number } | null>(null);
+  const [customGameResults, setCustomGameResults] = useState<{
+    score: number; correctCount: number; totalQuestions: number; totalPoints: number;
+    timeTakenMs: number; rank: number | null; gameName: string; slug: string;
+  } | null>(null);
+  const [customGameAttemptsUsed, setCustomGameAttemptsUsed] = useState(0);
+  const [showContentDisclaimer, setShowContentDisclaimer] = useState(false);
+
   // Ref: current wallet so async fetch can avoid applying stale result for a different wallet (reload race)
   const currentWalletRef = useRef<string | null>(null);
   currentWalletRef.current = publicKey?.toBase58() ?? null;
@@ -107,7 +138,7 @@ const App: React.FC = () => {
   const livesShowAfterRef = useRef<number | null>(null);
 
   // Only active-game views truly require wallet (quiz in progress, viewing results)
-  const walletRequiredViews = [View.QUIZ, View.RESULTS];
+  const walletRequiredViews = [View.QUIZ, View.RESULTS, View.CUSTOM_GAME_CREATE, View.CUSTOM_GAME_PLAY];
 
   // Lives: on load/reload do not show count for 5s; keep fetching then show (avoids wrong value from wallet race)
   useEffect(() => {
@@ -181,15 +212,22 @@ const App: React.FC = () => {
 
   // Sync path to URL when view changes (so reload keeps the same page)
   useEffect(() => {
-    const want = pathForView(currentView);
+    const want = pathForView(currentView, customGameSlug);
     if (window.location.pathname.replace(/\/$/, '') !== want.replace(/\/$/, '')) {
       window.history.replaceState(null, '', want);
     }
-  }, [currentView]);
+  }, [currentView, customGameSlug]);
 
-  // Back/forward: update view from path
+  // Back/forward: update view from path (+ extract custom game slug)
   useEffect(() => {
-    const onPopState = () => setCurrentView(viewFromPath());
+    const onPopState = () => {
+      const view = viewFromPath();
+      setCurrentView(view);
+      if (view === View.CUSTOM_GAME_LOBBY) {
+        const path = window.location.pathname;
+        if (path.startsWith('/game/') && path.length > 6) setCustomGameSlug(path.slice(6));
+      }
+    };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
@@ -204,7 +242,7 @@ const App: React.FC = () => {
   }, [currentView, connected, currentSessionId]);
 
   // Redirect to HOME only when user disconnects from views that need wallet data
-  const disconnectRedirectViews = [View.QUIZ, View.RESULTS, View.PROFILE];
+  const disconnectRedirectViews = [View.QUIZ, View.RESULTS, View.PROFILE, View.CUSTOM_GAME_PLAY, View.CUSTOM_GAME_RESULTS];
   const prevConnectedRef = useRef<boolean | undefined>(undefined);
   useEffect(() => {
     const wasConnected = prevConnectedRef.current;
@@ -797,6 +835,75 @@ const App: React.FC = () => {
     }
   };
 
+  // ─── Custom Games Handlers ─────────────────────────────────────────────────
+  const handleNavigateToCreateGame = () => {
+    if (!connected) {
+      setShowWalletRequired(true);
+      return;
+    }
+    if (!hasAcceptedContentDisclaimer()) {
+      setShowContentDisclaimer(true);
+      return;
+    }
+    setCurrentView(View.CUSTOM_GAME_CREATE);
+  };
+
+  const handleCustomGameCreated = (slug: string) => {
+    setCustomGameSlug(slug);
+    setCustomGameSessionId(null);
+    setCustomGameData(null);
+    setCustomGameResults(null);
+    setCustomGameAttemptsUsed(0);
+    setCurrentView(View.CUSTOM_GAME_LOBBY);
+  };
+
+  const handleStartCustomGame = async (gameData: CustomGameData) => {
+    if (!connected || !publicKey) {
+      setShowWalletRequired(true);
+      return;
+    }
+    try {
+      const walletAddr = publicKey.toBase58();
+      const res = await startCustomGame(gameData.game_id, walletAddr);
+      setCustomGameSessionId(res.session_id);
+      setCustomGameData({
+        name: gameData.name,
+        questionCount: gameData.question_count,
+        roundCount: gameData.round_count,
+        timeLimitSeconds: gameData.time_limit_seconds,
+      });
+      setCustomGameAttemptsUsed(gameData.player_attempts + (res.resumed ? 0 : 1));
+      setCurrentView(View.CUSTOM_GAME_PLAY);
+    } catch (err: any) {
+      alert(err.message || 'Failed to start custom game');
+    }
+  };
+
+  const handleCustomGameFinish = (results: {
+    score: number; correctCount: number; totalPoints: number; timeTakenMs: number; rank: number | null;
+  }) => {
+    setCustomGameResults({
+      ...results,
+      totalQuestions: customGameData?.questionCount ?? 0,
+      gameName: customGameData?.name ?? '',
+      slug: customGameSlug ?? '',
+    });
+    setCustomGameSessionId(null);
+    setCustomGameData(null);
+    setCurrentView(View.CUSTOM_GAME_RESULTS);
+  };
+
+  const handleCustomGamePlayAgain = async () => {
+    if (!customGameSlug || !connected || !publicKey) return;
+    try {
+      const walletAddr = publicKey.toBase58();
+      const gameData = await import('./src/utils/api').then(m => m.getCustomGame(customGameSlug, walletAddr));
+      await handleStartCustomGame(gameData);
+    } catch (err: any) {
+      alert(err.message || 'Failed to start custom game');
+    }
+  };
+
   const handleBuyLivesSuccess = (newLivesCount?: number) => {
     if (typeof newLivesCount === 'number') {
       setLives(Math.max(0, newLivesCount));
@@ -831,6 +938,7 @@ const App: React.FC = () => {
             hasGamePass={hasGamePass}
             isSeekerVerified={isSeekerVerified}
             onBuyGamePass={() => setShowCategorySelector(true)}
+            onCreateCustomGame={handleNavigateToCreateGame}
           />
         );
       case View.LEADERBOARD:
@@ -845,7 +953,7 @@ const App: React.FC = () => {
       case View.PLAY:
         return <PlayView lives={livesDisplayReady ? lives : null} roundEntriesUsed={roundEntriesUsed} roundEntriesMax={ROUND_ENTRIES_MAX} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => {
           if (!connected) { setShowWalletRequired(true); } else { setIsBuyLivesOpen(true); }
-        }} onStartPractice={handleStartPractice} practiceRunsLeft={practiceRunsLeft} hasGamePass={hasGamePass} />;
+        }} onStartPractice={handleStartPractice} practiceRunsLeft={practiceRunsLeft} hasGamePass={hasGamePass} onCreateCustomGame={handleNavigateToCreateGame} />;
       case View.QUESTS:
         return <QuestsView onGoToProfile={() => setCurrentView(View.PROFILE)} onOpenGuide={() => setIsGuideOpen(true)} />;
       case View.PROFILE:
@@ -968,6 +1076,57 @@ const App: React.FC = () => {
         return <AdminRoute />;
       case View.CONTRACT_TEST:
         return <ContractTestView />;
+      case View.CUSTOM_GAME_CREATE:
+        return connected ? (
+          <CreateCustomGameView
+            hasGamePass={hasGamePass}
+            onGameCreated={handleCustomGameCreated}
+            onBack={() => setCurrentView(View.PLAY)}
+          />
+        ) : null;
+      case View.CUSTOM_GAME_LOBBY:
+        return customGameSlug ? (
+          <CustomGameLobbyView
+            slug={customGameSlug}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onStartGame={handleStartCustomGame}
+            onBack={() => setCurrentView(View.HOME)}
+            onConnectWallet={() => setShowWalletRequired(true)}
+          />
+        ) : null;
+      case View.CUSTOM_GAME_PLAY:
+        return connected && customGameSessionId && customGameData ? (
+          <CustomGameQuizView
+            sessionId={customGameSessionId}
+            gameData={customGameData}
+            onFinish={handleCustomGameFinish}
+            onQuit={() => {
+              setCustomGameSessionId(null);
+              setCustomGameData(null);
+              if (customGameSlug) {
+                setCurrentView(View.CUSTOM_GAME_LOBBY);
+              } else {
+                setCurrentView(View.HOME);
+              }
+            }}
+          />
+        ) : null;
+      case View.CUSTOM_GAME_RESULTS:
+        return customGameResults ? (
+          <CustomGameResultsView
+            results={customGameResults}
+            attemptsUsed={customGameAttemptsUsed}
+            maxAttempts={CUSTOM_GAME_MAX_ATTEMPTS}
+            onPlayAgain={handleCustomGamePlayAgain}
+            onViewLeaderboard={() => {
+              if (customGameSlug) setCurrentView(View.CUSTOM_GAME_LOBBY);
+            }}
+            onBackToHome={() => {
+              setCustomGameResults(null);
+              setCurrentView(View.HOME);
+            }}
+          />
+        ) : null;
       default:
         return (
           <HomeView
@@ -992,13 +1151,14 @@ const App: React.FC = () => {
             hasGamePass={hasGamePass}
             isSeekerVerified={isSeekerVerified}
             onBuyGamePass={() => setShowCategorySelector(true)}
+            onCreateCustomGame={handleNavigateToCreateGame}
           />
         );
     }
   };
 
   // Hide sidebar during active quiz or legal full-page views
-  const hideSidebar = currentView === View.QUIZ || currentView === View.TERMS || currentView === View.PRIVACY;
+  const hideSidebar = currentView === View.QUIZ || currentView === View.TERMS || currentView === View.PRIVACY || currentView === View.CUSTOM_GAME_PLAY;
 
   // Footer removed – Terms & Privacy links are in the How to Play modal
 
@@ -1066,6 +1226,14 @@ const App: React.FC = () => {
         onClose={() => setShowWalletRequired(false)}
         onOpenTerms={() => setCurrentView(View.TERMS)}
         onOpenPrivacy={() => setCurrentView(View.PRIVACY)}
+      />
+      <ContentDisclaimerModal
+        isOpen={showContentDisclaimer}
+        onAccept={() => {
+          setShowContentDisclaimer(false);
+          setCurrentView(View.CUSTOM_GAME_CREATE);
+        }}
+        onClose={() => setShowContentDisclaimer(false)}
       />
       <PwaInstallPrompt />
       {!hasAcceptedTerms && currentView !== View.TERMS && currentView !== View.PRIVACY && (

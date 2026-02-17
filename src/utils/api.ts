@@ -1297,6 +1297,223 @@ export async function toggleSkrDisplay(walletAddress: string, useSkr: boolean, s
   if (error) throw new Error(error.message);
 }
 
+// ─── Custom Games API ─────────────────────────────────────────────────────
+
+export interface CreateCustomGameParams {
+  walletAddress: string;
+  txSignature: string;
+  name: string;
+  slug?: string;
+  questionCount: 5 | 10 | 15;
+  roundCount: number;
+  timeLimitSeconds: number;
+  questions: Array<{
+    questionText: string;
+    options: [string, string, string, string];
+    correctIndex: 0 | 1 | 2 | 3;
+  }>;
+  contentDisclaimerAccepted: boolean;
+}
+
+export interface CreateCustomGameResponse {
+  success: boolean;
+  game_id: string;
+  slug: string;
+  share_url: string;
+}
+
+export async function createCustomGame(params: CreateCustomGameParams): Promise<CreateCustomGameResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/create-custom-game`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to create custom game');
+  }
+  return response.json();
+}
+
+export interface CustomGameData {
+  game_id: string;
+  name: string;
+  slug: string;
+  creator_wallet: string;
+  creator_username: string | null;
+  question_count: number;
+  round_count: number;
+  time_limit_seconds: number;
+  total_plays: number;
+  status: 'active' | 'expired' | 'banned';
+  expires_at: string;
+  created_at: string;
+  is_expired: boolean;
+  player_best_score: number | null;
+  player_attempts: number;
+  leaderboard: Array<{
+    rank: number;
+    wallet_address: string;
+    username: string;
+    avatar_url: string | null;
+    score: number;
+    correct_count: number;
+    time_taken_ms: number;
+    is_seeker_verified: boolean;
+  }>;
+}
+
+export async function getCustomGame(slug: string, walletAddress?: string): Promise<CustomGameData> {
+  const response = await fetch(`${FUNCTIONS_URL}/get-custom-game`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ slug, wallet_address: walletAddress }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to fetch custom game');
+  }
+  return response.json();
+}
+
+export interface StartCustomGameResponse {
+  session_id: string;
+  game_id: string;
+  total_questions: number;
+  round_count: number;
+  time_limit_seconds: number;
+  resumed: boolean;
+}
+
+export async function startCustomGame(gameId: string, walletAddress: string): Promise<StartCustomGameResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/start-custom-game`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ game_id: gameId, wallet_address: walletAddress }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to start custom game');
+  }
+  return response.json();
+}
+
+export interface CustomQuestionResponse {
+  session_id: string;
+  current_round: number;
+  total_rounds: number;
+  questions: Array<{
+    index: number;
+    id: string;
+    question: string;
+    answers: string[];
+  }>;
+  total_questions: number;
+  time_per_question: number;
+}
+
+export async function getCustomQuestions(sessionId: string): Promise<CustomQuestionResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/get-custom-questions`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to get custom questions');
+  }
+  return response.json();
+}
+
+export interface SubmitCustomAnswerParams {
+  session_id: string;
+  question_id: string;
+  question_index: number;
+  selected_index: number;
+  time_taken_ms: number;
+  time_expired?: boolean;
+}
+
+export interface SubmitCustomAnswerResponse {
+  correct: boolean;
+  correctIndex: number;
+  pointsEarned: number;
+  totalScore: number;
+  correctCount: number;
+  timeMs: number;
+  timedOut: boolean;
+  isLastQuestionInRound: boolean;
+  isLastQuestionInGame: boolean;
+  currentRound: number;
+}
+
+export async function submitCustomAnswer(params: SubmitCustomAnswerParams): Promise<SubmitCustomAnswerResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/submit-custom-answer`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to submit custom answer');
+  }
+  return response.json();
+}
+
+export interface CompleteCustomSessionParams {
+  session_id: string;
+  total_score: number;
+  correct_count: number;
+  time_taken_ms: number;
+}
+
+export interface CompleteCustomSessionResponse {
+  success: boolean;
+  rank: number | null;
+  score: number;
+  correct_count: number;
+  time_taken_ms: number;
+}
+
+export async function completeCustomSession(params: CompleteCustomSessionParams): Promise<CompleteCustomSessionResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/complete-custom-session`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to complete custom session');
+  }
+  return response.json();
+}
+
+export interface MyCustomGame {
+  id: string;
+  slug: string;
+  name: string;
+  question_count: number;
+  round_count: number;
+  total_plays: number;
+  status: string;
+  expires_at: string;
+  created_at: string;
+  share_url: string;
+}
+
+export async function getMyCustomGames(walletAddress: string): Promise<{ games: MyCustomGame[] }> {
+  const response = await fetch(`${FUNCTIONS_URL}/get-my-custom-games`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ wallet_address: walletAddress }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to fetch custom games');
+  }
+  return response.json();
+}
+
 // ─── Realtime Subscriptions ───────────────────────────────────────────────
 /** Realtime subscription: pool and players update when someone enters. Uses polling when Realtime disabled. */
 export function subscribeCurrentRoundStats(

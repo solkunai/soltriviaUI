@@ -15,9 +15,10 @@ interface HomeViewProps {
   hasGamePass?: boolean;
   isSeekerVerified?: boolean;
   onBuyGamePass?: () => void;
+  onCreateCustomGame?: () => void;
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, isSeekerVerified, onBuyGamePass }) => {
+const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, isSeekerVerified, onBuyGamePass, onCreateCustomGame }) => {
   const { publicKey, connected } = useWallet();
   const { connection } = useConnection();
   const [balance, setBalance] = useState<number | null>(null);
@@ -163,13 +164,23 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
 
         <div className="flex justify-between md:justify-end items-center gap-3 w-full md:w-auto">
           {/* How to Play */}
-          <button 
+          <button
             onClick={onOpenGuide}
             className="flex-1 md:flex-none flex items-center justify-center gap-2 md:gap-1.5 bg-[#14F195] hover:bg-[#14F195]/90 h-11 md:h-10 px-4 md:px-6 rounded-full transition-all group shadow-[0_0_15px_rgba(20,241,149,0.15)] active:scale-95 min-h-[44px] md:min-h-0"
           >
             <span className="text-[10px] md:text-[10px] font-black uppercase tracking-wider text-black whitespace-nowrap">HOW TO PLAY</span>
             <div className="flex w-4 h-4 md:w-5 md:h-5 rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] items-center justify-center text-white font-black text-[9px] md:text-[10px] italic shadow-sm">?</div>
           </button>
+
+          {/* Desktop Balance Pill */}
+          {connected && (
+            <div className="hidden md:flex items-center gap-1.5 bg-[#0A0A0A] border border-white/10 h-10 px-4 rounded-full">
+              <span className="text-white text-sm font-[1000] italic tabular-nums">
+                {balance !== null ? balance.toFixed(2) : loadingBalance ? '...' : '0.00'}
+              </span>
+              <span className="text-[#14F195] text-[9px] font-[1000] italic uppercase">SOL</span>
+            </div>
+          )}
 
           {/* Connect Wallet */}
           <div className="flex-1 md:flex-none">
@@ -201,11 +212,6 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-4 w-full sm:max-w-2xl">
               {/* Buttons Stack - always vertical */}
               <div className="flex flex-col gap-3 flex-1">
-                {!PAID_TRIVIA_ENABLED && (
-                  <div className="px-4 py-3 bg-yellow-500/10 border border-yellow-500/25 rounded-xl text-center mb-2">
-                    <span className="text-yellow-400 text-[10px] font-[1000] italic uppercase tracking-wide">Compete for SOL is temporarily paused while we upgrade the smart contract. Free play is still available!</span>
-                  </div>
-                )}
                 <button
                   onClick={PAID_TRIVIA_ENABLED ? onEnterTrivia : undefined}
                   disabled={!PAID_TRIVIA_ENABLED}
@@ -214,14 +220,17 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                   {PAID_TRIVIA_ENABLED && <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>}
 
                   <div className="flex flex-col items-start relative z-10">
-                    <span className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] text-white/60 mb-1">WIN REAL SOL</span>
+                    <span className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] text-white/60 mb-1">{PAID_TRIVIA_ENABLED ? 'WIN REAL SOL' : 'PAUSED — UPGRADING'}</span>
                     <div className="text-white text-2xl md:text-4xl font-[1000] italic leading-none uppercase tracking-tighter">
                       COMPETE FOR SOL
                     </div>
+                    {!PAID_TRIVIA_ENABLED && (
+                      <span className="text-yellow-400 text-[8px] font-black italic uppercase mt-1">Free play still available below</span>
+                    )}
                   </div>
 
-                  <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center relative z-10">
-                    <svg className="w-5 h-5 md:w-6 md:h-6 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                  <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center relative z-10">
+                    <svg className="w-4 h-4 md:w-4.5 md:h-4.5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
                     </svg>
                   </div>
@@ -246,9 +255,41 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                     <span className="text-zinc-500 text-[10px] font-black italic relative z-10">{practiceRunsLeft}/5</span>
                   ) : null}
                 </button>
+
+                {/* Create Custom Game */}
+                {onCreateCustomGame && (
+                  <button
+                    onClick={onCreateCustomGame}
+                    className="h-12 md:h-14 bg-[#0A0A0A] border border-[#38BDF8]/30 hover:border-[#38BDF8]/60 rounded-full flex items-center justify-between px-6 md:px-8 active:scale-[0.98] transition-all group relative overflow-hidden shadow-[0_8px_30px_-8px_rgba(56,189,248,0.15)] hover:shadow-[0_12px_40px_-8px_rgba(56,189,248,0.3)]"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#38BDF8]/5 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
+                    <div className="flex items-center gap-2.5 relative z-10">
+                      <div className="w-6 h-6 rounded-full bg-[#38BDF8]/20 flex items-center justify-center">
+                        <svg className="w-3.5 h-3.5 text-[#38BDF8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                        </svg>
+                      </div>
+                      <div className="flex flex-col items-start">
+                        <span className="text-[7px] md:text-[8px] font-black uppercase tracking-[0.3em] text-[#38BDF8]/50 mb-0.5">CREATE & SHARE</span>
+                        <span className="text-[#38BDF8] text-base md:text-lg font-[1000] italic leading-none uppercase tracking-tighter">
+                          CUSTOM GAME
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-0.5 relative z-10">
+                      <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[8px] font-black italic uppercase tracking-wider px-2 py-1 rounded-full">NEW</span>
+                      {hasGamePass ? (
+                        <span className="text-[#14F195] text-[8px] font-black italic">FREE</span>
+                      ) : (
+                        <span className="text-zinc-500 text-[8px] font-black italic">0.0225 SOL</span>
+                      )}
+                    </div>
+                  </button>
+                )}
               </div>
 
-              <div className="bg-[#0A0A0A] border border-white/5 rounded-xl p-4 flex flex-col justify-center gap-2 min-w-[180px] shadow-xl">
+              {/* Round Stats - mobile only (desktop version in sidebar) */}
+              <div className="lg:hidden bg-[#0A0A0A] border border-white/5 rounded-xl p-4 flex flex-col justify-center gap-2 min-w-[180px] shadow-xl">
                 <div className="mb-0.5">
                    <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">CURRENT ROUND</span>
                    <span className="text-zinc-400 text-[9px] font-bold italic leading-tight block">{getRoundLabel(getCurrentRoundKey().date, getCurrentRoundKey().roundNumber)}</span>
@@ -293,7 +334,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="text-white text-xs font-[1000] italic uppercase tracking-tight block">GAME PASS</span>
-                  <span className="text-zinc-500 text-[9px] font-bold block">Unlimited plays + all categories</span>
+                  <span className="text-zinc-500 text-[9px] font-bold block">Unlimited plays + free custom games</span>
                 </div>
                 <div className="flex items-baseline gap-0.5 flex-shrink-0">
                   <span className="text-[#14F195] text-base font-[1000] italic leading-none">${isSeekerVerified ? '10' : '20'}</span>
@@ -351,70 +392,76 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
 
           {/* Right Side: Secondary Stats Grid */}
           <div className="hidden lg:grid lg:col-span-5 grid-cols-1 gap-4">
-            
-            <div className="bg-[#0A0A0A] border border-white/5 p-6 rounded-xl min-h-[140px] flex flex-col justify-center shadow-xl backdrop-blur-md relative overflow-hidden group">
-              <div>
-                <span className="text-zinc-300 text-[10px] font-black uppercase tracking-widest block mb-1 italic">Balance</span>
-                <div className="flex items-baseline gap-2">
-                  {connected && balance !== null ? (
-                    <span className="text-[28px] font-[1000] italic text-white tabular-nums">
-                      {balance.toFixed(2)}
-                    </span>
-                  ) : connected && loadingBalance ? (
-                    <span className="text-[28px] font-[1000] italic text-white/50">...</span>
-                  ) : (
-                    <span className="text-[28px] font-[1000] italic text-white/30">0.00</span>
-                  )}
-                  <span className="text-[#14F195] text-xs font-[1000] italic uppercase">SOL</span>
-                </div>
-              </div>
-            </div>
 
-            <div className="bg-[#0A0A0A] border border-white/5 p-6 rounded-xl min-h-[140px] flex flex-col justify-center shadow-xl text-left hover:border-[#FF3131]/30 transition-all group relative overflow-hidden">
-              <div>
-                <span className="text-zinc-300 text-[10px] font-black uppercase tracking-widest block mb-1 italic">VITALITY LIVES</span>
-                <div className="flex items-center justify-between">
-                  <div className="text-[28px] font-[1000] italic text-[#FF3131] tabular-nums">
-                    <span data-lives={lives === null ? 'null' : String(lives)}>{lives === null ? '—' : Number(lives).toString().padStart(2, '0')}</span>
-                  </div>
-                  <button 
-                    onClick={onOpenBuyLives}
-                    className="px-5 py-2.5 bg-[#FF3131] hover:bg-[#FF3131]/90 text-white text-[10px] font-black uppercase italic rounded-full shadow-[0_0_20px_rgba(255,49,49,0.3)] hover:scale-105 active:scale-95 transition-all border border-white/10"
-                  >
-                    BUY MORE LIVES
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Game Pass Card (desktop sidebar) */}
+            {/* Game Pass Card (desktop sidebar — top position) */}
             {!hasGamePass && (
               <button
                 onClick={onBuyGamePass}
                 className="bg-[#0A0A0A] border border-[#9945FF]/30 hover:border-[#14F195]/50 p-6 rounded-xl min-h-[140px] flex flex-col justify-center shadow-xl transition-all group relative overflow-hidden text-left"
               >
                 <div className="absolute inset-0 bg-gradient-to-br from-[#9945FF]/5 to-[#14F195]/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                <div className="relative z-10">
-                  <span className="text-zinc-300 text-[10px] font-black uppercase tracking-widest block mb-2 italic">GAME PASS</span>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-white text-sm font-[1000] italic uppercase leading-tight">Unlimited plays</div>
-                      <div className="text-zinc-500 text-[10px] font-bold mt-0.5">All 7 categories unlocked</div>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-[#14F195] text-[28px] font-[1000] italic tabular-nums leading-none">${isSeekerVerified ? '10' : '20'}</span>
-                        <span className="text-[#14F195] text-xs font-[1000] italic uppercase">USD</span>
-                      </div>
-                      {isSeekerVerified && <span className="text-[#9945FF] text-[8px] font-bold italic mt-1">SEEKER DISCOUNT</span>}
-                    </div>
+                <div className="relative z-10 flex flex-col items-center text-center">
+                  <span className="text-zinc-300 text-[10px] font-black uppercase tracking-widest italic">GAME PASS</span>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className="text-[#14F195] text-[32px] font-[1000] italic tabular-nums leading-none">${isSeekerVerified ? '10' : '20'}</span>
+                    <span className="text-[#14F195] text-xs font-[1000] italic uppercase">USD</span>
                   </div>
-                  <div className="mt-3 w-full py-2 bg-gradient-to-r from-[#9945FF] to-[#14F195] rounded-full text-center">
+                  {isSeekerVerified && <span className="text-[#9945FF] text-[8px] font-bold italic mt-1">SEEKER DISCOUNT</span>}
+                  <div className="flex items-center gap-3 mt-3">
+                    <span className="text-white text-[10px] font-[1000] italic uppercase">Unlimited plays</span>
+                    <span className="text-zinc-600">|</span>
+                    <span className="text-white text-[10px] font-[1000] italic uppercase">All categories</span>
+                    <span className="text-zinc-600">|</span>
+                    <span className="text-white text-[10px] font-[1000] italic uppercase">Free custom games</span>
+                  </div>
+                  <div className="mt-4 w-full py-2.5 bg-gradient-to-r from-[#9945FF] to-[#14F195] rounded-full text-center">
                     <span className="text-black text-[10px] font-black uppercase tracking-wider">GET PASS NOW</span>
                   </div>
                 </div>
               </button>
             )}
+
+            {/* Vitality Lives */}
+            <div className="bg-[#0A0A0A] border border-white/5 p-5 rounded-xl flex items-center justify-between shadow-xl hover:border-[#FF3131]/30 transition-all">
+              <div>
+                <span className="text-zinc-300 text-[10px] font-black uppercase tracking-widest block mb-1 italic">VITALITY LIVES</span>
+                <div className="text-[28px] font-[1000] italic text-[#FF3131] tabular-nums">
+                  <span data-lives={lives === null ? 'null' : String(lives)}>{lives === null ? '—' : Number(lives).toString().padStart(2, '0')}</span>
+                </div>
+              </div>
+              <button
+                onClick={onOpenBuyLives}
+                className="px-5 py-2.5 bg-[#FF3131] hover:bg-[#FF3131]/90 text-white text-[10px] font-black uppercase italic rounded-full shadow-[0_0_20px_rgba(255,49,49,0.3)] hover:scale-105 active:scale-95 transition-all border border-white/10"
+              >
+                BUY MORE LIVES
+              </button>
+            </div>
+
+            {/* Round Stats (desktop sidebar) */}
+            <div className="bg-[#0A0A0A] border border-white/5 p-5 rounded-xl flex items-center justify-between shadow-xl">
+              <div>
+                <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">CURRENT ROUND</span>
+                <span className="text-zinc-400 text-[9px] font-bold italic leading-tight block">{getRoundLabel(getCurrentRoundKey().date, getCurrentRoundKey().roundNumber)}</span>
+              </div>
+              <div className="text-right">
+                <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">POOL</span>
+                <div className="flex items-baseline gap-1 justify-end">
+                  <span className="text-[#00FFA3] text-lg font-black italic tabular-nums leading-none">{prizePool.toFixed(2)}</span>
+                  <span className="text-[#00FFA3] text-[8px] font-black italic">SOL</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">PLAYERS</span>
+                <span className="text-white text-lg font-black italic tabular-nums leading-none">{playersEntered.toLocaleString()}</span>
+              </div>
+              <div className="text-right">
+                <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">NEXT ROUND</span>
+                <div className="flex items-center gap-1 justify-end">
+                  <span className="text-white text-lg font-black italic tabular-nums leading-none">{nextRoundCountdown}</span>
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#00FFA3] animate-pulse"></div>
+                </div>
+              </div>
+            </div>
 
             {/* Social: Discord & X */}
             <div className="flex items-center gap-3 pt-2">
