@@ -6,8 +6,8 @@ import { getBalanceSafely } from '../src/utils/balance';
 import { fetchCurrentRoundStats, subscribeCurrentRoundStats, getCurrentRoundKey, getRoundLabel } from '../src/utils/api';
 import { PAID_TRIVIA_ENABLED } from '../src/utils/constants';
 
-// Toggle to false to hide the "Next Round In" countdown timer (re-enable when smart contract is ready)
-const SHOW_ROUND_TIMER = false;
+// Toggle to false to hide round stats & timer (re-enable when paid trivia rounds are live)
+const SHOW_ROUND_STATS = false;
 
 interface HomeViewProps {
   lives: number | null;
@@ -220,6 +220,31 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               </p>
             </div>
 
+            {/* Game Pass Promo (mobile only — desktop uses sidebar card) */}
+            {!hasGamePass && (
+              <button
+                onClick={onBuyGamePass}
+                className="lg:hidden mb-4 w-full bg-[#0A0A0A] border border-[#9945FF]/30 active:border-[#14F195]/50 rounded-xl p-3.5 flex items-center gap-3 transition-all text-left"
+              >
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#9945FF] to-[#14F195] flex items-center justify-center flex-shrink-0">
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-white text-xs font-[1000] italic uppercase tracking-tight block">GAME PASS</span>
+                  <span className="text-zinc-500 text-[9px] font-bold block">Unlimited plays + free custom games</span>
+                </div>
+                <div className="flex items-baseline gap-0.5 flex-shrink-0">
+                  <span className="text-[#14F195] text-base font-[1000] italic leading-none">${isSeekerVerified ? '10' : '20'}</span>
+                  <span className="text-[#14F195] text-[7px] font-black italic uppercase">USD</span>
+                </div>
+                <svg className="w-4 h-4 text-zinc-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+
             {/* Play Now Area */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-4 w-full sm:max-w-2xl">
               {/* Buttons Stack - always vertical */}
@@ -301,6 +326,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               </div>
 
               {/* Round Stats - mobile only (desktop version in sidebar) */}
+              {SHOW_ROUND_STATS && (
               <div className="lg:hidden bg-[#0A0A0A] border border-white/5 rounded-xl p-4 flex flex-col justify-center gap-2 min-w-[180px] shadow-xl">
                 <div className="mb-0.5">
                    <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">CURRENT ROUND</span>
@@ -321,7 +347,6 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                      {playersEntered.toLocaleString()} <span className="text-[8px] text-zinc-500">UNIT</span>
                    </span>
                 </div>
-                {SHOW_ROUND_TIMER && (
                 <div className="pt-2 border-t border-white/5">
                    <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic leading-none block mb-1">NEXT ROUND IN</span>
                    <div className="flex items-center gap-1">
@@ -331,34 +356,9 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                      <div className="w-1.5 h-1.5 rounded-full bg-[#00FFA3] animate-pulse"></div>
                    </div>
                 </div>
-                )}
               </div>
+              )}
             </div>
-
-            {/* Game Pass Promo (mobile only — desktop uses sidebar card) */}
-            {!hasGamePass && (
-              <button
-                onClick={onBuyGamePass}
-                className="lg:hidden mt-4 w-full bg-[#0A0A0A] border border-[#9945FF]/30 active:border-[#14F195]/50 rounded-xl p-3.5 flex items-center gap-3 transition-all text-left"
-              >
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#9945FF] to-[#14F195] flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
-                  </svg>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-white text-xs font-[1000] italic uppercase tracking-tight block">GAME PASS</span>
-                  <span className="text-zinc-500 text-[9px] font-bold block">Unlimited plays + free custom games</span>
-                </div>
-                <div className="flex items-baseline gap-0.5 flex-shrink-0">
-                  <span className="text-[#14F195] text-base font-[1000] italic leading-none">${isSeekerVerified ? '10' : '20'}</span>
-                  <span className="text-[#14F195] text-[7px] font-black italic uppercase">USD</span>
-                </div>
-                <svg className="w-4 h-4 text-zinc-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            )}
 
             {/* Referral Welcome Banner (shown when user arrived via referral link) */}
             {(() => {
@@ -452,6 +452,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
             </div>
 
             {/* Round Stats (desktop sidebar) */}
+            {SHOW_ROUND_STATS && (
             <div className="bg-[#0A0A0A] border border-white/5 p-5 rounded-xl flex items-center justify-between shadow-xl">
               <div>
                 <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">CURRENT ROUND</span>
@@ -468,7 +469,6 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">PLAYERS</span>
                 <span className="text-white text-lg font-black italic tabular-nums leading-none">{playersEntered.toLocaleString()}</span>
               </div>
-              {SHOW_ROUND_TIMER && (
               <div className="text-right">
                 <span className="text-zinc-500 text-[7px] font-black uppercase tracking-widest italic leading-none block">NEXT ROUND</span>
                 <div className="flex items-center gap-1 justify-end">
@@ -476,8 +476,8 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                   <div className="w-1.5 h-1.5 rounded-full bg-[#00FFA3] animate-pulse"></div>
                 </div>
               </div>
-              )}
             </div>
+            )}
 
             {/* Social: Discord & X */}
             <div className="flex items-center gap-3 pt-2">
