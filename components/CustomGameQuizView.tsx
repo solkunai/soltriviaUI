@@ -74,7 +74,7 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
           index: q.index,
           id: q.id,
           text: q.question,
-          options: [...q.answers],
+          options: [...q.options],
           correctAnswer: -1, // never exposed to client
         }));
 
