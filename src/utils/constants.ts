@@ -77,6 +77,27 @@ export const CATEGORY_LABELS: Record<PracticeCategory, string> = {
   science: 'Science & Tech',
 };
 
+// ─── Custom Games ─────────────────────────────────────────────────────────
+export const CUSTOM_GAME_CREATION_FEE_LAMPORTS = ENTRY_FEE_LAMPORTS; // 0.02 SOL (non-pass holders only)
+export const CUSTOM_GAME_PLATFORM_FEE_LAMPORTS = TXN_FEE_LAMPORTS;   // 0.0025 SOL (everyone)
+export const CUSTOM_GAME_QUESTION_COUNTS = [5, 10, 15] as const;
+export const CUSTOM_GAME_ROUND_COUNTS = [1, 3, 5] as const;
+export const CUSTOM_GAME_TIME_LIMITS = [10, 15, 20, 30] as const;
+export const CUSTOM_GAME_MAX_ATTEMPTS = 3;
+export const CUSTOM_GAME_EXPIRY_DAYS = 7;
+export const CUSTOM_GAME_NAME_MAX = 60;
+export const CUSTOM_GAME_QUESTION_TEXT_MAX = 500;
+export const CUSTOM_GAME_OPTION_TEXT_MAX = 200;
+export const CUSTOM_GAME_SLUG_MIN = 3;
+export const CUSTOM_GAME_SLUG_MAX = 40;
+
+// Valid round counts per question count (must divide evenly)
+export const VALID_ROUND_COUNTS: Record<number, number[]> = {
+  5: [1, 5],
+  10: [1, 2, 5, 10],
+  15: [1, 3, 5, 15],
+};
+
 export const APP_IDENTITY = {
   name: 'SOL Trivia',
   uri: 'https://soltrivia.app',

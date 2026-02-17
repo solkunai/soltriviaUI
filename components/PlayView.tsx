@@ -10,9 +10,10 @@ interface PlayViewProps {
   onStartPractice: () => void;
   practiceRunsLeft: number;
   hasGamePass?: boolean;
+  onCreateCustomGame?: () => void;
 }
 
-const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass }) => {
+const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, onCreateCustomGame }) => {
   const roundEntriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
   const livesNum = lives ?? 0;
   const canPlay = roundEntriesLeft > 0 || livesNum > 0;
@@ -86,7 +87,28 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
             <span className="absolute right-6 text-zinc-500 text-xs font-black italic">{practiceRunsLeft}/5</span>
           ) : null}
         </button>
-        
+
+        {/* Create Custom Game Button */}
+        {onCreateCustomGame && (
+          <button
+            onClick={onCreateCustomGame}
+            className="w-full h-16 bg-[#0A0A0A] border-2 border-[#9945FF]/30 hover:border-[#9945FF]/60 rounded-full flex items-center justify-between px-8 active:scale-[0.98] transition-all group relative overflow-hidden shadow-[0_8px_30px_-8px_rgba(153,69,255,0.15)] hover:shadow-[0_12px_40px_-8px_rgba(153,69,255,0.3)]"
+          >
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#9945FF]/5 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
+            <div className="flex items-center gap-3 relative z-10">
+              <svg className="w-5 h-5 text-[#9945FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+              <span className="text-[#9945FF] text-lg md:text-xl font-[1000] italic leading-none uppercase tracking-tighter">
+                CREATE CUSTOM GAME
+              </span>
+            </div>
+            <span className="text-zinc-500 text-[9px] font-black italic uppercase tracking-wider relative z-10">
+              {hasGamePass ? '0.0025 SOL' : '0.0225 SOL'}
+            </span>
+          </button>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
             <div className={`bg-[#0A0A0A] border p-4 rounded-full text-center backdrop-blur-md flex flex-col items-center justify-center ${roundEntriesLeft > 0 ? 'border-[#14F195]/20' : 'border-white/5'}`}>
                 <span className="text-zinc-300 text-[8px] font-black uppercase block mb-1 tracking-widest italic leading-none">Round Entries</span>

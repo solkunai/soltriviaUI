@@ -15,12 +15,15 @@ interface QuizViewProps {
 
 const BASE_POINTS = 500;
 const MAX_SPEED_BONUS = 500;
-const SPEED_BONUS_DECAY_SEC = 7; // Match per-question timer
-const SECONDS_PER_QUESTION = 7; // Timer shown to user; auto-submit wrong if no answer
+const SPEED_BONUS_DECAY_SEC = 7; // Match per-question timer (paid mode)
+const SECONDS_PER_QUESTION = 7; // Paid mode timer
+const PRACTICE_SECONDS_PER_QUESTION = 12; // Practice mode: longer timer for reading
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const; // Display labels; indices 0–3 sent to API
 
 const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode = 'paid', practiceQuestionIds }) => {
   const isPracticeMode = mode === 'practice';
+  const timePerQuestion = isPracticeMode ? PRACTICE_SECONDS_PER_QUESTION : SECONDS_PER_QUESTION;
+  const speedDecaySec = isPracticeMode ? PRACTICE_SECONDS_PER_QUESTION : SPEED_BONUS_DECAY_SEC;
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +35,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [lastGainedPoints, setLastGainedPoints] = useState<number | null>(null);
-  const [questionTimeLeft, setQuestionTimeLeft] = useState(SECONDS_PER_QUESTION);
+  const [questionTimeLeft, setQuestionTimeLeft] = useState(timePerQuestion);
   const [timedOut, setTimedOut] = useState(false);
 
   const timerRef = useRef<number | null>(null);
@@ -138,10 +141,10 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
     }
   }, [questions]);
 
-  // Per-question 7-second countdown; on 0, submit as wrong and advance
+  // Per-question countdown; on 0, submit as wrong and advance
   useEffect(() => {
     if (questions.length === 0 || selectedOption !== null || timedOut) return;
-    setQuestionTimeLeft(SECONDS_PER_QUESTION);
+    setQuestionTimeLeft(timePerQuestion);
     questionTimerRef.current = window.setInterval(() => {
       setQuestionTimeLeft((prev) => {
         if (prev <= 1) {
@@ -193,7 +196,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
             setIsCorrect(null);
             setLastGainedPoints(null);
             setQuestionStartTime(Date.now());
-            setQuestionTimeLeft(SECONDS_PER_QUESTION);
+            setQuestionTimeLeft(timePerQuestion);
           } else {
             if (timerRef.current) clearInterval(timerRef.current);
             onFinish(score, totalPoints, sessionTimer);
@@ -226,7 +229,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
       correct = optionIdx === actualCorrectIndex;
 
       if (correct) {
-        const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / SPEED_BONUS_DECAY_SEC)));
+        const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / speedDecaySec)));
         pointsEarned = BASE_POINTS + speedBonus;
       }
 
@@ -318,7 +321,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
         setIsCorrect(null);
         setLastGainedPoints(null);
         setQuestionStartTime(Date.now());
-        setQuestionTimeLeft(SECONDS_PER_QUESTION);
+        setQuestionTimeLeft(timePerQuestion);
       } else {
         if (timerRef.current) clearInterval(timerRef.current);
         onFinish(score + (correct ? 1 : 0), totalPoints + pointsForThisQuestion, sessionTimer);

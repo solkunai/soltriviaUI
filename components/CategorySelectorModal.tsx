@@ -263,7 +263,8 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
               </div>
 
               {/* Token Selector for Game Pass */}
-              <div className="flex gap-2 mb-3 mt-3">
+              <span className="text-zinc-400 text-[10px] font-black italic uppercase tracking-wider block mt-3 mb-2">Choose your payment method</span>
+              <div className="flex gap-2 mb-3">
                 {TOKEN_OPTIONS.map((tok) => {
                   const isActive = selectedToken === tok.id;
                   return (
