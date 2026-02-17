@@ -238,7 +238,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   }
 
   return (
-    <div className="min-h-full flex flex-col bg-[#050505] p-4 sm:p-6 md:p-12 relative overflow-hidden">
+    <div className="min-h-full flex flex-col bg-[#050505] p-4 sm:p-6 md:p-12 pb-32 md:pb-12 relative overflow-y-auto">
       <div className="absolute inset-0 pointer-events-none">
         <div className="scan-line opacity-10"></div>
       </div>
