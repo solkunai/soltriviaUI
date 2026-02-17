@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { DEFAULT_AVATAR } from '../src/utils/constants';
-import { getLeaderboard, LeaderboardEntry, fetchRoundsWithWinners, getTotalSolWonByWallets, type RoundWithWinner } from '../src/utils/api';
+import { getLeaderboard, LeaderboardEntry, fetchRoundsWithWinnersPaginated, getTotalSolWonByWallets, type RoundWithWinner } from '../src/utils/api';
 import { useWallet } from '../src/contexts/WalletContext';
+import Pagination from './Pagination';
 
 type RankPeriod = 'ALL_TIME' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
 type MainLeaderboardTab = 'LEADERBOARD' | 'ROUND_WINS';
@@ -57,6 +58,9 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
   const [playerCount, setPlayerCount] = useState(0);
   const [roundsWithWinners, setRoundsWithWinners] = useState<RoundWithWinner[]>([]);
   const [roundsLoading, setRoundsLoading] = useState(false);
+  const [roundsPage, setRoundsPage] = useState(0);
+  const [roundsTotalCount, setRoundsTotalCount] = useState(0);
+  const [roundsFilterDate, setRoundsFilterDate] = useState('');
   const [solWonByWallet, setSolWonByWallet] = useState<Record<string, number>>({});
   const { publicKey } = useWallet();
 
@@ -130,16 +134,22 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
     return () => clearInterval(interval);
   }, [publicKey, period, periodApi]);
 
-  // Fetch round winners when Round Wins tab is selected
+  // Fetch round winners when Round Wins tab is selected (paginated)
+  const ROUNDS_PAGE_SIZE = 10;
   useEffect(() => {
     if (mainTab !== 'ROUND_WINS') return;
     let mounted = true;
     setRoundsLoading(true);
-    fetchRoundsWithWinners(50)
-      .then((data) => { if (mounted) setRoundsWithWinners(data); })
+    fetchRoundsWithWinnersPaginated(roundsPage, ROUNDS_PAGE_SIZE, roundsFilterDate || undefined)
+      .then(({ rounds, totalCount }) => {
+        if (mounted) {
+          setRoundsWithWinners(rounds);
+          setRoundsTotalCount(totalCount);
+        }
+      })
       .finally(() => { if (mounted) setRoundsLoading(false); });
     return () => { mounted = false; };
-  }, [mainTab]);
+  }, [mainTab, roundsPage, roundsFilterDate]);
 
   // Transform API data to display format; winnings from round_payouts (total prize/paid per wallet)
   const allPlayers: PlayerStats[] = leaderboardData.map((entry) => {
@@ -216,6 +226,31 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
               <p className="text-zinc-500 text-[10px] md:text-xs font-black uppercase tracking-widest italic mt-4 max-w-md">
                 Top 5 share the pot: 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.
               </p>
+            </div>
+            {/* Date Filter + Count */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-6">
+              <div className="flex items-center gap-3">
+                <label className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic shrink-0">
+                  Jump to date
+                </label>
+                <input
+                  type="date"
+                  value={roundsFilterDate}
+                  onChange={(e) => { setRoundsFilterDate(e.target.value); setRoundsPage(0); }}
+                  className="bg-black/60 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm font-bold min-h-[44px] focus:border-[#14F195]/50 focus:outline-none focus:ring-1 focus:ring-[#14F195]/30 [color-scheme:dark]"
+                />
+                {roundsFilterDate && (
+                  <button
+                    onClick={() => { setRoundsFilterDate(''); setRoundsPage(0); }}
+                    className="min-w-[44px] min-h-[44px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-zinc-400 text-xs font-black uppercase hover:bg-white/10 active:scale-95 transition-all"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <span className="text-zinc-600 text-[10px] font-black uppercase tracking-wider italic">
+                {roundsTotalCount} round{roundsTotalCount !== 1 ? 's' : ''}
+              </span>
             </div>
             {roundsLoading && (
               <div className="text-center py-20">
@@ -315,6 +350,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                 ))}
               </div>
             )}
+            <Pagination currentPage={roundsPage} totalCount={roundsTotalCount} pageSize={ROUNDS_PAGE_SIZE} onPageChange={setRoundsPage} className="pb-24" />
           </div>
         ) : (
           <>

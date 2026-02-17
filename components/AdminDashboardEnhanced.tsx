@@ -5,6 +5,7 @@ import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { PRIZE_POOL_WALLET, REVENUE_WALLET, SUPABASE_FUNCTIONS_URL } from '../src/utils/constants';
 import { getAuthHeaders, fetchRoundPayouts, markPayoutPaid, postWinnersOnChain, type RoundPayout } from '../src/utils/api';
 import { getSolanaRpcEndpoint } from '../src/utils/rpc';
+import Pagination from './Pagination';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
 
@@ -20,7 +21,7 @@ function getAdminCreds(): { u: string; p: string } {
   };
 }
 
-type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'referrals' | 'answer_debug';
+type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'referrals' | 'answer_debug' | 'game_passes';
 
 interface Question {
   id?: string;
@@ -155,6 +156,7 @@ const AdminDashboardEnhanced: React.FC = () => {
           { id: 'users', label: '👥 Users', icon: '👥' },
           { id: 'rounds', label: '🎮 Rounds', icon: '🎮' },
           { id: 'lives', label: '❤️ Lives', icon: '❤️' },
+          { id: 'game_passes', label: '🎫 Game Passes', icon: '🎫' },
           { id: 'referrals', label: '🔗 Referrals', icon: '🔗' },
           { id: 'answer_debug', label: '🔬 Answer debug', icon: '🔬' },
         ].map((tab) => (
@@ -182,6 +184,7 @@ const AdminDashboardEnhanced: React.FC = () => {
         {activeTab === 'users' && <UsersView />}
         {activeTab === 'rounds' && <RoundsView />}
         {activeTab === 'lives' && <LivesView />}
+        {activeTab === 'game_passes' && <GamePassesView />}
         {activeTab === 'referrals' && <ReferralsView />}
         {activeTab === 'answer_debug' && <AnswerDebugView functionsUrl={SUPABASE_FUNCTIONS_URL} />}
       </div>
@@ -189,22 +192,28 @@ const AdminDashboardEnhanced: React.FC = () => {
   );
 };
 
-// Stub tabs (coming soon) — fix missing component errors
+const RANKINGS_PAGE_SIZE = 50;
 const RankingsView: React.FC = () => {
   const [list, setList] = useState<PlayerStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   useEffect(() => {
+    setLoading(true);
+    const from = page * RANKINGS_PAGE_SIZE;
+    const to = from + RANKINGS_PAGE_SIZE - 1;
     supabase
       .from('player_profiles')
-      .select('wallet_address, username, total_games_played, total_points, current_streak')
+      .select('wallet_address, username, total_games_played, total_points, current_streak', { count: 'exact' })
       .order('total_points', { ascending: false })
-      .limit(100)
-      .then(({ data }) => {
+      .range(from, to)
+      .then(({ data, count }) => {
         setList((data as PlayerStats[]) || []);
+        setTotalCount(count ?? 0);
         setLoading(false);
       });
-  }, []);
-  if (loading) return <div className="py-12 text-center text-zinc-400">Loading rankings...</div>;
+  }, [page]);
+  if (loading && list.length === 0) return <div className="py-12 text-center text-zinc-400">Loading rankings...</div>;
   return (
     <div className="py-6">
       <h2 className="text-xl font-black text-white mb-4">Player Rankings (by total points)</h2>
@@ -223,7 +232,7 @@ const RankingsView: React.FC = () => {
           <tbody>
             {list.map((p, i) => (
               <tr key={p.wallet_address} className="border-b border-white/5">
-                <td className="py-2 px-2 text-zinc-400">{i + 1}</td>
+                <td className="py-2 px-2 text-zinc-400">{page * RANKINGS_PAGE_SIZE + i + 1}</td>
                 <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 8)}...{p.wallet_address.slice(-4)}</td>
                 <td className="py-2 px-2 text-white text-sm">{p.username || '—'}</td>
                 <td className="py-2 px-2 text-[#14F195]">{p.total_games_played ?? 0}</td>
@@ -235,28 +244,36 @@ const RankingsView: React.FC = () => {
         </table>
       </div>
       {list.length === 0 && <p className="text-zinc-500 mt-4">No players yet.</p>}
+      <Pagination currentPage={page} totalCount={totalCount} pageSize={RANKINGS_PAGE_SIZE} onPageChange={setPage} />
     </div>
   );
 };
 
+const USERS_PAGE_SIZE = 50;
 const UsersView: React.FC = () => {
   const [list, setList] = useState<PlayerStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   useEffect(() => {
+    setLoading(true);
+    const from = page * USERS_PAGE_SIZE;
+    const to = from + USERS_PAGE_SIZE - 1;
     supabase
       .from('player_profiles')
-      .select('wallet_address, username, total_games_played, total_points, current_streak')
+      .select('wallet_address, username, total_games_played, total_points, current_streak', { count: 'exact' })
       .order('updated_at', { ascending: false })
-      .limit(100)
-      .then(({ data }) => {
+      .range(from, to)
+      .then(({ data, count }) => {
         setList((data as PlayerStats[]) || []);
+        setTotalCount(count ?? 0);
         setLoading(false);
       });
-  }, []);
-  if (loading) return <div className="py-12 text-center text-zinc-400">Loading users...</div>;
+  }, [page]);
+  if (loading && list.length === 0) return <div className="py-12 text-center text-zinc-400">Loading users...</div>;
   return (
     <div className="py-6">
-      <h2 className="text-xl font-black text-white mb-4">Users (player profiles)</h2>
+      <h2 className="text-xl font-black text-white mb-4">Users (player profiles) — {totalCount} total</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -271,7 +288,7 @@ const UsersView: React.FC = () => {
           <tbody>
             {list.map((p) => (
               <tr key={p.wallet_address} className="border-b border-white/5">
-                <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address}</td>
+                <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 8)}...{p.wallet_address.slice(-4)}</td>
                 <td className="py-2 px-2 text-white text-sm">{p.username || '—'}</td>
                 <td className="py-2 px-2 text-[#14F195]">{p.total_games_played ?? 0}</td>
                 <td className="py-2 px-2 text-[#14F195]">{(p.total_points ?? 0).toLocaleString()}</td>
@@ -282,6 +299,7 @@ const UsersView: React.FC = () => {
         </table>
       </div>
       {list.length === 0 && <p className="text-zinc-500 mt-4">No users yet.</p>}
+      <Pagination currentPage={page} totalCount={totalCount} pageSize={USERS_PAGE_SIZE} onPageChange={setPage} />
     </div>
   );
 };
@@ -342,6 +360,7 @@ function getRoundLabel(date: string, roundNumber: number): string {
   return `${day} ${start}:00–${end}:00 UTC`;
 }
 
+const ROUND_WINNERS_PAGE_SIZE = 10;
 const RoundWinnersAdminView: React.FC = () => {
   const [rounds, setRounds] = useState<Array<{ id: string; date: string; round_number: number; pot_lamports: number; player_count: number }>>([]);
   const [payouts, setPayouts] = useState<RoundPayout[]>([]);
@@ -350,33 +369,39 @@ const RoundWinnersAdminView: React.FC = () => {
   const [paidInput, setPaidInput] = useState<{ roundId: string; rank: number; value: string } | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [postingRoundId, setPostingRoundId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [totalRoundsCount, setTotalRoundsCount] = useState(0);
 
   const creds = getAdminCreds();
 
   useEffect(() => {
     let mounted = true;
     setLoading(true);
+    const from = page * ROUND_WINNERS_PAGE_SIZE;
+    const to = from + ROUND_WINNERS_PAGE_SIZE - 1;
     (async () => {
-      const { data: roundsData, error: roundsErr } = await supabase
+      const { data: roundsData, count: roundsCount, error: roundsErr } = await supabase
         .from('daily_rounds')
-        .select('id, date, round_number, pot_lamports, player_count')
+        .select('id, date, round_number, pot_lamports, player_count', { count: 'exact' })
         .order('date', { ascending: false })
         .order('round_number', { ascending: false })
-        .limit(50);
+        .range(from, to);
       if (roundsErr || !roundsData?.length) {
         if (mounted) setRounds([]);
         if (mounted) setPayouts([]);
+        if (mounted) setTotalRoundsCount(roundsCount ?? 0);
         setLoading(false);
         return;
       }
       if (mounted) setRounds(roundsData as typeof rounds);
+      if (mounted) setTotalRoundsCount(roundsCount ?? 0);
       const ids = roundsData.map((r: { id: string }) => r.id);
       const list = await fetchRoundPayouts(ids);
       if (mounted) setPayouts(list);
       setLoading(false);
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [page]);
 
   const copyWallet = (wallet: string) => {
     navigator.clipboard.writeText(wallet).then(() => {
@@ -527,17 +552,80 @@ const RoundWinnersAdminView: React.FC = () => {
       {rounds.length > 0 && payouts.length === 0 && (
         <p className="text-zinc-500 text-sm mt-4">No payouts yet. Top 5 are populated when players complete games (calculate_rankings_and_winner).</p>
       )}
+      <Pagination currentPage={page} totalCount={totalRoundsCount} pageSize={ROUND_WINNERS_PAGE_SIZE} onPageChange={setPage} />
     </div>
   );
 };
+
+const GAME_PASSES_PAGE_SIZE = 50;
+const GamePassesView: React.FC = () => {
+  const [passes, setPasses] = useState<Array<{ wallet_address: string; purchased_at: string; tx_signature: string; is_active: boolean; payment_token: string | null; amount_usd: number | null }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+
+  useEffect(() => {
+    setLoading(true);
+    const from = page * GAME_PASSES_PAGE_SIZE;
+    const to = from + GAME_PASSES_PAGE_SIZE - 1;
+    supabase
+      .from('game_passes')
+      .select('wallet_address, purchased_at, tx_signature, is_active, payment_token, amount_usd', { count: 'exact' })
+      .order('purchased_at', { ascending: false })
+      .range(from, to)
+      .then(({ data, count }) => {
+        setPasses((data as typeof passes) ?? []);
+        setTotalCount(count ?? 0);
+        setLoading(false);
+      });
+  }, [page]);
+
+  if (loading && passes.length === 0) return <div className="py-12 text-center text-zinc-400">Loading game passes...</div>;
+
+  return (
+    <div className="py-6">
+      <h2 className="text-xl font-black text-white mb-2">Game Passes</h2>
+      <p className="text-zinc-500 text-sm mb-4">{totalCount} total game pass purchases</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-white/10">
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Wallet</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Purchased</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Token</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">USD</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Active</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Tx</th>
+            </tr>
+          </thead>
+          <tbody>
+            {passes.map((p) => (
+              <tr key={p.wallet_address} className="border-b border-white/5">
+                <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 8)}...{p.wallet_address.slice(-4)}</td>
+                <td className="py-2 px-2 text-zinc-400 text-xs">{new Date(p.purchased_at).toLocaleString()}</td>
+                <td className="py-2 px-2 text-white text-sm font-bold">{p.payment_token || 'SOL'}</td>
+                <td className="py-2 px-2 text-[#14F195] font-bold">{p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : '—'}</td>
+                <td className="py-2 px-2">{p.is_active ? <span className="text-[#14F195] font-bold text-xs">Active</span> : <span className="text-red-400 font-bold text-xs">Inactive</span>}</td>
+                <td className="py-2 px-2"><a href={`https://solscan.io/tx/${p.tx_signature}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline">{p.tx_signature.slice(0, 8)}...</a></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {passes.length === 0 && <p className="text-zinc-500 mt-4">No game passes purchased yet.</p>}
+      <Pagination currentPage={page} totalCount={totalCount} pageSize={GAME_PASSES_PAGE_SIZE} onPageChange={setPage} />
+    </div>
+  );
+};
+
 const LivesView: React.FC = () => {
   const [lives, setLives] = useState<Array<{ wallet_address: string; lives_count: number; total_purchased: number; total_used: number }>>([]);
-  const [purchases, setPurchases] = useState<Array<{ wallet_address: string; lives_purchased: number; amount_lamports: number; created_at?: string }>>([]);
+  const [purchases, setPurchases] = useState<Array<{ wallet_address: string; lives_purchased: number; amount_lamports: number; created_at?: string; payment_token?: string | null; amount_usd?: number | null }>>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     Promise.all([
       supabase.from('player_lives').select('wallet_address, lives_count, total_purchased, total_used').order('total_purchased', { ascending: false }).limit(100),
-      supabase.from('lives_purchases').select('wallet_address, lives_purchased, amount_lamports, created_at').order('created_at', { ascending: false }).limit(100),
+      supabase.from('lives_purchases').select('wallet_address, lives_purchased, amount_lamports, created_at, payment_token, amount_usd').order('created_at', { ascending: false }).limit(100),
     ]).then(([lRes, pRes]) => {
       setLives((lRes.data as typeof lives) || []);
       setPurchases((pRes.data as typeof purchases) || []);
@@ -581,7 +669,8 @@ const LivesView: React.FC = () => {
               <tr className="border-b border-white/10">
                 <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Wallet</th>
                 <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Lives</th>
-                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Amount (SOL)</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Token</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Amount</th>
                 <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Date</th>
               </tr>
             </thead>
@@ -590,8 +679,9 @@ const LivesView: React.FC = () => {
                 <tr key={i} className="border-b border-white/5">
                   <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 8)}...{p.wallet_address.slice(-4)}</td>
                   <td className="py-2 px-2 text-[#14F195]">{p.lives_purchased ?? 0}</td>
-                  <td className="py-2 px-2 text-white">{(p.amount_lamports / 1_000_000_000).toFixed(4)}</td>
-                  <td className="py-2 px-2 text-zinc-500 text-xs">{(p as any).created_at ? new Date((p as any).created_at).toLocaleString() : '—'}</td>
+                  <td className="py-2 px-2 text-white text-sm font-bold">{p.payment_token || 'SOL'}</td>
+                  <td className="py-2 px-2 text-[#14F195]">{p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : `${(p.amount_lamports / 1_000_000_000).toFixed(4)} SOL`}</td>
+                  <td className="py-2 px-2 text-zinc-500 text-xs">{p.created_at ? new Date(p.created_at).toLocaleString() : '—'}</td>
                 </tr>
               ))}
             </tbody>

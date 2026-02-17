@@ -1,9 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { purchaseLives } from '../src/utils/api';
-import { REVENUE_WALLET, LIVES_TIERS, SEEKER_LIVES_TIERS, type LivesTierId } from '@/src/utils/constants';
-
+import {
+  REVENUE_WALLET,
+  LIVES_TIERS,
+  SEEKER_LIVES_TIERS,
+  LIVES_USD_PRICING,
+  type LivesTierId,
+  type PaymentToken,
+} from '@/src/utils/constants';
+import { fetchTokenPrices, calculateTokenAmount, formatTokenAmount, type TokenPrices } from '@/src/utils/tokenPrices';
+import { buildSplTransferInstructions, getSplTokenBalance } from '@/src/utils/splTransfer';
 
 interface BuyLivesModalProps {
   isOpen: boolean;
@@ -11,6 +19,12 @@ interface BuyLivesModalProps {
   onBuySuccess?: (newLivesCount?: number) => void;
   isSeekerVerified?: boolean;
 }
+
+const TOKEN_OPTIONS: { id: PaymentToken; label: string; color: string }[] = [
+  { id: 'SOL', label: 'SOL', color: '#9945FF' },
+  { id: 'USDC', label: 'USDC', color: '#2775CA' },
+  { id: 'SKR', label: 'SKR', color: '#14F195' },
+];
 
 const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuccess, isSeekerVerified = false }) => {
   const { publicKey, sendTransaction, connected } = useWallet();
@@ -20,11 +34,43 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
   const [showSuccess, setShowSuccess] = useState(false);
   const [purchasedLives, setPurchasedLives] = useState(0);
   const [selectedTier, setSelectedTier] = useState<LivesTierId>('basic');
+  const [selectedToken, setSelectedToken] = useState<PaymentToken>('SOL');
+  const [prices, setPrices] = useState<TokenPrices | null>(null);
+  const [pricesLoading, setPricesLoading] = useState(false);
+
+  // Fetch prices on open and refresh every 15s
+  const loadPrices = useCallback(async () => {
+    try {
+      setPricesLoading(true);
+      const p = await fetchTokenPrices();
+      setPrices(p);
+    } catch (err) {
+      console.error('Failed to fetch token prices:', err);
+    } finally {
+      setPricesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    loadPrices();
+    const interval = setInterval(loadPrices, 15000);
+    return () => clearInterval(interval);
+  }, [isOpen, loadPrices]);
 
   if (!isOpen) return null;
 
-  const activeTiers = isSeekerVerified ? SEEKER_LIVES_TIERS : LIVES_TIERS;
-  const tier = activeTiers.find(t => t.id === selectedTier) || activeTiers[0];
+  // Get USD price for the selected tier
+  const tierPricing = LIVES_USD_PRICING[selectedTier as keyof typeof LIVES_USD_PRICING];
+  const usdPrice = isSeekerVerified ? tierPricing.seeker : tierPricing.standard;
+  const livesCount = tierPricing.lives;
+
+  // Calculate token amount if prices are loaded
+  const tokenAmount = prices ? calculateTokenAmount(usdPrice, selectedToken, prices) : null;
+
+  // Legacy SOL tiers (fallback for SOL payments — use fixed lamport amounts)
+  const legacySolTiers = isSeekerVerified ? SEEKER_LIVES_TIERS : LIVES_TIERS;
+  const legacySolTier = legacySolTiers.find(t => t.id === selectedTier) || legacySolTiers[0];
 
   const handlePurchase = async () => {
     if (!connected || !publicKey) {
@@ -32,27 +78,42 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
       return;
     }
 
+    if (selectedToken !== 'SOL' && !prices) {
+      setError('Prices not loaded yet. Please wait a moment.');
+      return;
+    }
+
     setPurchasing(true);
     setError(null);
 
     try {
-      console.log('Creating purchase lives transaction:', {
-        from: publicKey.toBase58(),
-        to: REVENUE_WALLET,
-        tier: tier.id,
-        lamports: tier.lamports,
-        sol: tier.sol,
-      });
+      // Pre-check: verify the user has enough balance
+      if (selectedToken !== 'SOL') {
+        const balance = await getSplTokenBalance(connection, publicKey, selectedToken);
+        if (balance < tokenAmount!) {
+          const needed = formatTokenAmount(tokenAmount!, selectedToken);
+          setError(`Insufficient ${selectedToken} balance. You need at least ${needed} ${selectedToken}.`);
+          setPurchasing(false);
+          return;
+        }
+      }
 
       const { blockhash } = await connection.getLatestBlockhash();
 
-      const instructions = [
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: new PublicKey(REVENUE_WALLET),
-          lamports: tier.lamports,
-        }),
-      ];
+      let instructions;
+      if (selectedToken === 'SOL') {
+        // Use legacy fixed lamport amounts for SOL (exact match on EF)
+        instructions = [
+          SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: new PublicKey(REVENUE_WALLET),
+            lamports: legacySolTier.lamports,
+          }),
+        ];
+      } else {
+        // USDC or SKR — SPL token transfer
+        instructions = buildSplTransferInstructions(publicKey, selectedToken, tokenAmount!);
+      }
 
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -61,33 +122,28 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
       }).compileToV0Message();
 
       const transaction = new VersionedTransaction(messageV0);
-
       const signature = await sendTransaction(transaction, connection);
 
-      const confirmationPromise = connection.confirmTransaction(signature, 'confirmed');
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
+      // Wait for on-chain confirmation
+      await Promise.race([
+        connection.confirmTransaction(signature, 'confirmed'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)),
+      ]);
+
+      // Call Edge Function with payment token info
+      const result = await purchaseLives(
+        publicKey.toBase58(),
+        signature,
+        selectedTier,
+        selectedToken,
+        usdPrice
       );
 
-      await Promise.race([confirmationPromise, timeoutPromise]);
-
-      console.log('Calling purchase-lives API:', {
-        walletAddress: publicKey.toBase58(),
-        txSignature: signature,
-        tier: tier.id,
-        livesInTier: tier.lives,
-      });
-
-      const result = await purchaseLives(publicKey.toBase58(), signature, tier.id);
-
-      console.log('purchase-lives API result:', result);
-
       if (result.success) {
-        const added = result.livesPurchased ?? tier.lives;
+        const added = result.livesPurchased ?? livesCount;
         const newTotal = typeof result.livesCount === 'number' ? result.livesCount : added;
         setPurchasedLives(added);
         setShowSuccess(true);
-        console.log('[BuyLives] API success — passing to parent:', { livesCount: result.livesCount, newTotal });
 
         if (onBuySuccess) {
           onBuySuccess(newTotal);
@@ -98,7 +154,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
           onClose();
         }, 3000);
       } else {
-        setError(result.error || 'Purchase recorded but verification failed. Please refresh.');
+        setError((result as any).error || 'Purchase recorded but verification failed. Please refresh.');
       }
     } catch (err: any) {
       console.error('Purchase error:', err);
@@ -106,8 +162,8 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
       let errorMessage = 'Failed to purchase lives. Please try again.';
       if (err.message?.includes('User rejected')) {
         errorMessage = 'Transaction was cancelled.';
-      } else if (err.message?.includes('insufficient funds')) {
-        errorMessage = `Insufficient SOL balance. You need at least ${tier.sol} SOL.`;
+      } else if (err.message?.includes('insufficient funds') || err.message?.includes('Insufficient')) {
+        errorMessage = `Insufficient balance. You need enough ${selectedToken} plus SOL for transaction fees.`;
       } else if (err.message?.includes('blockhash') || err.message?.includes('403')) {
         errorMessage = 'Network error. Please try again or check your connection.';
       } else if (err.message) {
@@ -118,6 +174,15 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
     } finally {
       setPurchasing(false);
     }
+  };
+
+  // Format the display price for the current selection
+  const displayPrice = (): string => {
+    if (selectedToken === 'SOL' && !prices) {
+      return `${legacySolTier.sol} SOL`;
+    }
+    if (!prices || !tokenAmount) return '...';
+    return `${formatTokenAmount(tokenAmount, selectedToken)} ${selectedToken}`;
   };
 
   return (
@@ -152,15 +217,56 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
             </div>
           )}
 
-          {/* Tier Selection */}
-          <div className="space-y-3 mb-5">
-            {activeTiers.map((t) => {
-              const isSelected = selectedTier === t.id;
-              const pricePerLife = (t.sol / t.lives).toFixed(4);
+          {/* Token Selector */}
+          <div className="flex gap-2 mb-5">
+            {TOKEN_OPTIONS.map((tok) => {
+              const isActive = selectedToken === tok.id;
               return (
                 <button
-                  key={t.id}
-                  onClick={() => { setSelectedTier(t.id); setError(null); }}
+                  key={tok.id}
+                  onClick={() => { setSelectedToken(tok.id); setError(null); }}
+                  disabled={purchasing}
+                  className={`flex-1 py-2.5 rounded-lg text-xs font-[900] italic uppercase tracking-wider transition-all border-2 ${
+                    isActive
+                      ? 'text-white shadow-lg'
+                      : 'border-white/5 bg-white/[0.02] text-zinc-500 hover:border-white/10 hover:text-zinc-300'
+                  } ${purchasing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  style={isActive ? { borderColor: tok.color, backgroundColor: `${tok.color}15`, boxShadow: `0 0 15px ${tok.color}20` } : undefined}
+                >
+                  {tok.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* USD Price Indicator */}
+          {pricesLoading && !prices && (
+            <div className="text-center mb-3">
+              <span className="text-zinc-500 text-[10px] font-bold italic">Loading prices...</span>
+            </div>
+          )}
+
+          {/* Tier Selection */}
+          <div className="space-y-3 mb-5">
+            {(['basic', 'value', 'bulk'] as const).map((tierId) => {
+              const tp = LIVES_USD_PRICING[tierId];
+              const isSelected = selectedTier === tierId;
+              const tierUsd = isSeekerVerified ? tp.seeker : tp.standard;
+              const badge = tierId === 'value' ? 'POPULAR' : tierId === 'bulk' ? 'BEST VALUE' : null;
+              // Calculate display price for this tier
+              let tierDisplayPrice = `$${tierUsd}`;
+              if (prices) {
+                const amt = calculateTokenAmount(tierUsd, selectedToken, prices);
+                tierDisplayPrice = `${formatTokenAmount(amt, selectedToken)} ${selectedToken}`;
+              } else if (selectedToken === 'SOL') {
+                const legacy = legacySolTiers.find(t => t.id === tierId);
+                if (legacy) tierDisplayPrice = `${legacy.sol} SOL`;
+              }
+
+              return (
+                <button
+                  key={tierId}
+                  onClick={() => { setSelectedTier(tierId); setError(null); }}
                   disabled={purchasing}
                   className={`w-full p-4 rounded-xl border-2 transition-all relative ${
                     isSelected
@@ -168,11 +274,11 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
                       : 'border-white/5 bg-white/[0.02] hover:border-white/10'
                   } ${purchasing ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {'badge' in t && t.badge && (
+                  {badge && (
                     <span className={`absolute -top-2 right-3 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                      t.id === 'bulk' ? 'bg-[#14F195] text-black' : 'bg-[#818cf8] text-white'
+                      tierId === 'bulk' ? 'bg-[#14F195] text-black' : 'bg-[#818cf8] text-white'
                     }`}>
-                      {t.badge}
+                      {badge}
                     </span>
                   )}
                   <div className="flex items-center justify-between">
@@ -186,17 +292,17 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
                       </div>
                       <div className="text-left">
                         <span className="text-white font-[1000] text-lg italic tracking-tighter block leading-tight">
-                          {t.lives} LIVES
+                          {tp.lives} LIVES
                         </span>
                         <span className="text-zinc-500 text-[9px] font-bold uppercase">
-                          {pricePerLife} SOL / life
+                          ${tierUsd} USD
                         </span>
                       </div>
                     </div>
                     <span className={`font-[1000] text-xl italic tracking-tighter ${
                       isSelected ? 'text-[#00FFA3]' : 'text-zinc-400'
                     }`}>
-                      {t.sol} SOL
+                      {tierDisplayPrice}
                     </span>
                   </div>
                 </button>
@@ -218,10 +324,10 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
 
           <button
             onClick={handlePurchase}
-            disabled={purchasing || !connected}
+            disabled={purchasing || !connected || (selectedToken !== 'SOL' && !prices)}
             className="w-full py-5 bg-[#FF3131] disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_0_30px_rgba(255,49,49,0.4)] active:scale-95 transition-all rounded-sm disabled:cursor-not-allowed"
           >
-            {purchasing ? 'PROCESSING...' : `BUY ${tier.lives} LIVES — ${tier.sol} SOL`}
+            {purchasing ? 'PROCESSING...' : `BUY ${livesCount} LIVES — ${displayPrice()}`}
           </button>
 
           <p className="text-[8px] text-zinc-600 text-center font-black uppercase tracking-[0.2em] mt-4 italic">

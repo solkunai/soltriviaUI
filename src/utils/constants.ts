@@ -34,6 +34,33 @@ export const GAME_PASS_PRICE_SOL = 0.2;
 export const SEEKER_GAME_PASS_PRICE_LAMPORTS = 100_000_000; // 0.1 SOL for SGT holders
 export const SEEKER_GAME_PASS_PRICE_SOL = 0.1;
 
+// ─── Multi-token payment support (SOL / USDC / SKR) ─────────────────────────
+export type PaymentToken = 'SOL' | 'USDC' | 'SKR';
+
+// Token mint addresses (Solana mainnet)
+export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+export const SKR_MINT = 'SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3';
+
+// Token decimals
+export const TOKEN_DECIMALS: Record<PaymentToken, number> = {
+  SOL: 9,
+  USDC: 6,
+  SKR: 6,
+};
+
+// USD-based pricing for lives (used with all tokens)
+export const LIVES_USD_PRICING = {
+  basic:  { lives: 3,  standard: 3,  seeker: 2  },
+  value:  { lives: 15, standard: 10, seeker: 7  },
+  bulk:   { lives: 35, standard: 20, seeker: 15 },
+} as const;
+
+// USD-based pricing for Game Pass
+export const GAME_PASS_USD_PRICING = {
+  standard: 20,
+  seeker: 10,
+} as const;
+
 // Practice mode categories
 export const FREE_CATEGORIES = ['general', 'crypto'] as const;
 export const PREMIUM_CATEGORIES = ['sports', 'history', 'geography', 'entertainment', 'science'] as const;
