@@ -1406,7 +1406,7 @@ export interface CustomQuestionResponse {
     index: number;
     id: string;
     question: string;
-    answers: string[];
+    options: string[];
   }>;
   total_questions: number;
   time_per_question: number;
