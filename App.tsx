@@ -848,6 +848,16 @@ const App: React.FC = () => {
     setCurrentView(View.CUSTOM_GAME_CREATE);
   };
 
+  const handleViewCustomGame = (slug: string) => {
+    setCustomGameSlug(slug);
+    setCustomGameSessionId(null);
+    setCustomGameData(null);
+    setCustomGameResults(null);
+    setCustomGameAttemptsUsed(0);
+    window.history.pushState({}, '', `/game/${slug}`);
+    setCurrentView(View.CUSTOM_GAME_LOBBY);
+  };
+
   const handleCustomGameCreated = (slug: string) => {
     setCustomGameSlug(slug);
     setCustomGameSessionId(null);
@@ -939,6 +949,7 @@ const App: React.FC = () => {
             isSeekerVerified={isSeekerVerified}
             onBuyGamePass={() => setShowCategorySelector(true)}
             onCreateCustomGame={handleNavigateToCreateGame}
+            onViewCustomGame={handleViewCustomGame}
           />
         );
       case View.LEADERBOARD:
@@ -990,6 +1001,7 @@ const App: React.FC = () => {
               refetchProfile();
             }}
             onSeekerVerified={(verified: boolean) => setIsSeekerVerified(verified)}
+            onViewCustomGame={handleViewCustomGame}
           />
         );
       case View.QUIZ:

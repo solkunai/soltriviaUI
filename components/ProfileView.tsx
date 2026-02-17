@@ -9,7 +9,7 @@ function claimExplorerUrl(signature: string): string {
   const cluster = SOLANA_NETWORK === 'devnet' ? '?cluster=devnet' : '';
   return `${base}/tx/${signature}${cluster}`;
 }
-import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile } from '../src/utils/api';
+import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame } from '../src/utils/api';
 import { buildClaimPrizeInstruction } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
 
@@ -21,6 +21,7 @@ interface ProfileViewProps {
   onOpenGuide?: () => void;
   onAvatarUpdated?: (url: string) => void;
   onSeekerVerified?: (verified: boolean) => void;
+  onViewCustomGame?: (slug: string) => void;
 }
 
 interface PlayerStats {
@@ -44,7 +45,17 @@ interface GameHistory {
   finished_at: string;
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified }) => {
+interface PlayedCustomGame {
+  game_id: string;
+  game_name: string;
+  slug: string;
+  best_score: number;
+  correct_count: number;
+  question_count: number;
+  completed_at: string;
+}
+
+const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame }) => {
   const { publicKey, sendTransaction, signMessage } = useWallet();
   const { connection } = useConnection();
   const [stats, setStats] = useState<PlayerStats | null>(null);
@@ -65,8 +76,16 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const [claimablePage, setClaimablePage] = useState(0);
   const [claimedPage, setClaimedPage] = useState(0);
   const [historyPage, setHistoryPage] = useState(0);
+  const [createdGames, setCreatedGames] = useState<MyCustomGame[]>([]);
+  const [playedGames, setPlayedGames] = useState<PlayedCustomGame[]>([]);
+  const [customGamesLoading, setCustomGamesLoading] = useState(false);
+  const [customGameTab, setCustomGameTab] = useState<'created' | 'played'>('created');
+  const [linkCopiedSlug, setLinkCopiedSlug] = useState<string | null>(null);
   const WINS_PER_PAGE = 3;
   const HISTORY_PER_PAGE = 5;
+  const CUSTOM_GAMES_PER_PAGE = 5;
+  const [createdGamesPage, setCreatedGamesPage] = useState(0);
+  const [playedGamesPage, setPlayedGamesPage] = useState(0);
 
   const displayAvatar = (currentAvatar || avatar) && profileCacheBuster
     ? (currentAvatar || avatar) + ((currentAvatar || avatar).includes('?') ? '&' : '?') + 'v=' + profileCacheBuster
@@ -266,6 +285,42 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
       } finally {
         setLoading(false);
       }
+
+      // Custom Games — fetch created + played
+      setCustomGamesLoading(true);
+      try {
+        const [createdRes, playedRes] = await Promise.all([
+          getMyCustomGames(walletAddress).catch(() => ({ games: [] })),
+          supabase
+            .from('custom_game_sessions')
+            .select('game_id, score, correct_count, status, completed_at, custom_games(name, slug, question_count)')
+            .eq('wallet_address', walletAddress)
+            .eq('status', 'completed')
+            .order('completed_at', { ascending: false })
+            .limit(50),
+        ]);
+        setCreatedGames(createdRes.games || []);
+        // Deduplicate played games — keep best score per game
+        const playedMap = new Map<string, PlayedCustomGame>();
+        for (const row of (playedRes.data || []) as any[]) {
+          const game = row.custom_games;
+          if (!game) continue;
+          const existing = playedMap.get(row.game_id);
+          if (!existing || row.score > existing.best_score) {
+            playedMap.set(row.game_id, {
+              game_id: row.game_id,
+              game_name: game.name,
+              slug: game.slug,
+              best_score: row.score,
+              correct_count: row.correct_count,
+              question_count: game.question_count,
+              completed_at: row.completed_at,
+            });
+          }
+        }
+        setPlayedGames(Array.from(playedMap.values()));
+      } catch { /* non-fatal */ }
+      setCustomGamesLoading(false);
 
       // Seeker perks — fetch verification status
       try {
@@ -680,6 +735,150 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       ))}
                     </div>
                   </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Custom Games Section */}
+        {(createdGames.length > 0 || playedGames.length > 0) && (
+          <div className="mb-8 md:mb-12 relative z-10">
+            <div className="bg-[#0A0A0A] border border-[#38BDF8]/20 rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl">
+              <div className="px-6 py-4 md:px-10 md:py-6 border-b border-white/5 bg-gradient-to-r from-[#38BDF8]/10 to-transparent">
+                <h2 className="text-xl md:text-3xl font-[1000] italic uppercase tracking-tighter text-white">Custom Games</h2>
+                <p className="text-zinc-500 text-[10px] md:text-xs font-bold uppercase tracking-wider mt-1">
+                  Games you created & played
+                </p>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex border-b border-white/5">
+                <button
+                  onClick={() => setCustomGameTab('created')}
+                  className={`flex-1 py-3 text-xs font-[1000] italic uppercase tracking-wider transition-colors ${
+                    customGameTab === 'created'
+                      ? 'text-[#38BDF8] border-b-2 border-[#38BDF8]'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  Created ({createdGames.length})
+                </button>
+                <button
+                  onClick={() => setCustomGameTab('played')}
+                  className={`flex-1 py-3 text-xs font-[1000] italic uppercase tracking-wider transition-colors ${
+                    customGameTab === 'played'
+                      ? 'text-[#14F195] border-b-2 border-[#14F195]'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  Played ({playedGames.length})
+                </button>
+              </div>
+
+              <div className="p-4 md:p-6">
+                {customGamesLoading ? (
+                  <div className="py-8 text-center text-zinc-500 text-sm font-black uppercase tracking-widest italic">Loading...</div>
+                ) : customGameTab === 'created' ? (
+                  /* Created Games */
+                  createdGames.length === 0 ? (
+                    <div className="py-8 text-center text-zinc-500 text-sm italic">No games created yet.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {createdGames.slice(createdGamesPage * CUSTOM_GAMES_PER_PAGE, (createdGamesPage + 1) * CUSTOM_GAMES_PER_PAGE).map((game) => {
+                        const isExpired = game.status === 'expired' || new Date(game.expires_at) < new Date();
+                        const daysLeft = Math.max(0, Math.ceil((new Date(game.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+                        return (
+                          <div
+                            key={game.id}
+                            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 px-4 md:px-6 bg-black/30 border rounded-xl transition-all ${
+                              isExpired ? 'border-white/5 opacity-60' : 'border-[#38BDF8]/10 hover:border-[#38BDF8]/30'
+                            }`}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-white font-[1000] text-sm italic truncate">{game.name}</span>
+                                {isExpired ? (
+                                  <span className="text-red-400 text-[8px] font-black italic uppercase px-1.5 py-0.5 bg-red-400/10 rounded">Expired</span>
+                                ) : (
+                                  <span className="text-[#14F195] text-[8px] font-black italic uppercase px-1.5 py-0.5 bg-[#14F195]/10 rounded">{daysLeft}d left</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 text-zinc-500 text-[10px] font-bold">
+                                <span>{game.question_count} Q</span>
+                                <span>{game.total_plays} plays</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(`https://soltrivia.app/game/${game.slug}`);
+                                  setLinkCopiedSlug(game.slug);
+                                  setTimeout(() => setLinkCopiedSlug(null), 2000);
+                                }}
+                                className="px-3 py-1.5 bg-white/5 border border-white/10 text-white text-[10px] font-[1000] italic uppercase rounded-lg hover:bg-white/10 transition-all active:scale-95"
+                              >
+                                {linkCopiedSlug === game.slug ? 'Copied!' : 'Share'}
+                              </button>
+                              {!isExpired && onViewCustomGame && (
+                                <button
+                                  onClick={() => onViewCustomGame(game.slug)}
+                                  className="px-3 py-1.5 bg-[#38BDF8]/20 text-[#38BDF8] text-[10px] font-[1000] italic uppercase rounded-lg hover:bg-[#38BDF8]/30 transition-all active:scale-95"
+                                >
+                                  View
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {createdGames.length > CUSTOM_GAMES_PER_PAGE && (
+                        <div className="flex items-center justify-between mt-2">
+                          <button onClick={() => setCreatedGamesPage(p => Math.max(0, p - 1))} disabled={createdGamesPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Prev</button>
+                          <span className="text-zinc-500 text-[10px] font-bold italic">{createdGamesPage + 1} / {Math.ceil(createdGames.length / CUSTOM_GAMES_PER_PAGE)}</span>
+                          <button onClick={() => setCreatedGamesPage(p => Math.min(Math.ceil(createdGames.length / CUSTOM_GAMES_PER_PAGE) - 1, p + 1))} disabled={createdGamesPage >= Math.ceil(createdGames.length / CUSTOM_GAMES_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Next</button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                ) : (
+                  /* Played Games */
+                  playedGames.length === 0 ? (
+                    <div className="py-8 text-center text-zinc-500 text-sm italic">No custom games played yet.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {playedGames.slice(playedGamesPage * CUSTOM_GAMES_PER_PAGE, (playedGamesPage + 1) * CUSTOM_GAMES_PER_PAGE).map((game) => (
+                        <div
+                          key={game.game_id}
+                          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 px-4 md:px-6 bg-black/30 border border-[#14F195]/10 hover:border-[#14F195]/30 rounded-xl transition-all"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <span className="text-white font-[1000] text-sm italic truncate block mb-1">{game.game_name}</span>
+                            <div className="flex items-center gap-3 text-zinc-500 text-[10px] font-bold">
+                              <span className="text-[#14F195]">{game.correct_count}/{game.question_count} correct</span>
+                              <span>{game.best_score.toLocaleString()} pts</span>
+                              <span>{new Date(game.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                            </div>
+                          </div>
+                          {onViewCustomGame && (
+                            <button
+                              onClick={() => onViewCustomGame(game.slug)}
+                              className="px-3 py-1.5 bg-[#14F195]/20 text-[#14F195] text-[10px] font-[1000] italic uppercase rounded-lg hover:bg-[#14F195]/30 transition-all active:scale-95"
+                            >
+                              Play Again
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {playedGames.length > CUSTOM_GAMES_PER_PAGE && (
+                        <div className="flex items-center justify-between mt-2">
+                          <button onClick={() => setPlayedGamesPage(p => Math.max(0, p - 1))} disabled={playedGamesPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Prev</button>
+                          <span className="text-zinc-500 text-[10px] font-bold italic">{playedGamesPage + 1} / {Math.ceil(playedGames.length / CUSTOM_GAMES_PER_PAGE)}</span>
+                          <button onClick={() => setPlayedGamesPage(p => Math.min(Math.ceil(playedGames.length / CUSTOM_GAMES_PER_PAGE) - 1, p + 1))} disabled={playedGamesPage >= Math.ceil(playedGames.length / CUSTOM_GAMES_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Next</button>
+                        </div>
+                      )}
+                    </div>
+                  )
                 )}
               </div>
             </div>

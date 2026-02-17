@@ -101,18 +101,18 @@ serve(async (req: Request) => {
   }
 
   try {
-    const {
-      wallet_address,
-      name,
-      slug: requestedSlug,
-      question_count,
-      round_count,
-      time_limit_seconds,
-      questions,
-      tx_signature,
-      has_game_pass,
-      content_disclaimer_accepted,
-    } = await req.json();
+    const body = await req.json();
+
+    // Accept both camelCase (frontend) and snake_case field names
+    const wallet_address = body.walletAddress || body.wallet_address;
+    const name = body.name;
+    const requestedSlug = body.slug;
+    const question_count = body.questionCount ?? body.question_count;
+    const round_count = body.roundCount ?? body.round_count;
+    const time_limit_seconds = body.timeLimitSeconds ?? body.time_limit_seconds;
+    const questions = body.questions;
+    const tx_signature = body.txSignature || body.tx_signature;
+    const content_disclaimer_accepted = body.contentDisclaimerAccepted ?? body.content_disclaimer_accepted;
 
     // ── Validate inputs ──────────────────────────────────────────────────
     if (!wallet_address || typeof wallet_address !== 'string') {
@@ -194,16 +194,14 @@ serve(async (req: Request) => {
     // ── Verify game pass status from DB ──────────────────────────────────
     const supabase = getSupabaseClient();
 
-    let isPassHolder = false;
-    if (has_game_pass) {
-      const { data: passData } = await supabase
-        .from('game_passes')
-        .select('id')
-        .eq('wallet_address', wallet_address)
-        .eq('is_active', true)
-        .maybeSingle();
-      isPassHolder = !!passData;
-    }
+    // Always check DB for game pass status (don't trust client)
+    const { data: passData } = await supabase
+      .from('game_passes')
+      .select('wallet_address')
+      .eq('wallet_address', wallet_address)
+      .eq('is_active', true)
+      .maybeSingle();
+    const isPassHolder = !!passData;
 
     const expectedLamports = isPassHolder ? PLATFORM_FEE_LAMPORTS : (CREATION_FEE_LAMPORTS + PLATFORM_FEE_LAMPORTS);
 

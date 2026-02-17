@@ -4,10 +4,19 @@ import FAQModal from './FAQModal';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { getBalanceSafely } from '../src/utils/balance';
 import { fetchCurrentRoundStats, subscribeCurrentRoundStats, getCurrentRoundKey, getRoundLabel } from '../src/utils/api';
+import { supabase } from '../src/utils/supabase';
 import { PAID_TRIVIA_ENABLED } from '../src/utils/constants';
 
 // Toggle to false to hide round stats & timer (re-enable when paid trivia rounds are live)
 const SHOW_ROUND_STATS = false;
+
+interface PlayedGame {
+  game_id: string;
+  game_name: string;
+  slug: string;
+  best_score: number;
+  question_count: number;
+}
 
 interface HomeViewProps {
   lives: number | null;
@@ -20,9 +29,10 @@ interface HomeViewProps {
   isSeekerVerified?: boolean;
   onBuyGamePass?: () => void;
   onCreateCustomGame?: () => void;
+  onViewCustomGame?: (slug: string) => void;
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, isSeekerVerified, onBuyGamePass, onCreateCustomGame }) => {
+const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, isSeekerVerified, onBuyGamePass, onCreateCustomGame, onViewCustomGame }) => {
   const { publicKey, connected } = useWallet();
   const { connection } = useConnection();
   const [balance, setBalance] = useState<number | null>(null);
@@ -31,6 +41,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
   const [prizePool, setPrizePool] = useState(0);
   const [playersEntered, setPlayersEntered] = useState(0);
   const [nextRoundCountdown, setNextRoundCountdown] = useState('');
+  const [myPlayedGames, setMyPlayedGames] = useState<PlayedGame[]>([]);
 
   // Calculate time until next round (6-hour intervals)
   const calculateNextRoundTime = () => {
@@ -99,6 +110,43 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
     
     return () => clearInterval(timer);
   }, []);
+
+  // Fetch custom games the user has played
+  useEffect(() => {
+    if (!connected || !publicKey) {
+      setMyPlayedGames([]);
+      return;
+    }
+    const walletAddr = publicKey.toBase58();
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('custom_game_sessions')
+          .select('game_id, score, correct_count, status, custom_games(name, slug, question_count)')
+          .eq('wallet_address', walletAddr)
+          .eq('status', 'completed')
+          .order('completed_at', { ascending: false })
+          .limit(20);
+        if (!data) return;
+        const map = new Map<string, PlayedGame>();
+        for (const row of data as any[]) {
+          const game = row.custom_games;
+          if (!game) continue;
+          const existing = map.get(row.game_id);
+          if (!existing || row.score > existing.best_score) {
+            map.set(row.game_id, {
+              game_id: row.game_id,
+              game_name: game.name,
+              slug: game.slug,
+              best_score: row.score,
+              question_count: game.question_count,
+            });
+          }
+        }
+        setMyPlayedGames(Array.from(map.values()));
+      } catch { /* non-fatal */ }
+    })();
+  }, [connected, publicKey]);
 
   // Trivia pool + players: fast initial fetch, then 2s polling (works without Supabase Realtime)
   useEffect(() => {
@@ -324,6 +372,33 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                   </button>
                 )}
               </div>
+
+              {/* My Played Custom Games - compact list */}
+              {myPlayedGames.length > 0 && onViewCustomGame && (
+                <div className="mt-3 bg-[#0A0A0A] border border-[#38BDF8]/15 rounded-xl overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-white/5 flex items-center justify-between">
+                    <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#38BDF8]/70 italic">My Custom Games</span>
+                    <span className="text-zinc-600 text-[9px] font-bold">{myPlayedGames.length}</span>
+                  </div>
+                  <div className="divide-y divide-white/[0.03]">
+                    {myPlayedGames.slice(0, 3).map((game) => (
+                      <button
+                        key={game.game_id}
+                        onClick={() => onViewCustomGame(game.slug)}
+                        className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/[0.02] transition-colors active:scale-[0.99] text-left"
+                      >
+                        <div className="flex-1 min-w-0 mr-3">
+                          <span className="text-white text-xs font-[1000] italic truncate block">{game.game_name}</span>
+                          <span className="text-zinc-500 text-[9px] font-bold">{game.best_score.toLocaleString()} pts</span>
+                        </div>
+                        <svg className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Round Stats - mobile only (desktop version in sidebar) */}
               {SHOW_ROUND_STATS && (
