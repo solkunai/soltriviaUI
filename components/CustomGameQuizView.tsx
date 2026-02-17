@@ -151,15 +151,10 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
         HapticFeedback.error();
         playWrongSound();
 
-        // Store correct answer for display
-        const updatedQuestions = [...questions];
-        updatedQuestions[currentIdx].correctAnswer = response.correctIndex;
-        setQuestions(updatedQuestions);
-
         setTimeout(() => {
           timeoutFiredRef.current = false;
           setTimedOut(false);
-          handleAdvance(response.isLastQuestionInRound, response.isLastQuestionInGame, response.totalScore, response.correctCount);
+          handleAdvance(response.isLastQuestionInRound, response.isLastQuestion, response.newScore, score);
         }, 800);
       } catch (err) {
         console.error('Timeout submit failed:', err);
@@ -251,12 +246,14 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
         playWrongSound();
       }
 
-      // Store correct answer for display
-      if (actualCorrectIndex >= 0) {
+      // Only store correct answer when actually correct (don't reveal on wrong — 3 attempts per game)
+      if (correct && actualCorrectIndex >= 0) {
         const updatedQuestions = [...questions];
         updatedQuestions[currentIdx].correctAnswer = actualCorrectIndex;
         setQuestions(updatedQuestions);
       }
+
+      const newCorrectCount = score + (correct ? 1 : 0);
 
       if (correct) {
         setScore((prev) => prev + 1);
@@ -266,7 +263,7 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
 
       setTimeout(() => {
         if (questionTimerRef.current) clearInterval(questionTimerRef.current);
-        handleAdvance(response.isLastQuestionInRound, response.isLastQuestionInGame, response.totalScore, response.correctCount);
+        handleAdvance(response.isLastQuestionInRound, response.isLastQuestion, response.newScore, newCorrectCount);
       }, 1200);
     } catch (err: any) {
       console.error('Failed to submit custom answer:', err);
@@ -409,9 +406,6 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
                 } else {
                   stateClass = 'border-[#00FFA3]/40 bg-[#00FFA3]/5 text-white';
                 }
-              } else if (selectedOption !== null && idx === question.correctAnswer) {
-                stateClass = 'border-[#00FFA3] bg-[#00FFA3]/5 text-[#00FFA3]/60';
-                animationClass = 'answer-correct';
               }
 
               return (

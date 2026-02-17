@@ -1438,13 +1438,10 @@ export interface SubmitCustomAnswerResponse {
   correct: boolean;
   correctIndex: number;
   pointsEarned: number;
-  totalScore: number;
-  correctCount: number;
-  timeMs: number;
-  timedOut: boolean;
+  newScore: number;
   isLastQuestionInRound: boolean;
-  isLastQuestionInGame: boolean;
-  currentRound: number;
+  isLastQuestion: boolean;
+  nextRound: number;
 }
 
 export async function submitCustomAnswer(params: SubmitCustomAnswerParams): Promise<SubmitCustomAnswerResponse> {
