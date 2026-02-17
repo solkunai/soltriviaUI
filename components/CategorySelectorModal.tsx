@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { purchaseGamePass } from '../src/utils/api';
@@ -11,8 +11,12 @@ import {
   GAME_PASS_PRICE_SOL,
   SEEKER_GAME_PASS_PRICE_LAMPORTS,
   SEEKER_GAME_PASS_PRICE_SOL,
+  GAME_PASS_USD_PRICING,
   PracticeCategory,
+  type PaymentToken,
 } from '../src/utils/constants';
+import { fetchTokenPrices, calculateTokenAmount, formatTokenAmount, type TokenPrices } from '../src/utils/tokenPrices';
+import { buildSplTransferInstructions, getSplTokenBalance } from '../src/utils/splTransfer';
 
 interface CategorySelectorModalProps {
   isOpen: boolean;
@@ -34,6 +38,12 @@ const CATEGORY_ICONS: Record<PracticeCategory | 'all', string> = {
   science: '🔬',
 };
 
+const TOKEN_OPTIONS: { id: PaymentToken; label: string; color: string }[] = [
+  { id: 'SOL', label: 'SOL', color: '#9945FF' },
+  { id: 'USDC', label: 'USDC', color: '#2775CA' },
+  { id: 'SKR', label: 'SKR', color: '#14F195' },
+];
+
 const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
   isOpen,
   onClose,
@@ -46,29 +56,87 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
   const { connection } = useConnection();
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [selectedToken, setSelectedToken] = useState<PaymentToken>('SOL');
+  const [prices, setPrices] = useState<TokenPrices | null>(null);
 
-  if (!isOpen) return null;
-
+  // Legacy SOL pricing (fixed lamport amounts)
   const priceLamports = isSeekerVerified ? SEEKER_GAME_PASS_PRICE_LAMPORTS : GAME_PASS_PRICE_LAMPORTS;
   const priceSol = isSeekerVerified ? SEEKER_GAME_PASS_PRICE_SOL : GAME_PASS_PRICE_SOL;
 
+  // USD-based pricing
+  const usdPrice = isSeekerVerified ? GAME_PASS_USD_PRICING.seeker : GAME_PASS_USD_PRICING.standard;
+
+  // Fetch prices on open and refresh every 15s
+  const loadPrices = useCallback(async () => {
+    try {
+      const p = await fetchTokenPrices();
+      setPrices(p);
+    } catch (err) {
+      console.error('Failed to fetch token prices:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    loadPrices();
+    const interval = setInterval(loadPrices, 15000);
+    return () => clearInterval(interval);
+  }, [isOpen, loadPrices]);
+
+  if (!isOpen) return null;
+
+  // Calculate token amount
+  const tokenAmount = prices ? calculateTokenAmount(usdPrice, selectedToken, prices) : null;
+
+  // Display price string
+  const displayPrice = (): string => {
+    if (selectedToken === 'SOL' && !prices) return `${priceSol} SOL`;
+    if (!prices || !tokenAmount) return '...';
+    return `${formatTokenAmount(tokenAmount, selectedToken)} ${selectedToken}`;
+  };
+
   const handlePurchasePass = async () => {
     if (!connected || !publicKey) return;
+
+    if (selectedToken !== 'SOL' && !prices) {
+      setPurchaseError('Prices not loaded yet. Please wait a moment.');
+      return;
+    }
+
     setPurchasing(true);
     setPurchaseError(null);
 
     try {
+      // Pre-check: verify the user has enough token balance
+      if (selectedToken !== 'SOL') {
+        const balance = await getSplTokenBalance(connection, publicKey, selectedToken);
+        if (balance < tokenAmount!) {
+          const needed = formatTokenAmount(tokenAmount!, selectedToken);
+          setPurchaseError(`Insufficient ${selectedToken} balance. You need at least ${needed} ${selectedToken}.`);
+          setPurchasing(false);
+          return;
+        }
+      }
+
       const { blockhash } = await connection.getLatestBlockhash();
-      const instruction = SystemProgram.transfer({
-        fromPubkey: publicKey,
-        toPubkey: new PublicKey(REVENUE_WALLET),
-        lamports: priceLamports,
-      });
+
+      let instructions;
+      if (selectedToken === 'SOL') {
+        instructions = [
+          SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: new PublicKey(REVENUE_WALLET),
+            lamports: priceLamports,
+          }),
+        ];
+      } else {
+        instructions = buildSplTransferInstructions(publicKey, selectedToken, tokenAmount!);
+      }
 
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
         recentBlockhash: blockhash,
-        instructions: [instruction],
+        instructions,
       }).compileToV0Message();
 
       const transaction = new VersionedTransaction(messageV0);
@@ -80,12 +148,14 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
         new Promise((_, reject) => setTimeout(() => reject(new Error('Confirmation timeout')), 30000)),
       ]);
 
-      // Register with backend
-      await purchaseGamePass(publicKey.toBase58(), signature);
+      // Register with backend (pass token info)
+      await purchaseGamePass(publicKey.toBase58(), signature, selectedToken, usdPrice);
       onGamePassPurchased();
     } catch (err: any) {
       if (err.message?.includes('User rejected')) {
-        // User cancelled
+        // User cancelled — do nothing
+      } else if (err.message?.includes('insufficient funds') || err.message?.includes('Insufficient')) {
+        setPurchaseError(`Insufficient balance. You need enough ${selectedToken} plus SOL for transaction fees.`);
       } else {
         setPurchaseError(err.message || 'Purchase failed. Please try again.');
       }
@@ -192,21 +262,46 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
                 </div>
               </div>
 
+              {/* Token Selector for Game Pass */}
+              <div className="flex gap-2 mb-3 mt-3">
+                {TOKEN_OPTIONS.map((tok) => {
+                  const isActive = selectedToken === tok.id;
+                  return (
+                    <button
+                      key={tok.id}
+                      onClick={() => { setSelectedToken(tok.id); setPurchaseError(null); }}
+                      disabled={purchasing}
+                      className={`flex-1 py-2 rounded-lg text-[10px] font-[900] italic uppercase tracking-wider transition-all border-2 ${
+                        isActive
+                          ? 'text-white'
+                          : 'border-white/5 bg-white/[0.02] text-zinc-500 hover:border-white/10 hover:text-zinc-300'
+                      } ${purchasing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      style={isActive ? { borderColor: tok.color, backgroundColor: `${tok.color}15` } : undefined}
+                    >
+                      {tok.label}
+                    </button>
+                  );
+                })}
+              </div>
+
               <div className="flex items-center justify-between mt-3">
                 <div>
-                  <span className="text-white font-[900] text-lg italic">{priceSol} SOL</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-white font-[900] text-lg italic">{displayPrice()}</span>
+                    <span className="text-zinc-500 text-[10px] font-bold">(${usdPrice} USD)</span>
+                  </div>
                   {isSeekerVerified && (
-                    <span className="ml-2 text-[9px] font-black uppercase tracking-wider text-[#14F195] bg-[#14F195]/10 px-2 py-0.5 rounded-full">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-[#14F195] bg-[#14F195]/10 px-2 py-0.5 rounded-full">
                       Seeker Price
                     </span>
                   )}
-                  <span className="block text-zinc-500 text-[10px] font-bold">One-time purchase</span>
+                  <span className="block text-zinc-500 text-[10px] font-bold mt-1">One-time purchase</span>
                 </div>
 
                 {connected ? (
                   <button
                     onClick={handlePurchasePass}
-                    disabled={purchasing}
+                    disabled={purchasing || (selectedToken !== 'SOL' && !prices)}
                     className={`px-5 py-2.5 rounded-full font-[900] italic uppercase text-sm tracking-tight transition-all active:scale-[0.97] ${
                       purchasing
                         ? 'bg-zinc-700 text-zinc-400 cursor-wait'

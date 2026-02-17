@@ -368,17 +368,19 @@ export async function getRoundEntriesUsed(wallet_address: string): Promise<numbe
   return (data?.length ?? 0);
 }
 
-// Purchase extra lives (with tier support)
+// Purchase extra lives (with tier support + multi-token payment)
 export async function purchaseLives(
   walletAddress: string,
   txSignature: string,
-  tier?: string
+  tier?: string,
+  paymentToken?: string,
+  amountUsd?: number
 ): Promise<PurchaseLivesResponse> {
   const url = `${FUNCTIONS_URL}/purchase-lives`;
   const response = await fetch(url, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ walletAddress, txSignature, tier }),
+    body: JSON.stringify({ walletAddress, txSignature, tier, paymentToken, amountUsd }),
   });
 
   const body = await response.json().catch(() => ({}));
@@ -762,6 +764,103 @@ export async function fetchRoundsWithWinners(limit = 40): Promise<RoundWithWinne
   });
 }
 
+/** Paginated version of fetchRoundsWithWinners for the public leaderboard. */
+export async function fetchRoundsWithWinnersPaginated(
+  page: number,
+  pageSize: number,
+  filterDate?: string,
+): Promise<{ rounds: RoundWithWinner[]; totalCount: number }> {
+  const from = page * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from('daily_rounds')
+    .select('id, date, round_number, pot_lamports, player_count, status', { count: 'exact' })
+    .order('date', { ascending: false })
+    .order('round_number', { ascending: false });
+
+  if (filterDate) {
+    query = query.eq('date', filterDate);
+  }
+
+  const { data: rounds, count, error: roundsError } = await query.range(from, to);
+
+  if (roundsError || !rounds?.length) return { rounds: [], totalCount: count ?? 0 };
+
+  const roundIds = rounds.map((r) => r.id);
+  const { data: winners, error: winnersError } = await supabase
+    .from('round_winners')
+    .select('round_id, winner_wallet, winner_score')
+    .in('round_id', roundIds);
+
+  const winnerByRoundId = new Map<string, { winner_wallet: string | null; winner_score: number }>();
+  if (!winnersError && winners?.length) {
+    winners.forEach((w: { round_id: string; winner_wallet: string | null; winner_score: number }) => {
+      const score = Number(w.winner_score ?? 0);
+      const cur = winnerByRoundId.get(w.round_id);
+      if (!cur || score > cur.winner_score) {
+        winnerByRoundId.set(w.round_id, { winner_wallet: w.winner_wallet ?? null, winner_score: score });
+      }
+    });
+  }
+
+  const winnerWallets = [...new Set([...winnerByRoundId.values()].map((v) => v.winner_wallet).filter(Boolean) as string[])];
+  let profiles: { wallet_address: string; username: string | null; avatar_url: string | null }[] = [];
+  if (winnerWallets.length > 0) {
+    const { data: prof } = await supabase.from('player_profiles').select('wallet_address, username, avatar_url').in('wallet_address', winnerWallets);
+    profiles = prof ?? [];
+  }
+  const profileByWallet = Object.fromEntries(profiles.map((p) => [p.wallet_address, p]));
+
+  const payoutsByRound = await fetchRoundPayouts(roundIds);
+  const allPayoutWallets = new Set<string>();
+  payoutsByRound.forEach((p) => allPayoutWallets.add(p.wallet_address));
+  let payoutProfiles: { wallet_address: string; username: string | null; avatar_url: string | null }[] = [];
+  if (allPayoutWallets.size > 0) {
+    const { data: pp } = await supabase.from('player_profiles').select('wallet_address, username, avatar_url').in('wallet_address', [...allPayoutWallets]);
+    payoutProfiles = pp ?? [];
+  }
+  const payoutProfileByWallet = Object.fromEntries(payoutProfiles.map((p) => [p.wallet_address, p]));
+
+  const dedupePayoutsByWallet = (list: RoundPayout[]): RoundPayout[] => {
+    const byWallet = new Map<string, RoundPayout>();
+    for (const p of list) {
+      const cur = byWallet.get(p.wallet_address);
+      if (!cur || Number(p.score) > Number(cur.score)) byWallet.set(p.wallet_address, p);
+    }
+    return [...byWallet.values()].sort((a, b) => Number(b.score) - Number(a.score));
+  };
+
+  const result = rounds.map((r) => {
+    const w = winnerByRoundId.get(r.id);
+    const winnerWallet = w?.winner_wallet ?? null;
+    const winnerScore = w?.winner_score ?? 0;
+    const profile = winnerWallet ? profileByWallet[winnerWallet] : null;
+    const rawPayouts = (payoutsByRound.filter((p) => p.round_id === r.id) as RoundPayout[]).map((p) => ({
+      ...p,
+      winner_display_name: payoutProfileByWallet[p.wallet_address]?.username ?? null,
+      winner_avatar: payoutProfileByWallet[p.wallet_address]?.avatar_url ?? null,
+    }));
+    const payouts: RoundPayout[] = dedupePayoutsByWallet(rawPayouts).map((p, i) => ({ ...p, rank: i + 1 }));
+    return {
+      round_id: r.id,
+      date: r.date,
+      round_number: r.round_number,
+      round_title: getRoundLabel(r.date, r.round_number),
+      pot_lamports: r.pot_lamports ?? 0,
+      player_count: r.player_count ?? 0,
+      status: (r as { status?: string }).status ?? null,
+      winner_wallet: winnerWallet,
+      winner_display_name: profile?.username ?? null,
+      winner_avatar: profile?.avatar_url ?? null,
+      winner_score: winnerScore,
+      payouts,
+    };
+  });
+
+  return { rounds: result, totalCount: count ?? 0 };
+}
+
 /** Fetch top 5 payouts for given round ids (from round_payouts). */
 export async function fetchRoundPayouts(roundIds: string[]): Promise<RoundPayout[]> {
   if (roundIds.length === 0) return [];
@@ -1024,11 +1123,16 @@ export interface GamePassStatus {
 }
 
 /** Purchase a game pass (unlocks premium categories + unlimited practice). */
-export async function purchaseGamePass(walletAddress: string, txSignature: string): Promise<GamePassResponse> {
+export async function purchaseGamePass(
+  walletAddress: string,
+  txSignature: string,
+  paymentToken?: string,
+  amountUsd?: number
+): Promise<GamePassResponse> {
   const response = await fetch(`${FUNCTIONS_URL}/purchase-game-pass`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ walletAddress, txSignature }),
+    body: JSON.stringify({ walletAddress, txSignature, paymentToken, amountUsd }),
   });
 
   const body = await response.json().catch(() => ({}));

@@ -296,8 +296,8 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                   <span className="text-zinc-500 text-[9px] font-bold block">Unlimited plays + all categories</span>
                 </div>
                 <div className="flex items-baseline gap-0.5 flex-shrink-0">
-                  <span className="text-[#14F195] text-base font-[1000] italic leading-none">{isSeekerVerified ? '0.1' : '0.2'}</span>
-                  <span className="text-[#14F195] text-[7px] font-black italic uppercase">SOL</span>
+                  <span className="text-[#14F195] text-base font-[1000] italic leading-none">${isSeekerVerified ? '10' : '20'}</span>
+                  <span className="text-[#14F195] text-[7px] font-black italic uppercase">USD</span>
                 </div>
                 <svg className="w-4 h-4 text-zinc-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -403,8 +403,8 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                     </div>
                     <div className="flex flex-col items-end">
                       <div className="flex items-baseline gap-1">
-                        <span className="text-[#14F195] text-[28px] font-[1000] italic tabular-nums leading-none">{isSeekerVerified ? '0.1' : '0.2'}</span>
-                        <span className="text-[#14F195] text-xs font-[1000] italic uppercase">SOL</span>
+                        <span className="text-[#14F195] text-[28px] font-[1000] italic tabular-nums leading-none">${isSeekerVerified ? '10' : '20'}</span>
+                        <span className="text-[#14F195] text-xs font-[1000] italic uppercase">USD</span>
                       </div>
                       {isSeekerVerified && <span className="text-[#9945FF] text-[8px] font-bold italic mt-1">SEEKER DISCOUNT</span>}
                     </div>

@@ -11,7 +11,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // @ts-ignore - Deno URL imports are valid at runtime
 import nacl from 'https://esm.sh/tweetnacl@1.0.3';
 // @ts-ignore - Deno URL imports are valid at runtime
-import * as base58 from 'https://esm.sh/bs58@5.0.0';
+import base58 from 'https://esm.sh/bs58@5.0.0';
 // @ts-ignore - Deno URL imports are valid at runtime
 import { TldParser } from 'https://esm.sh/@onsol/tldparser@0.6.7';
 // @ts-ignore - Deno URL imports are valid at runtime
@@ -182,8 +182,12 @@ async function resolveSkrDomain(walletAddress: string): Promise<string | null> {
     console.log('TldParser result:', JSON.stringify(domains));
 
     if (domains && domains.length > 0) {
-      // domains[0] has { domain: string, tld: string } shape
-      return domains[0].domain;
+      // domains[0].domain may include ".skr" suffix — strip it so callers can append consistently
+      let name = domains[0].domain;
+      if (name.endsWith('.skr')) {
+        name = name.slice(0, -4);
+      }
+      return name;
     }
     return null;
   } catch (err) {
