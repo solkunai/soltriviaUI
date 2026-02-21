@@ -411,12 +411,12 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
             <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-[#00FFA3]/30"></div>
             <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#00FFA3]/30"></div>
 
-            <h2 className="text-2xl sm:text-3xl md:text-5xl font-[1000] italic text-white uppercase tracking-tighter leading-[0.9] md:leading-[0.85]">
+            <h2 className="text-2xl sm:text-3xl md:text-5xl font-[1000] italic text-white uppercase tracking-tight leading-[1.1] md:leading-[1.05]">
               {question.text}
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 px-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5 px-1">
             {question.options.map((option, idx) => {
               let stateClass = "border-white/5 hover:border-[#00FFA3]/20 text-zinc-400 hover:text-white bg-white/[0.02]";
               let animationClass = "";
@@ -448,7 +448,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
                   <div className={`w-8 h-8 md:w-12 md:h-12 border flex items-center justify-center font-[1000] italic text-sm md:text-xl transition-all duration-300 flex-shrink-0 ${selectedOption === idx ? 'bg-current text-black border-transparent' : 'border-current opacity-20 group-hover:opacity-100'}`}>
                     {OPTION_LABELS[idx] ?? String.fromCharCode(65 + idx)}
                   </div>
-                  <span className="text-base md:text-lg font-black italic uppercase tracking-tight flex-1 leading-tight">{option}</span>
+                  <span className="text-base md:text-lg font-black italic uppercase tracking-normal flex-1 leading-normal">{option}</span>
                   
                   {selectedOption === idx && isCorrect && lastGainedPoints && (
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
