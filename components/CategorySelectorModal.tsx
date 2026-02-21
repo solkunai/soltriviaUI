@@ -7,10 +7,6 @@ import {
   FREE_CATEGORIES,
   ALL_CATEGORIES,
   CATEGORY_LABELS,
-  GAME_PASS_PRICE_LAMPORTS,
-  GAME_PASS_PRICE_SOL,
-  SEEKER_GAME_PASS_PRICE_LAMPORTS,
-  SEEKER_GAME_PASS_PRICE_SOL,
   GAME_PASS_USD_PRICING,
   PracticeCategory,
   type PaymentToken,
@@ -59,10 +55,6 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
   const [selectedToken, setSelectedToken] = useState<PaymentToken>('SOL');
   const [prices, setPrices] = useState<TokenPrices | null>(null);
 
-  // Legacy SOL pricing (fixed lamport amounts)
-  const priceLamports = isSeekerVerified ? SEEKER_GAME_PASS_PRICE_LAMPORTS : GAME_PASS_PRICE_LAMPORTS;
-  const priceSol = isSeekerVerified ? SEEKER_GAME_PASS_PRICE_SOL : GAME_PASS_PRICE_SOL;
-
   // USD-based pricing
   const usdPrice = isSeekerVerified ? GAME_PASS_USD_PRICING.seeker : GAME_PASS_USD_PRICING.standard;
 
@@ -90,7 +82,6 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
 
   // Display price string
   const displayPrice = (): string => {
-    if (selectedToken === 'SOL' && !prices) return `${priceSol} SOL`;
     if (!prices || !tokenAmount) return '...';
     return `${formatTokenAmount(tokenAmount, selectedToken)} ${selectedToken}`;
   };
@@ -98,7 +89,7 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
   const handlePurchasePass = async () => {
     if (!connected || !publicKey) return;
 
-    if (selectedToken !== 'SOL' && !prices) {
+    if (!prices || !tokenAmount) {
       setPurchaseError('Prices not loaded yet. Please wait a moment.');
       return;
     }
@@ -126,11 +117,11 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
           SystemProgram.transfer({
             fromPubkey: publicKey,
             toPubkey: new PublicKey(REVENUE_WALLET),
-            lamports: priceLamports,
+            lamports: Number(tokenAmount),
           }),
         ];
       } else {
-        instructions = buildSplTransferInstructions(publicKey, selectedToken, tokenAmount!);
+        instructions = buildSplTransferInstructions(publicKey, selectedToken, tokenAmount);
       }
 
       const messageV0 = new TransactionMessage({
@@ -302,7 +293,7 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
                 {connected ? (
                   <button
                     onClick={handlePurchasePass}
-                    disabled={purchasing || (selectedToken !== 'SOL' && !prices)}
+                    disabled={purchasing || !prices || !tokenAmount}
                     className={`px-5 py-2.5 rounded-full font-[900] italic uppercase text-sm tracking-tight transition-all active:scale-[0.97] ${
                       purchasing
                         ? 'bg-zinc-700 text-zinc-400 cursor-wait'
