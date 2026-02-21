@@ -272,20 +272,27 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
             {!hasGamePass && (
               <button
                 onClick={onBuyGamePass}
-                className="lg:hidden mb-4 w-full bg-[#0A0A0A] border border-[#9945FF]/30 active:border-[#14F195]/50 rounded-xl p-3.5 flex items-center gap-3 transition-all text-left"
+                className="lg:hidden mb-4 w-full bg-[#0A0A0A] border border-[#14F195]/20 active:border-[#14F195]/50 rounded-xl p-3.5 flex items-center gap-3 transition-all text-left"
               >
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#9945FF] to-[#14F195] flex items-center justify-center flex-shrink-0">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#00FFA3] to-[#14F195] flex items-center justify-center flex-shrink-0">
                   <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
                   </svg>
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="text-white text-xs font-[1000] italic uppercase tracking-tight block">GAME PASS</span>
-                  <span className="text-zinc-500 text-[9px] font-bold block">Unlimited plays + free custom games</span>
+                  <span className="text-zinc-500 text-[9px] font-bold block">
+                    {isSeekerVerified ? 'Seeker discount applied!' : 'Unlimited plays + free custom games'}
+                  </span>
                 </div>
-                <div className="flex items-baseline gap-0.5 flex-shrink-0">
-                  <span className="text-[#14F195] text-base font-[1000] italic leading-none">${isSeekerVerified ? '10' : '20'}</span>
-                  <span className="text-[#14F195] text-[7px] font-black italic uppercase">USD</span>
+                <div className="flex flex-col items-end flex-shrink-0">
+                  <div className="flex items-baseline gap-0.5">
+                    <span className="text-[#14F195] text-base font-[1000] italic leading-none">${isSeekerVerified ? '10' : '20'}</span>
+                    <span className="text-[#14F195] text-[7px] font-black italic uppercase">USD</span>
+                  </div>
+                  {!isSeekerVerified && (
+                    <span className="text-[#14F195] text-[8px] font-bold italic mt-0.5">50% off for Seekers</span>
+                  )}
                 </div>
                 <svg className="w-4 h-4 text-zinc-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -300,13 +307,13 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 <button
                   onClick={PAID_TRIVIA_ENABLED ? onEnterTrivia : undefined}
                   disabled={!PAID_TRIVIA_ENABLED}
-                  className={`h-20 md:h-24 rounded-full flex items-center justify-between px-8 md:px-10 transition-all border-t relative overflow-hidden ${PAID_TRIVIA_ENABLED ? 'bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#14F195] active:scale-[0.98] group shadow-[0_15px_40px_-10px_rgba(153,69,255,0.4)] hover:shadow-[0_20px_60px_-10px_rgba(20,241,149,0.5)] border-white/20' : 'bg-zinc-800/50 border-zinc-700/30 cursor-not-allowed opacity-50'}`}
+                  className={`h-20 md:h-24 rounded-full flex items-center justify-between px-8 md:px-10 transition-all border-t relative overflow-hidden ${PAID_TRIVIA_ENABLED ? 'bg-gradient-to-r from-[#00FFA3] to-[#14F195] active:scale-[0.98] group shadow-[0_15px_40px_-10px_rgba(20,241,149,0.4)] hover:shadow-[0_20px_60px_-10px_rgba(20,241,149,0.6)] border-white/20' : 'bg-zinc-800/60 border border-zinc-700/40 cursor-not-allowed'}`}
                 >
                   {PAID_TRIVIA_ENABLED && <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>}
 
                   <div className="flex flex-col items-start relative z-10">
-                    <span className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] text-white/60 mb-1">{PAID_TRIVIA_ENABLED ? 'WIN REAL SOL' : 'PAUSED — UPGRADING'}</span>
-                    <div className="text-white text-2xl md:text-4xl font-[1000] italic leading-none uppercase tracking-tighter">
+                    <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] mb-1 ${PAID_TRIVIA_ENABLED ? 'text-black/50' : 'text-zinc-500'}`}>{PAID_TRIVIA_ENABLED ? 'WIN REAL SOL' : 'PAUSED — UPGRADING'}</span>
+                    <div className={`${PAID_TRIVIA_ENABLED ? 'text-black' : 'text-zinc-500'} text-2xl md:text-4xl font-[1000] italic leading-none uppercase tracking-tighter`}>
                       COMPETE FOR SOL
                     </div>
                     {!PAID_TRIVIA_ENABLED && (
@@ -314,8 +321,8 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                     )}
                   </div>
 
-                  <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center relative z-10">
-                    <svg className="w-4 h-4 md:w-4.5 md:h-4.5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <div className={`w-8 h-8 md:w-9 md:h-9 rounded-full ${PAID_TRIVIA_ENABLED ? 'bg-black/10' : 'bg-white/10'} backdrop-blur-md flex items-center justify-center relative z-10`}>
+                    <svg className={`w-4 h-4 md:w-4.5 md:h-4.5 ${PAID_TRIVIA_ENABLED ? 'text-black' : 'text-zinc-500'}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
                     </svg>
                   </div>
@@ -486,16 +493,20 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
             {!hasGamePass && (
               <button
                 onClick={onBuyGamePass}
-                className="bg-[#0A0A0A] border border-[#9945FF]/30 hover:border-[#14F195]/50 p-6 rounded-xl min-h-[140px] flex flex-col justify-center shadow-xl transition-all group relative overflow-hidden text-left"
+                className="bg-[#0A0A0A] border border-[#14F195]/20 hover:border-[#14F195]/50 p-6 rounded-xl min-h-[140px] flex flex-col justify-center shadow-xl transition-all group relative overflow-hidden text-left"
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-[#9945FF]/5 to-[#14F195]/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="absolute inset-0 bg-gradient-to-br from-[#14F195]/5 to-[#00FFA3]/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 <div className="relative z-10 flex flex-col items-center text-center">
                   <span className="text-zinc-300 text-[10px] font-black uppercase tracking-widest italic">GAME PASS</span>
                   <div className="flex items-baseline gap-1 mt-1">
                     <span className="text-[#14F195] text-[32px] font-[1000] italic tabular-nums leading-none">${isSeekerVerified ? '10' : '20'}</span>
                     <span className="text-[#14F195] text-xs font-[1000] italic uppercase">USD</span>
                   </div>
-                  {isSeekerVerified && <span className="text-[#9945FF] text-[8px] font-bold italic mt-1">SEEKER DISCOUNT</span>}
+                  {isSeekerVerified ? (
+                    <span className="text-[#14F195] text-[8px] font-bold italic mt-1">SEEKER DISCOUNT APPLIED</span>
+                  ) : (
+                    <span className="text-[#14F195] text-[9px] font-bold italic mt-1">50% OFF FOR SEEKER HOLDERS</span>
+                  )}
                   <div className="flex items-center gap-3 mt-3">
                     <span className="text-white text-[10px] font-[1000] italic uppercase">Unlimited plays</span>
                     <span className="text-zinc-600">|</span>
