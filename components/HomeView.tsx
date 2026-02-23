@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import WalletConnectButton from './WalletConnectButton';
 import FAQModal from './FAQModal';
-import { useWallet } from '../src/contexts/WalletContext';
-import { fetchCurrentRoundStats, subscribeCurrentRoundStats, getCurrentRoundKey, getRoundLabel } from '../src/utils/api';
+import { useWallet, useConnection } from '../src/contexts/WalletContext';
+import { getCurrentRoundKey, getRoundLabel } from '../src/utils/api';
+import { fetchTierRound, contractRoundIdFromDateAndNumber } from '../src/utils/soltriviaContract';
 import { supabase } from '../src/utils/supabase';
 import { PAID_TRIVIA_ENABLED } from '../src/utils/constants';
 
@@ -34,6 +35,7 @@ interface HomeViewProps {
 
 const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, isSeekerVerified, onBuyGamePass, onCreateCustomGame, onViewCustomGame, onEnterDuels }) => {
   const { publicKey, connected } = useWallet();
+  const { connection } = useConnection();
   const [showFAQ, setShowFAQ] = useState(false);
   const [prizePool, setPrizePool] = useState(0);
   const [playersEntered, setPlayersEntered] = useState(0);
@@ -129,33 +131,34 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
     })();
   }, [connected, publicKey]);
 
-  // Trivia pool + players: fast initial fetch, then 2s polling (works without Supabase Realtime)
+  // Trivia pool + players: read on-chain tier PDAs (source of truth), poll every 15s
   useEffect(() => {
+    if (!connection) return;
     let mounted = true;
-    const refresh = () => {
-      fetchCurrentRoundStats()
-        .then((stats) => {
-          if (mounted) {
-            setPrizePool(stats.prizePoolSol);
-            setPlayersEntered(stats.playersEntered);
+    const refresh = async () => {
+      try {
+        const { date, roundNumber } = getCurrentRoundKey();
+        const contractRoundId = contractRoundIdFromDateAndNumber(date, roundNumber);
+        const results = await Promise.allSettled(
+          [0, 1, 2, 3].map(i => fetchTierRound(connection, contractRoundId, i))
+        );
+        if (!mounted) return;
+        let totalPot = 0;
+        let totalPlayers = 0;
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value) {
+            totalPot += r.value.totalPot;
+            totalPlayers += r.value.entryCount;
           }
-        })
-        .catch(() => {});
+        }
+        setPrizePool(totalPot / 1_000_000_000);
+        setPlayersEntered(totalPlayers);
+      } catch { /* non-fatal */ }
     };
     refresh();
-    const interval = setInterval(refresh, 2000);
-    const sub = subscribeCurrentRoundStats((stats) => {
-      if (mounted) {
-        setPrizePool(stats.prizePoolSol);
-        setPlayersEntered(stats.playersEntered);
-      }
-    });
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-      sub.unsubscribe();
-    };
-  }, []);
+    const interval = setInterval(refresh, 15_000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, [connection]);
 
   return (
     <div className="flex flex-col h-full bg-[#050505] overflow-y-auto custom-scrollbar relative">
@@ -235,11 +238,21 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 <span className="text-yellow-400 text-[8px] font-black italic uppercase mt-1">Free play still available below</span>
               )}
             </div>
-            <div className={`w-9 h-9 rounded-full ${PAID_TRIVIA_ENABLED ? 'bg-black/10' : 'bg-white/10'} backdrop-blur-md flex items-center justify-center relative z-10`}>
-              <svg className={`w-4 h-4 ${PAID_TRIVIA_ENABLED ? 'text-black' : 'text-zinc-500'}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
-            </div>
+            {PAID_TRIVIA_ENABLED && SHOW_ROUND_STATS ? (
+              <div className="flex flex-col items-end relative z-10">
+                <div className="bg-black/20 backdrop-blur-sm rounded-lg px-3 py-1.5">
+                  <div className="text-[10px] font-black text-black/50 uppercase tracking-wider text-right">Pool</div>
+                  <div className="text-lg font-[1000] italic text-black tabular-nums leading-none">{prizePool.toFixed(prizePool >= 1 ? 2 : 4)}</div>
+                  <div className="text-[9px] font-bold text-black/60 text-right">{playersEntered} player{playersEntered !== 1 ? 's' : ''}</div>
+                </div>
+              </div>
+            ) : (
+              <div className={`w-9 h-9 rounded-full ${PAID_TRIVIA_ENABLED ? 'bg-black/10' : 'bg-white/10'} backdrop-blur-md flex items-center justify-center relative z-10`}>
+                <svg className={`w-4 h-4 ${PAID_TRIVIA_ENABLED ? 'text-black' : 'text-zinc-500'}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+              </div>
+            )}
           </button>
 
           {/* Round Timer */}
@@ -372,23 +385,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
             </button>
           )}
 
-          {/* Round Stats (hidden by default — enable when paid trivia is live) */}
-          {SHOW_ROUND_STATS && (
-            <div className="flex items-center justify-between px-4 py-3 bg-[#0A0A0A] border border-white/5 rounded-xl">
-              <div>
-                <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic block">TRIVIA POOL</span>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-[#00FFA3] text-lg font-[1000] italic tabular-nums leading-none">{prizePool.toFixed(2)}</span>
-                  <span className="text-[#00FFA3] text-[8px] font-black italic">SOL</span>
-                </div>
-              </div>
-              <div className="w-px h-8 bg-white/5"></div>
-              <div className="text-right">
-                <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic block">PLAYERS</span>
-                <span className="text-white text-lg font-[1000] italic tabular-nums leading-none">{playersEntered.toLocaleString()}</span>
-              </div>
-            </div>
-          )}
+          {/* Round stats moved above Compete button */}
 
           {/* My Played Custom Games */}
           {myPlayedGames.length > 0 && onViewCustomGame && (
