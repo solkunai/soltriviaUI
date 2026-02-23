@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PAID_TRIVIA_ENABLED, V2_TIER_FEES, V2_TIER_LABELS, TXN_FEE_LAMPORTS } from '../src/utils/constants';
+import type { ClaimablePayout, ClaimableCustomGameWin, RefundableEntry, RefundableCustomGame } from '../src/utils/api';
 
 interface PlayViewProps {
   lives: number | null;
@@ -12,16 +13,29 @@ interface PlayViewProps {
   hasGamePass?: boolean;
   onCreateCustomGame?: () => void;
   onEnterDuels?: () => void;
+  // Optional claims data
+  claimableRoundPayouts?: ClaimablePayout[];
+  claimableCustomGames?: ClaimableCustomGameWin[];
+  refundableEntries?: RefundableEntry[];
+  refundableCustomGames?: RefundableCustomGame[];
+  onClaimRoundPrize?: (payout: ClaimablePayout) => void;
+  onClaimCustomPrize?: (onChainGameId: number) => void;
+  onClaimRefund?: (entry: RefundableEntry) => void;
+  onClaimCGRefund?: (cg: RefundableCustomGame) => void;
+  claimingId?: string | null;
 }
 
-const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, onCreateCustomGame, onEnterDuels }) => {
+const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, onCreateCustomGame, onEnterDuels, claimableRoundPayouts, claimableCustomGames, refundableEntries, refundableCustomGames, onClaimRoundPrize, onClaimCustomPrize, onClaimRefund, onClaimCGRefund, claimingId }) => {
   const [selectedTier, setSelectedTier] = useState(0);
+  const [claimsExpanded, setClaimsExpanded] = useState(false);
   const roundEntriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
   const livesNum = lives ?? 0;
   const canPlay = roundEntriesLeft > 0 || livesNum > 0;
 
   const tierFee = V2_TIER_FEES[selectedTier];
   const totalFee = (tierFee + TXN_FEE_LAMPORTS) / 1_000_000_000;
+
+  const totalClaimable = (claimableRoundPayouts?.length ?? 0) + (claimableCustomGames?.length ?? 0) + (refundableEntries?.length ?? 0) + (refundableCustomGames?.length ?? 0);
 
   return (
     <div className="h-full flex flex-col items-center justify-start md:justify-center p-4 pt-6 md:p-12 relative overflow-hidden bg-[#050505] overflow-y-auto">
@@ -49,6 +63,98 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
             Knowledge is the Ultimate Asset
           </p>
         </div>
+
+        {/* Unclaimed Rewards Banner */}
+        {totalClaimable > 0 && (
+          <div className="w-full mb-3 md:mb-4">
+            <button
+              onClick={() => setClaimsExpanded(!claimsExpanded)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-[#14F195]/5 border border-[#14F195]/20 rounded-xl hover:bg-[#14F195]/10 transition-all"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-[#14F195] rounded-full animate-pulse"></div>
+                <span className="text-[#14F195] text-xs font-[1000] italic uppercase tracking-tight">
+                  {totalClaimable} Unclaimed Reward{totalClaimable > 1 ? 's' : ''}
+                </span>
+              </div>
+              <svg className={`w-4 h-4 text-[#14F195] transition-transform ${claimsExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {claimsExpanded && (
+              <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                {/* Round Prizes */}
+                {claimableRoundPayouts?.map((p) => (
+                  <div key={`r-${p.round_id}-${p.tier_index}`} className="flex items-center justify-between px-3 py-2.5 bg-[#0A0A0A] border border-white/10 rounded-lg">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[#14F195] text-xs font-bold truncate block">{p.round_title}</span>
+                      <span className="text-zinc-500 text-[10px]">#{p.rank} — {(p.prize_lamports / 1e9).toFixed(4)} SOL</span>
+                    </div>
+                    <button
+                      disabled={claimingId === p.round_id}
+                      onClick={() => onClaimRoundPrize?.(p)}
+                      className="ml-2 px-3 py-1.5 bg-[#14F195] text-black text-[10px] font-[1000] italic uppercase rounded-md disabled:opacity-50"
+                    >
+                      {claimingId === p.round_id ? '...' : 'Claim'}
+                    </button>
+                  </div>
+                ))}
+
+                {/* Custom Game Prizes */}
+                {claimableCustomGames?.map((cg) => (
+                  <div key={`cg-${cg.game_id}`} className="flex items-center justify-between px-3 py-2.5 bg-[#0A0A0A] border border-white/10 rounded-lg">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-purple-400 text-xs font-bold truncate block">{cg.name}</span>
+                      <span className="text-zinc-500 text-[10px]">#{cg.winner_index + 1} — {(cg.prize_lamports / 1e9).toFixed(4)} SOL</span>
+                    </div>
+                    <button
+                      disabled={claimingId === String(cg.on_chain_game_id)}
+                      onClick={() => onClaimCustomPrize?.(cg.on_chain_game_id)}
+                      className="ml-2 px-3 py-1.5 bg-[#14F195] text-black text-[10px] font-[1000] italic uppercase rounded-md disabled:opacity-50"
+                    >
+                      {claimingId === String(cg.on_chain_game_id) ? '...' : 'Claim'}
+                    </button>
+                  </div>
+                ))}
+
+                {/* Refundable Entries */}
+                {refundableEntries?.map((re) => (
+                  <div key={`ref-${re.round_id}-${re.tier_index}`} className="flex items-center justify-between px-3 py-2.5 bg-[#0A0A0A] border border-yellow-500/20 rounded-lg">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-yellow-400 text-xs font-bold truncate block">{re.round_title}</span>
+                      <span className="text-zinc-500 text-[10px]">Refund — {(re.entry_fee_lamports / 1e9).toFixed(4)} SOL</span>
+                    </div>
+                    <button
+                      disabled={claimingId === re.round_id}
+                      onClick={() => onClaimRefund?.(re)}
+                      className="ml-2 px-3 py-1.5 bg-yellow-500 text-black text-[10px] font-[1000] italic uppercase rounded-md disabled:opacity-50"
+                    >
+                      {claimingId === re.round_id ? '...' : 'Refund'}
+                    </button>
+                  </div>
+                ))}
+
+                {/* Custom Game Refunds */}
+                {refundableCustomGames?.map((cg) => (
+                  <div key={`cgref-${cg.on_chain_game_id}`} className="flex items-center justify-between px-3 py-2.5 bg-[#0A0A0A] border border-orange-500/20 rounded-lg">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-orange-400 text-xs font-bold truncate block">{cg.name}</span>
+                      <span className="text-zinc-500 text-[10px]">Game Refund — {(cg.entry_fee_lamports / 1e9).toFixed(4)} SOL</span>
+                    </div>
+                    <button
+                      disabled={claimingId === `cgref-${cg.on_chain_game_id}`}
+                      onClick={() => onClaimCGRefund?.(cg)}
+                      className="ml-2 px-3 py-1.5 bg-orange-500 text-black text-[10px] font-[1000] italic uppercase rounded-md disabled:opacity-50"
+                    >
+                      {claimingId === `cgref-${cg.on_chain_game_id}` ? '...' : 'Refund'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Stats Row */}
         <div className="grid grid-cols-2 gap-2.5 w-full mb-3 md:mb-4">

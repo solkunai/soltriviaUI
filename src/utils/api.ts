@@ -1993,3 +1993,163 @@ export function subscribeDuelUpdates(
   ch.subscribe();
   return { unsubscribe: () => supabase.removeChannel(ch) };
 }
+
+// ═══ Custom Game Wins (for Profile / PlayView claiming) ═══════════════════
+
+export interface ClaimableCustomGameWin {
+  game_id: string;
+  name: string;
+  slug: string;
+  on_chain_game_id: number;
+  winner_index: number;
+  prize_lamports: number;
+  finalized_at: string;
+}
+
+/** Fetch custom games the wallet won (finalized, player_funded). */
+export async function fetchMyCustomGameWins(walletAddress: string): Promise<ClaimableCustomGameWin[]> {
+  if (!isSupabaseConfigured || !walletAddress?.trim()) return [];
+  const { data, error } = await supabase
+    .from('custom_games')
+    .select('id, name, slug, on_chain_game_id, winner_wallets, winner_amounts, finalized_at')
+    .eq('status', 'finalized')
+    .eq('prize_model', 'player_funded')
+    .order('finalized_at', { ascending: false })
+    .limit(50);
+  if (error || !data?.length) return [];
+
+  const results: ClaimableCustomGameWin[] = [];
+  for (const g of data as any[]) {
+    const wallets: string[] = g.winner_wallets ?? [];
+    const amounts: number[] = g.winner_amounts ?? [];
+    const idx = wallets.indexOf(walletAddress.trim());
+    if (idx >= 0) {
+      results.push({
+        game_id: g.id,
+        name: g.name ?? 'Custom Game',
+        slug: g.slug ?? '',
+        on_chain_game_id: g.on_chain_game_id,
+        winner_index: idx,
+        prize_lamports: amounts[idx] ?? 0,
+        finalized_at: g.finalized_at,
+      });
+    }
+  }
+  return results;
+}
+
+// ═══ Refundable Entries (rounds with <5 finishers) ════════════════════════
+
+export interface RefundableEntry {
+  round_id: string;
+  date: string;
+  round_number: number;
+  contract_round_id: number;
+  tier_index: number;
+  entry_fee_lamports: number;
+  round_title: string;
+}
+
+const TIER_FEES = [20_000_000, 100_000_000, 500_000_000, 1_000_000_000];
+
+/** Fetch rounds where the wallet entered but <5 players finished (status='refund'). */
+export async function fetchRefundableEntries(walletAddress: string): Promise<RefundableEntry[]> {
+  if (!isSupabaseConfigured || !walletAddress?.trim()) return [];
+
+  // Get this wallet's paid sessions
+  const { data: sessions, error: sessErr } = await supabase
+    .from('game_sessions')
+    .select('round_id, tier_index, life_used')
+    .eq('wallet_address', walletAddress.trim());
+  if (sessErr || !sessions?.length) return [];
+
+  // Only paid entries (life_used !== false)
+  const paidSessions = (sessions as { round_id: string; tier_index: number | null; life_used: boolean | null }[])
+    .filter(s => s.life_used !== false);
+  if (paidSessions.length === 0) return [];
+
+  const roundIds = [...new Set(paidSessions.map(s => s.round_id))];
+
+  // Get rounds with status 'refund'
+  const { data: rounds, error: roundErr } = await supabase
+    .from('daily_rounds')
+    .select('id, date, round_number')
+    .in('id', roundIds)
+    .eq('status', 'refund');
+  if (roundErr || !rounds?.length) return [];
+
+  const byId = Object.fromEntries(
+    (rounds as { id: string; date: string; round_number: number }[]).map(r => [r.id, r])
+  );
+
+  function contractRoundId(dateStr: string, roundNumber: number): number {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const epoch = new Date(Date.UTC(1970, 0, 1)).getTime();
+    const day = new Date(Date.UTC(y, m - 1, d)).getTime();
+    const daysSinceEpoch = Math.floor((day - epoch) / 86400_000);
+    return daysSinceEpoch * 4 + (roundNumber & 3);
+  }
+
+  return paidSessions
+    .map(s => {
+      const r = byId[s.round_id];
+      if (!r) return null;
+      const ti = s.tier_index ?? 0;
+      return {
+        round_id: s.round_id,
+        date: r.date,
+        round_number: r.round_number,
+        contract_round_id: contractRoundId(r.date, r.round_number),
+        tier_index: ti,
+        entry_fee_lamports: TIER_FEES[ti] ?? TIER_FEES[0],
+        round_title: `${r.date} Round ${r.round_number + 1}`,
+      };
+    })
+    .filter((x): x is RefundableEntry => x != null);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CUSTOM GAME REFUNDS
+// ═════════════════════════════════════════════════════════════════════════════
+
+export interface RefundableCustomGame {
+  game_id: string;
+  name: string;
+  slug: string;
+  on_chain_game_id: number;
+  entry_fee_lamports: number;
+  expired_at: string;
+}
+
+/** Fetch expired custom games where the wallet has a paid entry (eligible for refund). */
+export async function fetchRefundableCustomGames(walletAddress: string): Promise<RefundableCustomGame[]> {
+  if (!isSupabaseConfigured || !walletAddress?.trim()) return [];
+
+  // Find entries by this wallet
+  const { data: entries, error: entryErr } = await supabase
+    .from('custom_game_entries')
+    .select('game_id, entry_fee_lamports')
+    .eq('wallet_address', walletAddress.trim());
+
+  if (entryErr || !entries?.length) return [];
+
+  const gameIds = [...new Set(entries.map((e: { game_id: string }) => e.game_id))];
+
+  // Find expired games among those
+  const { data: games, error: gameErr } = await supabase
+    .from('custom_games')
+    .select('id, name, slug, on_chain_game_id, entry_fee_lamports, finalized_at')
+    .in('id', gameIds)
+    .eq('status', 'expired');
+
+  if (gameErr || !games?.length) return [];
+
+  return games.map((g: { id: string; name: string; slug: string; on_chain_game_id: number; entry_fee_lamports: number; finalized_at: string }) => ({
+    game_id: g.id,
+    name: g.name,
+    slug: g.slug,
+    on_chain_game_id: Number(g.on_chain_game_id),
+    entry_fee_lamports: Number(g.entry_fee_lamports),
+    expired_at: g.finalized_at,
+  }));
+}

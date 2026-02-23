@@ -85,9 +85,9 @@ import DuelLobbyView from './components/DuelLobbyView';
 import DuelWaitingView from './components/DuelWaitingView';
 import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, createDuel, joinDuel, getDuel, type CustomGameData } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame } from './src/utils/api';
 import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES } from './src/utils/constants';
-import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildClaimCustomPrizeIx, fetchGameConfig } from './src/utils/soltriviaContract';
+import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
 import { useKeepAlive } from './src/hooks/useKeepAlive';
@@ -167,6 +167,13 @@ const App: React.FC = () => {
     winner: string | null; duelComplete: boolean;
     totalPot: number;
   } | null>(null);
+
+  // Claims data for PlayView
+  const [claimableRoundPayouts, setClaimableRoundPayouts] = useState<ClaimablePayout[]>([]);
+  const [claimableCustomGames, setClaimableCustomGames] = useState<ClaimableCustomGameWin[]>([]);
+  const [refundableEntries, setRefundableEntries] = useState<RefundableEntry[]>([]);
+  const [refundableCustomGames, setRefundableCustomGames] = useState<RefundableCustomGame[]>([]);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
 
   // Ref: current wallet so async fetch can avoid applying stale result for a different wallet (reload race)
   const currentWalletRef = useRef<string | null>(null);
@@ -330,6 +337,39 @@ const App: React.FC = () => {
         }
       })
       .catch(() => {});
+    // Fetch claimable data for PlayView
+    fetchClaimableRoundPayouts(walletAddr).then(setClaimableRoundPayouts).catch(() => {});
+    fetchMyCustomGameWins(walletAddr).then(async (wins) => {
+      // Filter to only unclaimed on-chain
+      const unclaimed: ClaimableCustomGameWin[] = [];
+      for (const cg of wins) {
+        try {
+          const onChain = await fetchCustomGameOnChain(connection, cg.on_chain_game_id);
+          if (onChain && !onChain.claimed[cg.winner_index]) unclaimed.push(cg);
+        } catch { /* skip */ }
+      }
+      if (currentWalletRef.current === walletAddr) setClaimableCustomGames(unclaimed);
+    }).catch(() => {});
+    fetchRefundableEntries(walletAddr).then(async (entries) => {
+      const verified: RefundableEntry[] = [];
+      for (const re of entries) {
+        try {
+          const onChain = await fetchTierRound(connection, re.contract_round_id, re.tier_index);
+          if (onChain && onChain.refundMode) verified.push(re);
+        } catch { /* skip */ }
+      }
+      if (currentWalletRef.current === walletAddr) setRefundableEntries(verified);
+    }).catch(() => {});
+    fetchRefundableCustomGames(walletAddr).then(async (games) => {
+      const verified: RefundableCustomGame[] = [];
+      for (const cg of games) {
+        try {
+          const onChain = await fetchCustomGameOnChain(connection, cg.on_chain_game_id);
+          if (onChain && onChain.status === 3) verified.push(cg); // status 3 = expired
+        } catch { /* skip */ }
+      }
+      if (currentWalletRef.current === walletAddr) setRefundableCustomGames(verified);
+    }).catch(() => {});
   }, [connected, publicKey]);
 
   // Referral: capture ?ref=CODE from URL on mount → store in localStorage → clean URL
@@ -1028,6 +1068,92 @@ const App: React.FC = () => {
     const tx = new VersionedTransaction(messageV0);
     const signature = await sendTransaction(tx, connection);
     await connection.confirmTransaction(signature, 'confirmed');
+    // Remove from claimable list
+    setClaimableCustomGames(prev => prev.filter(cg => cg.on_chain_game_id !== onChainGameId));
+  };
+
+  const handleClaimRoundPrizeFromPlay = async (payout: ClaimablePayout) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    const id = `round-${payout.round_id}-${payout.rank}`;
+    setClaimingId(id);
+    try {
+      const { blockhash } = await connection.getLatestBlockhash();
+      const ix = buildClaimTierPrizeIx(publicKey, payout.contract_round_id, payout.tier_index ?? 0);
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      setClaimableRoundPayouts(prev => prev.filter(p => !(p.round_id === payout.round_id && p.rank === payout.rank)));
+    } catch (err: any) {
+      console.error('Failed to claim round prize:', err);
+      if (err.message?.includes('already been claimed') || err.message?.includes('AlreadyClaimed')) {
+        setClaimableRoundPayouts(prev => prev.filter(p => !(p.round_id === payout.round_id && p.rank === payout.rank)));
+      } else if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to claim prize. Please try again.');
+      }
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  const handleClaimRefund = async (entry: RefundableEntry) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    const id = `refund-${entry.round_id}-${entry.tier_index}`;
+    setClaimingId(id);
+    try {
+      const { blockhash } = await connection.getLatestBlockhash();
+      const ix = buildClaimTierRefundIx(publicKey, entry.contract_round_id, entry.tier_index);
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      setRefundableEntries(prev => prev.filter(re => !(re.round_id === entry.round_id && re.tier_index === entry.tier_index)));
+    } catch (err: any) {
+      console.error('Failed to claim refund:', err);
+      if (err.message?.includes('already been claimed') || err.message?.includes('AlreadyClaimed')) {
+        setRefundableEntries(prev => prev.filter(re => !(re.round_id === entry.round_id && re.tier_index === entry.tier_index)));
+      } else if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to claim refund. Please try again.');
+      }
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  const handleClaimCGRefund = async (cg: RefundableCustomGame) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    const id = `cgref-${cg.on_chain_game_id}`;
+    setClaimingId(id);
+    try {
+      const { blockhash } = await connection.getLatestBlockhash();
+      const ix = buildClaimCustomRefundIx(publicKey, cg.on_chain_game_id);
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      setRefundableCustomGames(prev => prev.filter(g => g.on_chain_game_id !== cg.on_chain_game_id));
+    } catch (err: any) {
+      console.error('Failed to claim custom game refund:', err);
+      if (err.message?.includes('already been claimed') || err.message?.includes('AlreadyClaimed')) {
+        setRefundableCustomGames(prev => prev.filter(g => g.on_chain_game_id !== cg.on_chain_game_id));
+      } else if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to claim custom game refund. Please try again.');
+      }
+    } finally {
+      setClaimingId(null);
+    }
   };
 
   // ─── Duels Handlers ──────────────────────────────────────────────────────────
@@ -1312,7 +1438,17 @@ const App: React.FC = () => {
       case View.PLAY:
         return <PlayView lives={livesDisplayReady ? lives : null} roundEntriesUsed={roundEntriesUsed} roundEntriesMax={ROUND_ENTRIES_MAX} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => {
           if (!connected) { setShowWalletRequired(true); } else { setIsBuyLivesOpen(true); }
-        }} onStartPractice={handleStartPractice} practiceRunsLeft={practiceRunsLeft} hasGamePass={hasGamePass} onCreateCustomGame={handleNavigateToCustomGames} onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)} />;
+        }} onStartPractice={handleStartPractice} practiceRunsLeft={practiceRunsLeft} hasGamePass={hasGamePass} onCreateCustomGame={handleNavigateToCustomGames} onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)}
+          claimableRoundPayouts={claimableRoundPayouts}
+          claimableCustomGames={claimableCustomGames}
+          refundableEntries={refundableEntries}
+          onClaimRoundPrize={handleClaimRoundPrizeFromPlay}
+          onClaimCustomPrize={handleClaimCustomPrize}
+          onClaimRefund={handleClaimRefund}
+          refundableCustomGames={refundableCustomGames}
+          onClaimCGRefund={handleClaimCGRefund}
+          claimingId={claimingId}
+        />;
       case View.QUESTS:
         return <QuestsView onGoToProfile={() => setCurrentView(View.PROFILE)} onOpenGuide={() => setIsGuideOpen(true)} />;
       case View.PROFILE:
@@ -1351,6 +1487,7 @@ const App: React.FC = () => {
             onSeekerVerified={(verified: boolean) => setIsSeekerVerified(verified)}
             onViewCustomGame={handleViewCustomGame}
             onClaimDuelPrize={handleClaimDuelPrize}
+            onClaimCustomPrize={handleClaimCustomPrize}
           />
         );
       case View.QUIZ:

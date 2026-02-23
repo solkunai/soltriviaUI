@@ -9,8 +9,8 @@ function claimExplorerUrl(signature: string): string {
   const cluster = SOLANA_NETWORK === 'devnet' ? '?cluster=devnet' : '';
   return `${base}/tx/${signature}${cluster}`;
 }
-import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, fetchMyDuelWins, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame, type MyDuelWin } from '../src/utils/api';
-import { buildClaimTierPrizeIx, fetchDuel } from '../src/utils/soltriviaContract';
+import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, fetchMyDuelWins, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame, type MyDuelWin, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame } from '../src/utils/api';
+import { buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchDuel, fetchCustomGame, fetchTierRound } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
 import { isPushSupported, hasActiveSubscription, subscribeToPush, unsubscribeFromPush } from '../src/utils/notifications';
 
@@ -24,6 +24,7 @@ interface ProfileViewProps {
   onSeekerVerified?: (verified: boolean) => void;
   onViewCustomGame?: (slug: string) => void;
   onClaimDuelPrize?: (duelId: number) => Promise<void>;
+  onClaimCustomPrize?: (onChainGameId: number) => Promise<void>;
 }
 
 interface PlayerStats {
@@ -57,7 +58,7 @@ interface PlayedCustomGame {
   completed_at: string;
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize }) => {
+const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize, onClaimCustomPrize }) => {
   const { publicKey, sendTransaction, signMessage } = useWallet();
   const { connection } = useConnection();
   const [stats, setStats] = useState<PlayerStats | null>(null);
@@ -92,6 +93,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const [playedGamesPage, setPlayedGamesPage] = useState(0);
   const [claimableDuels, setClaimableDuels] = useState<MyDuelWin[]>([]);
   const [claimingDuelId, setClaimingDuelId] = useState<number | null>(null);
+  const [claimableCustomGames, setClaimableCustomGames] = useState<ClaimableCustomGameWin[]>([]);
+  const [claimingCustomGameId, setClaimingCustomGameId] = useState<number | null>(null);
+  const [refundableEntries, setRefundableEntries] = useState<RefundableEntry[]>([]);
+  const [claimingRefundId, setClaimingRefundId] = useState<string | null>(null);
+  const [refundableCustomGames, setRefundableCustomGames] = useState<RefundableCustomGame[]>([]);
+  const [claimingCGRefundId, setClaimingCGRefundId] = useState<number | null>(null);
 
   const displayAvatar = (currentAvatar || avatar) && profileCacheBuster
     ? (currentAvatar || avatar) + ((currentAvatar || avatar).includes('?') ? '&' : '?') + 'v=' + profileCacheBuster
@@ -299,6 +306,47 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           }
           setClaimableDuels(unclaimed);
         } catch { /* silently skip duel wins fetch */ }
+
+        // Custom game wins — check on-chain claimed[]
+        try {
+          const cgWins = await fetchMyCustomGameWins(walletAddress);
+          const unclaimedCG: ClaimableCustomGameWin[] = [];
+          for (const cg of cgWins) {
+            try {
+              const onChain = await fetchCustomGame(connection, cg.on_chain_game_id);
+              if (onChain && !onChain.claimed[cg.winner_index]) unclaimedCG.push(cg);
+            } catch { /* skip */ }
+          }
+          setClaimableCustomGames(unclaimedCG);
+        } catch { /* silently skip */ }
+
+        // Refundable entries — check on-chain refundMode
+        try {
+          const refundable = await fetchRefundableEntries(walletAddress);
+          const verified: RefundableEntry[] = [];
+          for (const re of refundable) {
+            try {
+              const onChain = await fetchTierRound(connection, re.contract_round_id, re.tier_index);
+              if (onChain && onChain.refundMode) verified.push(re);
+            } catch { /* skip — round may not exist on-chain */ }
+          }
+          setRefundableEntries(verified);
+        } catch { /* silently skip */ }
+
+        // Refundable custom games — expired games where player has an entry
+        try {
+          const cgRefunds = await fetchRefundableCustomGames(walletAddress);
+          // Verify on-chain: custom game status must be expired (status byte = 3)
+          const verifiedCG: RefundableCustomGame[] = [];
+          for (const cg of cgRefunds) {
+            try {
+              const onChain = await fetchCustomGame(connection, cg.on_chain_game_id);
+              // Status 3 = expired on-chain (refundable)
+              if (onChain && onChain.status === 3) verifiedCG.push(cg);
+            } catch { /* skip */ }
+          }
+          setRefundableCustomGames(verifiedCG);
+        } catch { /* silently skip */ }
       } catch (error) {
         console.error('Error fetching profile data:', error);
       } finally {
@@ -509,6 +557,77 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
       if (!e?.message?.includes('rejected')) alert(e?.message || 'Claim failed');
     } finally {
       setClaimingRoundId(null);
+    }
+  };
+
+  const handleClaimRefund = async (entry: RefundableEntry) => {
+    if (!publicKey || !sendTransaction) return;
+    setClaimingRefundId(entry.round_id);
+    try {
+      const ix = buildClaimTierRefundIx(publicKey, entry.contract_round_id, entry.tier_index);
+      const { blockhash } = await connection.getLatestBlockhash();
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const sim = await connection.simulateTransaction(tx);
+      if (sim.value.err) {
+        // Already claimed — silently remove
+        const logs = sim.value.logs?.join(' ') ?? '';
+        if (logs.includes('already') || logs.includes('claimed')) {
+          setRefundableEntries(prev => prev.filter(r => r.round_id !== entry.round_id));
+          return;
+        }
+        throw new Error(`Refund simulation failed: ${JSON.stringify(sim.value.err)}`);
+      }
+      const sig = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(sig, 'confirmed');
+      setRefundableEntries(prev => prev.filter(r => r.round_id !== entry.round_id));
+      setLastClaimTx({
+        signature: sig,
+        solAmount: (entry.entry_fee_lamports / 1_000_000_000).toFixed(4),
+      });
+    } catch (e: any) {
+      if (!e?.message?.includes('rejected')) alert(e?.message || 'Refund claim failed');
+    } finally {
+      setClaimingRefundId(null);
+    }
+  };
+
+  const handleClaimCGRefund = async (cg: RefundableCustomGame) => {
+    if (!publicKey || !sendTransaction) return;
+    setClaimingCGRefundId(cg.on_chain_game_id);
+    try {
+      const ix = buildClaimCustomRefundIx(publicKey, cg.on_chain_game_id);
+      const { blockhash } = await connection.getLatestBlockhash();
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const sim = await connection.simulateTransaction(tx);
+      if (sim.value.err) {
+        const logs = sim.value.logs?.join(' ') ?? '';
+        if (logs.includes('already') || logs.includes('claimed')) {
+          setRefundableCustomGames(prev => prev.filter(g => g.on_chain_game_id !== cg.on_chain_game_id));
+          return;
+        }
+        throw new Error(`Refund simulation failed: ${JSON.stringify(sim.value.err)}`);
+      }
+      const sig = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(sig, 'confirmed');
+      setRefundableCustomGames(prev => prev.filter(g => g.on_chain_game_id !== cg.on_chain_game_id));
+      setLastClaimTx({
+        signature: sig,
+        solAmount: (cg.entry_fee_lamports / 1_000_000_000).toFixed(4),
+      });
+    } catch (e: any) {
+      if (!e?.message?.includes('rejected')) alert(e?.message || 'Custom game refund failed');
+    } finally {
+      setClaimingCGRefundId(null);
     }
   };
 
@@ -1059,6 +1178,112 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Custom Game Prizes – unclaimed wins from finalized paid custom games */}
+        {claimableCustomGames.length > 0 && (
+          <div className="mb-8 md:mb-12 relative z-10">
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">Custom Game Prizes</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">You won these custom games. Claim your SOL.</p>
+            <div className="space-y-3">
+              {claimableCustomGames.map((cg) => (
+                <div
+                  key={cg.game_id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 md:px-6 bg-[#0A0A0A] border border-white/10 rounded-xl"
+                >
+                  <div>
+                    <span className="text-purple-400 font-bold text-sm md:text-base">{cg.name}</span>
+                    <span className="text-zinc-500 text-xs ml-2">#{cg.winner_index + 1}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-white font-bold">{(cg.prize_lamports / 1_000_000_000).toFixed(4)} SOL</span>
+                    <button
+                      type="button"
+                      disabled={claimingCustomGameId === cg.on_chain_game_id}
+                      onClick={async () => {
+                        if (!onClaimCustomPrize) return;
+                        setClaimingCustomGameId(cg.on_chain_game_id);
+                        try {
+                          await onClaimCustomPrize(cg.on_chain_game_id);
+                          setClaimableCustomGames(prev => prev.filter(g => g.on_chain_game_id !== cg.on_chain_game_id));
+                        } catch {
+                          /* claim failed — button re-enables */
+                        } finally {
+                          setClaimingCustomGameId(null);
+                        }
+                      }}
+                      className="px-4 py-2 bg-[#14F195] hover:bg-[#14F195]/90 disabled:opacity-50 text-black font-[1000] text-xs uppercase italic rounded-lg transition-all"
+                    >
+                      {claimingCustomGameId === cg.on_chain_game_id ? 'Claiming...' : 'Claim'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Refundable Entries – rounds with <5 finishers */}
+        {refundableEntries.length > 0 && (
+          <div className="mb-8 md:mb-12 relative z-10">
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-yellow-400 mb-4">Refundable Entries</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">These rounds had fewer than 5 players. Claim your entry fee back.</p>
+            <div className="space-y-3">
+              {refundableEntries.map((re) => (
+                <div
+                  key={`${re.round_id}-${re.tier_index}`}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 md:px-6 bg-[#0A0A0A] border border-yellow-500/20 rounded-xl"
+                >
+                  <div>
+                    <span className="text-yellow-400 font-bold text-sm md:text-base">{re.round_title}</span>
+                    {re.tier_index > 0 && <span className="text-purple-400 text-[10px] font-black ml-2 uppercase">{V2_TIER_LABELS[re.tier_index]}</span>}
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-white font-bold">{(re.entry_fee_lamports / 1_000_000_000).toFixed(4)} SOL</span>
+                    <button
+                      type="button"
+                      disabled={claimingRefundId === re.round_id}
+                      onClick={() => handleClaimRefund(re)}
+                      className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-black font-[1000] text-xs uppercase italic rounded-lg transition-all"
+                    >
+                      {claimingRefundId === re.round_id ? 'Refunding...' : 'Refund'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Custom Game Refunds – expired games */}
+        {refundableCustomGames.length > 0 && (
+          <div className="mb-8 md:mb-12 relative z-10">
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-orange-400 mb-4">Custom Game Refunds</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">These games expired without enough players. Claim your entry fee back.</p>
+            <div className="space-y-3">
+              {refundableCustomGames.map((cg) => (
+                <div
+                  key={cg.on_chain_game_id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 md:px-6 bg-[#0A0A0A] border border-orange-500/20 rounded-xl"
+                >
+                  <div>
+                    <span className="text-orange-400 font-bold text-sm md:text-base">{cg.name}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-white font-bold">{(cg.entry_fee_lamports / 1_000_000_000).toFixed(4)} SOL</span>
+                    <button
+                      type="button"
+                      disabled={claimingCGRefundId === cg.on_chain_game_id}
+                      onClick={() => handleClaimCGRefund(cg)}
+                      className="px-4 py-2 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-black font-[1000] text-xs uppercase italic rounded-lg transition-all"
+                    >
+                      {claimingCGRefundId === cg.on_chain_game_id ? 'Refunding...' : 'Refund'}
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
