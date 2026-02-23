@@ -20,6 +20,7 @@ const PATH_TO_VIEW: Record<string, View> = {
   '/custom-games': View.CUSTOM_GAMES_HUB,
   '/create-game': View.CUSTOM_GAME_CREATE,
   '/duels': View.DUEL_LOBBY,
+  '/compete': View.COMPETE_LOBBY,
 };
 function viewFromPath(): View {
   if (typeof window === 'undefined') return View.HOME;
@@ -42,6 +43,7 @@ function pathForView(view: View, customSlug?: string | null, duelShareCode?: str
     if (current.startsWith('/game/')) return current;
     return '/';
   }
+  if (view === View.COMPETE_LOBBY) return '/compete';
   if (view === View.DUEL_LOBBY) return '/duels';
   if ([View.DUEL_WAITING, View.DUEL_PLAY, View.DUEL_RESULTS].includes(view)) {
     if (duelShareCode) return `/duel/${duelShareCode}`;
@@ -85,6 +87,7 @@ import DuelLobbyView from './components/DuelLobbyView';
 import DuelWaitingView from './components/DuelWaitingView';
 import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
+import CompeteLobbyView from './components/CompeteLobbyView';
 import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame } from './src/utils/api';
 import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES } from './src/utils/constants';
 import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
@@ -1405,7 +1408,7 @@ const App: React.FC = () => {
               if (!connected) {
                 setShowWalletRequired(true);
               } else {
-                setCurrentView(View.PLAY);
+                setCurrentView(View.COMPETE_LOBBY);
               }
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
@@ -1433,6 +1436,25 @@ const App: React.FC = () => {
             profileCacheBuster={profileCacheBuster}
             currentWallet={publicKey?.toBase58() ?? null}
             currentUserAvatar={profile.avatar}
+          />
+        );
+      case View.COMPETE_LOBBY:
+        return (
+          <CompeteLobbyView
+            lives={livesDisplayReady ? lives : null}
+            roundEntriesUsed={roundEntriesUsed}
+            roundEntriesMax={ROUND_ENTRIES_MAX}
+            onStartQuiz={handleStartQuiz}
+            onOpenBuyLives={() => {
+              if (!connected) { setShowWalletRequired(true); } else { setIsBuyLivesOpen(true); }
+            }}
+            onBack={() => setCurrentView(View.HOME)}
+            onConnectWallet={() => setShowWalletRequired(true)}
+            walletConnected={connected}
+            onStartPractice={handleStartPractice}
+            onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)}
+            onCreateCustomGame={handleNavigateToCustomGames}
+            hasGamePass={hasGamePass}
           />
         );
       case View.PLAY:
@@ -1711,7 +1733,7 @@ const App: React.FC = () => {
               if (!connected) {
                 setShowWalletRequired(true);
               } else {
-                setCurrentView(View.PLAY);
+                setCurrentView(View.COMPETE_LOBBY);
               }
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
@@ -1758,18 +1780,18 @@ const App: React.FC = () => {
       {/* Global Mobile Help Button for views without headers */}
       {showMobileHelpButton && (
         <div className={`md:hidden fixed z-[150] left-0 right-0 pointer-events-none transition-all duration-300 safe-top ${
-          currentView === View.PLAY 
-            ? 'top-8 flex justify-center' 
+          (currentView === View.PLAY || currentView === View.COMPETE_LOBBY)
+            ? 'top-8 flex justify-center'
             : 'top-[-4px] h-[64px] px-6 flex justify-end items-center'
         }`}>
-          <button 
+          <button
             onClick={() => setIsGuideOpen(true)}
-            className={`pointer-events-auto flex items-center justify-center transition-all active:scale-95 ${currentView === View.PLAY ? 'gap-3 px-4' : 'w-10 h-10'}`}
+            className={`pointer-events-auto flex items-center justify-center transition-all active:scale-95 ${(currentView === View.PLAY || currentView === View.COMPETE_LOBBY) ? 'gap-3 px-4' : 'w-10 h-10'}`}
           >
-            {currentView === View.PLAY && (
+            {(currentView === View.PLAY || currentView === View.COMPETE_LOBBY) && (
               <span className="text-[10px] font-black uppercase tracking-widest text-white/90">How to Play</span>
             )}
-            <div className={`rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] flex items-center justify-center shadow-lg shadow-black/50 ${currentView === View.PLAY ? 'w-6 h-6' : 'w-8 h-8'}`}>
+            <div className={`rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] flex items-center justify-center shadow-lg shadow-black/50 ${(currentView === View.PLAY || currentView === View.COMPETE_LOBBY) ? 'w-6 h-6' : 'w-8 h-8'}`}>
               <span className="text-white font-black text-xs italic">?</span>
             </div>
           </button>

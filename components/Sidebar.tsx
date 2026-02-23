@@ -18,10 +18,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
         <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     )},
-    { 
-      id: View.PLAY, 
-      label: 'PLAY', 
-      isPlayButton: true 
+    {
+      id: View.COMPETE_LOBBY,
+      label: 'PLAY',
+      isPlayButton: true
     },
     { id: View.LEADERBOARD, label: 'LEADERBOARD', icon: (color: string) => (
       <svg className="w-6 h-6" fill="none" stroke={color} strokeWidth={1.5} viewBox="0 0 24 24">
