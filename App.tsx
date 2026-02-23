@@ -1557,6 +1557,7 @@ const App: React.FC = () => {
             entryFee={duelEntryFee}
             totalPot={duelResults.totalPot}
             duelComplete={duelResults.duelComplete}
+            isPlayer1={duelIsPlayer1}
             onClaimPrize={handleClaimDuelPrize}
             onPlayAgain={() => setCurrentView(View.DUEL_LOBBY)}
             onBackToLobby={() => setCurrentView(View.DUEL_LOBBY)}

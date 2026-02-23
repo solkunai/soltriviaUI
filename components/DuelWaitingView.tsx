@@ -21,6 +21,8 @@ const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, sha
   const pollRef = useRef<number | null>(null);
   const timerRef = useRef<number | null>(null);
   const subRef = useRef<{ unsubscribe: () => void } | null>(null);
+  const onDuelJoinedRef = useRef(onDuelJoined);
+  useEffect(() => { onDuelJoinedRef.current = onDuelJoined; });
 
   const shareUrl = `https://soltrivia.app/duel/${shareCode}`;
 
@@ -53,19 +55,22 @@ const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, sha
     return () => { subRef.current?.unsubscribe(); };
   }, [dbDuelId, onDuelJoined]);
 
-  // Polling fallback
+  // Poll for opponent joining (primary detection mechanism)
   useEffect(() => {
+    let active = true;
     const poll = async () => {
       try {
         const duel = await getDuel({ duel_id: duelId });
-        if (duel.status === 'playing' && duel.player2) {
-          onDuelJoined(duel.player2.wallet, duel.db_duel_id);
+        if (active && duel.status === 'playing' && duel.player2) {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          onDuelJoinedRef.current(duel.player2.wallet, duel.db_duel_id);
         }
       } catch {}
     };
-    pollRef.current = window.setInterval(poll, 5000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [duelId, onDuelJoined]);
+    poll(); // Immediate first check
+    pollRef.current = window.setInterval(poll, 3000);
+    return () => { active = false; if (pollRef.current) clearInterval(pollRef.current); };
+  }, [duelId]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {

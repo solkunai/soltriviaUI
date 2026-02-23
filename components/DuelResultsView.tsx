@@ -16,6 +16,7 @@ interface DuelResultsViewProps {
   entryFee: number;
   totalPot: number;
   duelComplete: boolean;
+  isPlayer1: boolean;
   onClaimPrize: () => void;
   onPlayAgain: () => void;
   onBackToLobby: () => void;
@@ -26,7 +27,7 @@ const DuelResultsView: React.FC<DuelResultsViewProps> = ({
   opponentWallet, opponentUsername, opponentAvatar,
   opponentScore, opponentCorrect, winnerWallet: initialWinner,
   entryFee, totalPot: initialPot, duelComplete: initialComplete,
-  onClaimPrize, onPlayAgain, onBackToLobby,
+  isPlayer1, onClaimPrize, onPlayAgain, onBackToLobby,
 }) => {
   const [winner, setWinner] = useState<string | null>(initialWinner);
   const [resolved, setResolved] = useState(false);
@@ -51,15 +52,15 @@ const DuelResultsView: React.FC<DuelResultsViewProps> = ({
       if (duel.status === 'completed' || duel.status === 'resolved') {
         setWaitingForOpponent(false);
         if (duel.winner_wallet) setWinner(duel.winner_wallet as string);
-        if (duel.player2_score != null) setOppScore(duel.player2_score as number);
-        if (duel.player2_correct != null) setOppCorrect(duel.player2_correct as number);
-        if (duel.player1_score != null && myWallet !== opponentWallet) {
-          // Might be player2 viewing
-        }
+        // Read the OTHER player's data as opponent
+        const oppScoreKey = isPlayer1 ? 'player2_score' : 'player1_score';
+        const oppCorrectKey = isPlayer1 ? 'player2_correct' : 'player1_correct';
+        if (duel[oppScoreKey] != null) setOppScore(duel[oppScoreKey] as number);
+        if (duel[oppCorrectKey] != null) setOppCorrect(duel[oppCorrectKey] as number);
       }
     });
     return () => { subRef.current?.unsubscribe(); };
-  }, [dbDuelId, myWallet, opponentWallet]);
+  }, [dbDuelId, isPlayer1]);
 
   // Poll for resolution status
   useEffect(() => {
@@ -71,16 +72,18 @@ const DuelResultsView: React.FC<DuelResultsViewProps> = ({
         if (duel.status === 'completed' || duel.status === 'resolved') {
           setWaitingForOpponent(false);
           if (duel.winner_wallet) setWinner(duel.winner_wallet);
-          if (duel.player2) {
-            setOppScore(duel.player2.score);
-            setOppCorrect(duel.player2.correct);
+          // Read the OTHER player's data as opponent
+          const opp = isPlayer1 ? duel.player2 : duel.player1;
+          if (opp) {
+            setOppScore(opp.score);
+            setOppCorrect(opp.correct);
           }
         }
       } catch {}
     };
     pollRef.current = window.setInterval(poll, 3000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [duelId, myWallet, resolved]);
+  }, [duelId, myWallet, resolved, isPlayer1]);
 
   const handleClaim = () => {
     setClaiming(true);
