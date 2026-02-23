@@ -183,11 +183,19 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
 
           {/* Right: How to Play, FAQ, Wallet */}
           <div className="flex items-center gap-2">
+            {/* Desktop: full label */}
             <button
               onClick={onOpenGuide}
-              className="h-8 px-3 bg-[#14F195] hover:bg-[#14F195]/90 rounded-full flex items-center justify-center transition-all active:scale-95"
+              className="hidden md:flex h-8 px-3 bg-[#14F195] hover:bg-[#14F195]/90 rounded-full items-center justify-center transition-all active:scale-95"
             >
               <span className="text-[9px] font-black uppercase tracking-wider text-black">HOW TO PLAY</span>
+            </button>
+            {/* Mobile: compact green ? */}
+            <button
+              onClick={onOpenGuide}
+              className="md:hidden w-8 h-8 rounded-full bg-[#14F195] flex items-center justify-center shadow-lg active:scale-95 transition-all"
+            >
+              <span className="text-black font-black text-sm italic">?</span>
             </button>
             <button
               onClick={() => setShowFAQ(true)}

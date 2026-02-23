@@ -100,7 +100,7 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
   };
 
   return (
-    <div className="min-h-full bg-[#050505] p-4 sm:p-8 md:p-12">
+    <div className="min-h-full bg-[#050505] p-4 pb-[200px] sm:p-8 md:p-12 md:pb-12">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">

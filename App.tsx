@@ -1779,20 +1779,13 @@ const App: React.FC = () => {
 
       {/* Global Mobile Help Button for views without headers */}
       {showMobileHelpButton && (
-        <div className={`md:hidden fixed z-[150] left-0 right-0 pointer-events-none transition-all duration-300 safe-top ${
-          (currentView === View.PLAY || currentView === View.COMPETE_LOBBY)
-            ? 'top-8 flex justify-center'
-            : 'top-[-4px] h-[64px] px-6 flex justify-end items-center'
-        }`}>
+        <div className="md:hidden fixed z-[150] top-[-4px] left-0 right-0 h-[64px] px-6 flex justify-end items-center pointer-events-none transition-all duration-300 safe-top">
           <button
             onClick={() => setIsGuideOpen(true)}
-            className={`pointer-events-auto flex items-center justify-center transition-all active:scale-95 ${(currentView === View.PLAY || currentView === View.COMPETE_LOBBY) ? 'gap-3 px-4' : 'w-10 h-10'}`}
+            className="pointer-events-auto w-10 h-10 flex items-center justify-center transition-all active:scale-95"
           >
-            {(currentView === View.PLAY || currentView === View.COMPETE_LOBBY) && (
-              <span className="text-[10px] font-black uppercase tracking-widest text-white/90">How to Play</span>
-            )}
-            <div className={`rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] flex items-center justify-center shadow-lg shadow-black/50 ${(currentView === View.PLAY || currentView === View.COMPETE_LOBBY) ? 'w-6 h-6' : 'w-8 h-8'}`}>
-              <span className="text-white font-black text-xs italic">?</span>
+            <div className="w-8 h-8 rounded-full bg-[#14F195] flex items-center justify-center shadow-lg shadow-black/50">
+              <span className="text-black font-black text-sm italic">?</span>
             </div>
           </button>
         </div>

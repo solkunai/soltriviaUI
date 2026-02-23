@@ -13,7 +13,6 @@ interface PlayerStats {
   winnings: string;
   avatar: string;
   score: string;
-  time: string;
   gamesPlayed: string;
   wallet_address?: string;
   is_seeker_verified?: boolean;
@@ -180,21 +179,23 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
   }, [mainTab]);
 
   // Transform API data to display format; winnings from round_payouts (total prize/paid per wallet)
-  const allPlayers: PlayerStats[] = leaderboardData.map((entry) => {
-    const lamports = solWonByWallet[entry.wallet_address] ?? 0;
-    const solWon = lamports / 1_000_000_000;
-    return {
-      rank: entry.rank.toString(),
-      username: entry.display_name ?? `${entry.wallet_address.slice(0, 4)}...${entry.wallet_address.slice(-4)}`,
-      winnings: solWon > 0 ? solWon.toFixed(4) + ' SOL' : '0.00 SOL',
-      avatar: entry.avatar || DEFAULT_AVATAR,
-      score: Number(entry.score).toLocaleString(),
-      time: `${Math.floor((entry.time_taken_ms ?? 0) / 1000)}s`,
-      gamesPlayed: String(entry.games_played ?? 1),
-      wallet_address: entry.wallet_address,
-      is_seeker_verified: entry.is_seeker_verified ?? false,
-    };
-  });
+  // Filter out players with 0 score (never completed a game)
+  const allPlayers: PlayerStats[] = leaderboardData
+    .filter((entry) => Number(entry.score) > 0)
+    .map((entry) => {
+      const lamports = solWonByWallet[entry.wallet_address] ?? 0;
+      const solWon = lamports / 1_000_000_000;
+      return {
+        rank: entry.rank.toString(),
+        username: entry.display_name ?? `${entry.wallet_address.slice(0, 4)}...${entry.wallet_address.slice(-4)}`,
+        winnings: solWon > 0 ? solWon.toFixed(4) + ' SOL' : '0.00 SOL',
+        avatar: entry.avatar || DEFAULT_AVATAR,
+        score: Number(entry.score).toLocaleString(),
+        gamesPlayed: String(entry.games_played ?? 1),
+        wallet_address: entry.wallet_address,
+        is_seeker_verified: entry.is_seeker_verified ?? false,
+      };
+    });
 
   return (
     <div className="min-h-full bg-[#050505] text-white safe-top relative flex flex-col overflow-x-hidden">
@@ -210,9 +211,9 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
         <h2 className="text-2xl font-[1000] italic uppercase tracking-tighter">LEADERBOARD</h2>
         <button 
           onClick={onOpenGuide}
-          className="w-10 h-10 rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] flex items-center justify-center shadow-lg active:scale-95 transition-all"
+          className="w-10 h-10 rounded-full bg-[#14F195] flex items-center justify-center shadow-lg active:scale-95 transition-all"
         >
-          <span className="text-white font-[1000] text-xl italic leading-none">?</span>
+          <span className="text-black font-[1000] text-xl italic leading-none">?</span>
         </button>
       </div>
 
@@ -576,7 +577,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
 
         {/* Your Rank Section */}
         {publicKey && userRank && (
-          <div className="mb-6 px-4">
+          <div className="mb-12 px-4 relative z-10">
             <div className="max-w-2xl mx-auto bg-gradient-to-r from-[#14F195]/10 via-[#14F195]/5 to-transparent border border-[#14F195]/20 rounded-xl p-4 backdrop-blur-md">
               <div className="flex items-center justify-between">
                 <div>
@@ -717,7 +718,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                      <div className="flex items-center justify-center gap-2 mt-2">
                         <span className="text-zinc-500 font-black italic text-[10px] uppercase">{player.winnings}</span>
                         <div className="w-1 h-1 bg-zinc-700 rounded-full"></div>
-                        <span className="text-zinc-500 font-black italic text-[10px] uppercase">{player.time}</span>
+                        <span className="text-zinc-500 font-black italic text-[10px] uppercase">{player.gamesPlayed} games</span>
                      </div>
                    </div>
                 </div>
@@ -736,7 +737,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                 <span className="w-10 text-center">Rank</span>
                 <span className="w-12">Avatar</span>
                 <span className="flex-1">Identity</span>
-                <span className="w-24 text-center">Time</span>
+                <span className="w-24 text-center">Games</span>
                 <span className="w-32 text-right">XP Earned</span>
               </div>
               {allPlayers.slice(5).map((player, idx) => (
@@ -749,7 +750,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                         <p className="font-[1000] italic text-base uppercase text-white truncate tracking-tight flex items-center gap-1.5">{player.username}{player.is_seeker_verified && <SeekerBadge />}</p>
                         <p className="text-[10px] font-bold text-zinc-500 mt-0.5 uppercase">Sol Won: {player.winnings}</p>
                     </div>
-                    <div className="w-24 text-center font-black italic text-sm text-[#14F195]">{player.time}</div>
+                    <div className="w-24 text-center font-black italic text-sm text-[#14F195]">{player.gamesPlayed}</div>
                     <div className="w-32 text-right">
                         <p className="text-white font-[1000] italic text-2xl leading-none tabular-nums group-hover:text-[#14F195] transition-colors">{player.score}</p>
                         <p className="text-zinc-600 text-[8px] font-black uppercase italic tracking-widest mt-0.5">XP</p>
@@ -786,9 +787,9 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                   <div className="flex-1 min-w-0">
                       <p className="font-[1000] italic text-[13px] uppercase text-white truncate tracking-tight leading-tight mb-0.5 flex items-center gap-1">{player.username}{player.is_seeker_verified && <SeekerBadge className="ml-0.5" />}</p>
                       <div className="flex items-center gap-2">
-                         <span className="text-[#14F195]/60 text-[7px] font-black uppercase italic tracking-tighter">{player.time}</span>
+                         <span className="text-[#14F195]/60 text-[7px] font-black uppercase italic tracking-tighter">{player.gamesPlayed} games</span>
                          <span className="w-0.5 h-0.5 rounded-full bg-zinc-700"></span>
-                         <span className="text-zinc-500 text-[7px] font-black uppercase italic tracking-tighter truncate max-w-[50px]">{player.winnings}</span>
+                         <span className="text-zinc-500 text-[7px] font-black uppercase italic tracking-tighter truncate max-w-[60px]">{player.winnings}</span>
                       </div>
                   </div>
                   

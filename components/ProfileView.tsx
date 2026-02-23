@@ -694,9 +694,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           )}
           <button
             onClick={onOpenGuide}
-            className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] flex items-center justify-center shadow-lg active:scale-95 transition-all"
+            className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-[#14F195] flex items-center justify-center shadow-lg active:scale-95 transition-all"
           >
-            <span className="text-white font-black text-lg md:text-xl italic leading-none">?</span>
+            <span className="text-black font-black text-lg md:text-xl italic leading-none">?</span>
           </button>
         </div>
       </div>

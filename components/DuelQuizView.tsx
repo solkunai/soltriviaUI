@@ -315,7 +315,7 @@ const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAdd
             <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-[#FF3131]/30"></div>
             <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-[#FF3131]/30"></div>
             <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#FF3131]/30"></div>
-            <h2 className="text-2xl sm:text-3xl md:text-5xl font-[1000] italic text-white uppercase tracking-tighter leading-[0.9] md:leading-[0.85]">
+            <h2 className="text-2xl sm:text-3xl md:text-5xl font-[1000] italic text-white uppercase tracking-tight leading-[1.1] md:leading-[1.05] text-center">
               {question.text}
             </h2>
           </div>
@@ -349,7 +349,7 @@ const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAdd
                   <div className={`w-8 h-8 md:w-12 md:h-12 border flex items-center justify-center font-[1000] italic text-sm md:text-xl transition-all duration-300 shrink-0 ${selectedOption === idx ? 'bg-current text-black border-transparent' : 'border-current opacity-20'}`}>
                     {OPTION_LABELS[idx]}
                   </div>
-                  <span className="text-base md:text-lg font-black italic uppercase tracking-tight flex-1 leading-tight">{option}</span>
+                  <span className="text-base md:text-lg font-black italic uppercase tracking-normal flex-1 leading-normal">{option}</span>
                   {selectedOption === idx && isCorrect && lastGainedPoints && (
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
                       <span className="text-[#00FFA3] text-[10px] md:text-xs font-[1000] italic points-popup block">+{lastGainedPoints} XP</span>

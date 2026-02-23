@@ -68,6 +68,7 @@ export default function CompeteLobbyView({
   const [countdown, setCountdown] = useState(formatCountdown(getNextRoundMs()));
   const [recentRounds, setRecentRounds] = useState<RoundWithWinner[]>([]);
   const [recentLoading, setRecentLoading] = useState(true);
+  const [recentPage, setRecentPage] = useState(0);
   const lastRoundNumberRef = useRef(getContractRoundId().roundNumber);
 
   const roundEntriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
@@ -103,7 +104,7 @@ export default function CompeteLobbyView({
   // Fetch recent winners
   const fetchRecent = useCallback(async () => {
     try {
-      const { rounds } = await fetchRoundsWithWinnersPaginated(0, 5);
+      const { rounds } = await fetchRoundsWithWinnersPaginated(0, 50);
       setRecentRounds(rounds);
     } catch (e) {
       console.warn('Failed to fetch recent rounds:', e);
@@ -271,51 +272,78 @@ export default function CompeteLobbyView({
           </div>
         </div>
 
-        {/* Recent Winners */}
-        <div>
-          <div className="text-[9px] font-black uppercase tracking-[0.3em] text-white/70 mb-2">Recent Rounds</div>
+        {/* Recent Rounds */}
+        <div className="bg-[#0A0A0A] border border-white/5 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/80">Recent Rounds</div>
+            {recentRounds.length > 5 && (
+              <div className="text-[9px] font-bold text-white/50 tabular-nums">
+                {recentPage + 1}/{Math.ceil(recentRounds.length / 5)}
+              </div>
+            )}
+          </div>
           {recentLoading ? (
             <div className="space-y-2">
-              {[0,1,2].map(i => <div key={i} className="h-20 bg-white/5 rounded-xl animate-pulse" />)}
+              {[0,1,2].map(i => <div key={i} className="h-16 bg-white/5 rounded-lg animate-pulse" />)}
             </div>
           ) : recentRounds.length === 0 ? (
             <div className="text-center text-[11px] text-white/30 py-6 italic">No completed rounds yet</div>
           ) : (
-            <div className="space-y-2">
-              {recentRounds.map((round) => (
-                <div key={round.round_id} className="bg-[#0A0A0A] border border-white/5 rounded-xl px-4 py-3">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="text-[10px] font-bold text-white/90">{round.round_title}</div>
-                    {round.status === 'refund' ? (
-                      <span className="text-[8px] font-black uppercase tracking-wider bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded-full">Refunded</span>
-                    ) : round.status === 'completed' ? (
-                      <span className="text-[8px] font-black uppercase tracking-wider bg-[#14F195]/20 text-[#14F195] px-1.5 py-0.5 rounded-full">Completed</span>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center gap-3 text-[10px] font-bold text-white/80 mb-2">
-                    <span>Pot: {(round.pot_lamports / 1_000_000_000).toFixed(4)} SOL</span>
-                    <span>{round.player_count} player{round.player_count !== 1 ? 's' : ''}</span>
-                  </div>
-                  {round.payouts && round.payouts.length > 0 && (
-                    <div className="space-y-1">
-                      {round.payouts.slice(0, 3).map((p, pi) => (
-                        <div key={pi} className="flex items-center justify-between text-[10px]">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`font-black ${pi === 0 ? 'text-[#FFD700]' : pi === 1 ? 'text-[#C0C0C0]' : 'text-[#CD7F32]'}`}>
-                              {pi + 1}{['st','nd','rd'][pi]}
-                            </span>
-                            <span className="text-white truncate max-w-[120px]">
-                              {p.winner_display_name || (p.wallet_address?.slice(0, 4) + '...' + p.wallet_address?.slice(-4))}
-                            </span>
-                          </div>
-                          <span className="text-[#14F195] font-bold">{(p.prize_lamports / 1_000_000_000).toFixed(4)} SOL</span>
-                        </div>
-                      ))}
+            <>
+              <div className="space-y-2">
+                {recentRounds.slice(recentPage * 5, recentPage * 5 + 5).map((round) => (
+                  <div key={round.round_id} className="bg-white/[0.03] border border-white/5 rounded-lg px-3.5 py-2.5">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="text-[10px] font-bold text-white/90">{round.round_title}</div>
+                      {round.status === 'refund' ? (
+                        <span className="text-[8px] font-black uppercase tracking-wider bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded-full">Refunded</span>
+                      ) : round.status === 'completed' ? (
+                        <span className="text-[8px] font-black uppercase tracking-wider bg-[#14F195]/20 text-[#14F195] px-1.5 py-0.5 rounded-full">Completed</span>
+                      ) : null}
                     </div>
-                  )}
+                    <div className="flex items-center gap-3 text-[10px] font-bold text-white/80 mb-2">
+                      <span>Pot: {(round.pot_lamports / 1_000_000_000).toFixed(4)} SOL</span>
+                      <span>{round.player_count} player{round.player_count !== 1 ? 's' : ''}</span>
+                    </div>
+                    {round.payouts && round.payouts.length > 0 && (
+                      <div className="space-y-1">
+                        {round.payouts.slice(0, 3).map((p, pi) => (
+                          <div key={pi} className="flex items-center justify-between text-[10px]">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`font-black ${pi === 0 ? 'text-[#FFD700]' : pi === 1 ? 'text-[#C0C0C0]' : 'text-[#CD7F32]'}`}>
+                                {pi + 1}{['st','nd','rd'][pi]}
+                              </span>
+                              <span className="text-white truncate max-w-[120px]">
+                                {p.winner_display_name || (p.wallet_address?.slice(0, 4) + '...' + p.wallet_address?.slice(-4))}
+                              </span>
+                            </div>
+                            <span className="text-[#14F195] font-bold">{(p.prize_lamports / 1_000_000_000).toFixed(4)} SOL</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {recentRounds.length > 5 && (
+                <div className="flex items-center justify-center gap-3 mt-3">
+                  <button
+                    onClick={() => setRecentPage(p => Math.max(0, p - 1))}
+                    disabled={recentPage === 0}
+                    className="px-3 py-1 rounded-lg bg-white/5 text-[10px] font-bold text-white/70 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 transition-all"
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setRecentPage(p => Math.min(Math.ceil(recentRounds.length / 5) - 1, p + 1))}
+                    disabled={recentPage >= Math.ceil(recentRounds.length / 5) - 1}
+                    className="px-3 py-1 rounded-lg bg-white/5 text-[10px] font-bold text-white/70 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 transition-all"
+                  >
+                    Next
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
 
