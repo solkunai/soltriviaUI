@@ -9,8 +9,8 @@ function claimExplorerUrl(signature: string): string {
   const cluster = SOLANA_NETWORK === 'devnet' ? '?cluster=devnet' : '';
   return `${base}/tx/${signature}${cluster}`;
 }
-import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame } from '../src/utils/api';
-import { buildClaimTierPrizeIx } from '../src/utils/soltriviaContract';
+import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, fetchMyDuelWins, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame, type MyDuelWin } from '../src/utils/api';
+import { buildClaimTierPrizeIx, fetchDuel } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
 import { isPushSupported, hasActiveSubscription, subscribeToPush, unsubscribeFromPush } from '../src/utils/notifications';
 
@@ -23,6 +23,7 @@ interface ProfileViewProps {
   onAvatarUpdated?: (url: string) => void;
   onSeekerVerified?: (verified: boolean) => void;
   onViewCustomGame?: (slug: string) => void;
+  onClaimDuelPrize?: (duelId: number) => Promise<void>;
 }
 
 interface PlayerStats {
@@ -56,7 +57,7 @@ interface PlayedCustomGame {
   completed_at: string;
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame }) => {
+const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize }) => {
   const { publicKey, sendTransaction, signMessage } = useWallet();
   const { connection } = useConnection();
   const [stats, setStats] = useState<PlayerStats | null>(null);
@@ -89,6 +90,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const CUSTOM_GAMES_PER_PAGE = 5;
   const [createdGamesPage, setCreatedGamesPage] = useState(0);
   const [playedGamesPage, setPlayedGamesPage] = useState(0);
+  const [claimableDuels, setClaimableDuels] = useState<MyDuelWin[]>([]);
+  const [claimingDuelId, setClaimingDuelId] = useState<number | null>(null);
 
   const displayAvatar = (currentAvatar || avatar) && profileCacheBuster
     ? (currentAvatar || avatar) + ((currentAvatar || avatar).includes('?') ? '&' : '?') + 'v=' + profileCacheBuster
@@ -283,6 +286,19 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         setClaimablePayouts(claimable);
         const claimed = await fetchClaimedRoundPayouts(walletAddress);
         setClaimedPayouts(claimed);
+
+        // Duel wins — check on-chain which are unclaimed
+        try {
+          const duelWins = await fetchMyDuelWins(walletAddress);
+          const unclaimed: MyDuelWin[] = [];
+          for (const dw of duelWins) {
+            try {
+              const onChain = await fetchDuel(connection, dw.duel_id);
+              if (onChain && !onChain.winnerClaimed) unclaimed.push(dw);
+            } catch { /* duel not on-chain or RPC error — skip */ }
+          }
+          setClaimableDuels(unclaimed);
+        } catch { /* silently skip duel wins fetch */ }
       } catch (error) {
         console.error('Error fetching profile data:', error);
       } finally {
@@ -996,6 +1012,54 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 <button onClick={() => setClaimablePage(p => Math.min(Math.ceil(claimablePayouts.length / WINS_PER_PAGE) - 1, p + 1))} disabled={claimablePage >= Math.ceil(claimablePayouts.length / WINS_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Next</button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Duel wins – unclaimed prizes */}
+        {claimableDuels.length > 0 && (
+          <div className="mb-8 md:mb-12 relative z-10">
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">Duel Prizes</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">You won these duels. Claim your SOL.</p>
+            <div className="space-y-3">
+              {claimableDuels.map((dw) => {
+                const houseCut = Math.floor(dw.total_pot_lamports * 0.1);
+                const prize = dw.total_pot_lamports - houseCut;
+                const oppName = dw.opponent_username || `${dw.opponent_wallet.slice(0, 4)}...${dw.opponent_wallet.slice(-4)}`;
+                return (
+                  <div
+                    key={dw.duel_id}
+                    className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 md:px-6 bg-[#0A0A0A] border border-white/10 rounded-xl"
+                  >
+                    <div>
+                      <span className="text-[#FF3131] font-bold text-sm md:text-base">Duel vs {oppName}</span>
+                      <span className="text-zinc-500 text-xs ml-2">{dw.player1_score}–{dw.player2_score}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-white font-bold">{(prize / 1_000_000_000).toFixed(4)} SOL</span>
+                      <button
+                        type="button"
+                        disabled={claimingDuelId === dw.duel_id}
+                        onClick={async () => {
+                          if (!onClaimDuelPrize) return;
+                          setClaimingDuelId(dw.duel_id);
+                          try {
+                            await onClaimDuelPrize(dw.duel_id);
+                            setClaimableDuels(prev => prev.filter(d => d.duel_id !== dw.duel_id));
+                          } catch {
+                            /* claim failed — button re-enables */
+                          } finally {
+                            setClaimingDuelId(null);
+                          }
+                        }}
+                        className="px-4 py-2 bg-[#14F195] hover:bg-[#14F195]/90 disabled:opacity-50 text-black font-[1000] text-xs uppercase italic rounded-lg transition-all"
+                      >
+                        {claimingDuelId === dw.duel_id ? 'Claiming...' : 'Claim'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

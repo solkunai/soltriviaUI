@@ -1203,11 +1203,12 @@ const App: React.FC = () => {
     setCurrentView(View.DUEL_RESULTS);
   };
 
-  const handleClaimDuelPrize = async () => {
-    if (!connected || !publicKey || duelId == null) return;
+  const handleClaimDuelPrize = async (claimDuelId?: number) => {
+    const targetDuelId = claimDuelId ?? duelId;
+    if (!connected || !publicKey || targetDuelId == null) return;
     try {
       const { blockhash } = await connection.getLatestBlockhash();
-      const ix = buildClaimDuelPrizeIx(publicKey, duelId);
+      const ix = buildClaimDuelPrizeIx(publicKey, targetDuelId);
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
         recentBlockhash: blockhash,
@@ -1349,6 +1350,7 @@ const App: React.FC = () => {
             }}
             onSeekerVerified={(verified: boolean) => setIsSeekerVerified(verified)}
             onViewCustomGame={handleViewCustomGame}
+            onClaimDuelPrize={handleClaimDuelPrize}
           />
         );
       case View.QUIZ:
@@ -1510,6 +1512,7 @@ const App: React.FC = () => {
             onJoinByCode={handleJoinByShareCode}
             onConnectWallet={() => setShowWalletRequired(true)}
             onBack={() => setCurrentView(View.HOME)}
+            onClaimDuelPrize={handleClaimDuelPrize}
           />
         );
       case View.DUEL_WAITING:

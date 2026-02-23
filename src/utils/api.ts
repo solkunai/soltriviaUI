@@ -1817,6 +1817,51 @@ export async function fetchCompletedDuels(limit = 20, offset = 0): Promise<{ due
   return { duels, totalCount: count ?? 0 };
 }
 
+/** Fetch duels the user won (for claiming prizes). */
+export interface MyDuelWin {
+  duel_id: number;
+  total_pot_lamports: number;
+  entry_fee_lamports: number;
+  player1_wallet: string;
+  player2_wallet: string | null;
+  player1_score: number;
+  player2_score: number;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+  opponent_wallet: string;
+  opponent_username: string | null;
+}
+
+export async function fetchMyDuelWins(walletAddress: string): Promise<MyDuelWin[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('duels')
+    .select('duel_id, total_pot_lamports, entry_fee_lamports, player1_wallet, player2_wallet, player1_score, player2_score, status, created_at, resolved_at')
+    .eq('winner_wallet', walletAddress)
+    .in('status', ['completed', 'resolved'])
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error || !data?.length) return [];
+
+  // Resolve opponent usernames
+  const oppWallets = data.map((d: any) => d.player1_wallet === walletAddress ? d.player2_wallet : d.player1_wallet).filter(Boolean);
+  let profileMap: Record<string, string | null> = {};
+  if (oppWallets.length > 0) {
+    const { data: profiles } = await supabase.from('player_profiles').select('wallet_address, username').in('wallet_address', oppWallets);
+    if (profiles) profileMap = Object.fromEntries(profiles.map((p: any) => [p.wallet_address, p.username]));
+  }
+
+  return data.map((d: any) => {
+    const oppWallet = d.player1_wallet === walletAddress ? d.player2_wallet : d.player1_wallet;
+    return {
+      ...d,
+      opponent_wallet: oppWallet || '',
+      opponent_username: profileMap[oppWallet] ?? null,
+    };
+  });
+}
+
 /** Duel win count leaderboard entry. */
 export interface DuelWinLeaderEntry {
   wallet_address: string;

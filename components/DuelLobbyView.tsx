@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getOpenDuels, fetchCompletedDuels, type CompletedDuel } from '../src/utils/api';
+import { useConnection } from '../src/contexts/WalletContext';
+import { getOpenDuels, fetchCompletedDuels, fetchMyDuelWins, type CompletedDuel, type MyDuelWin } from '../src/utils/api';
+import { fetchDuel } from '../src/utils/soltriviaContract';
 import { V2_DUEL_FEES, V2_DUEL_LABELS, TXN_FEE_LAMPORTS } from '../src/utils/constants';
 
 interface DuelLobbyViewProps {
@@ -9,6 +11,7 @@ interface DuelLobbyViewProps {
   onJoinByCode: (shareCode: string) => void;
   onConnectWallet: () => void;
   onBack: () => void;
+  onClaimDuelPrize?: (duelId: number) => Promise<void>;
 }
 
 interface OpenDuel {
@@ -22,9 +25,12 @@ interface OpenDuel {
   expires_at: string;
 }
 
-const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDuel, onJoinDuel, onJoinByCode, onConnectWallet, onBack }) => {
+const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDuel, onJoinDuel, onJoinByCode, onConnectWallet, onBack, onClaimDuelPrize }) => {
+  const { connection } = useConnection();
   const [openDuels, setOpenDuels] = useState<OpenDuel[]>([]);
   const [recentDuels, setRecentDuels] = useState<CompletedDuel[]>([]);
+  const [claimableDuels, setClaimableDuels] = useState<MyDuelWin[]>([]);
+  const [claimingDuelId, setClaimingDuelId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedFeeIdx, setSelectedFeeIdx] = useState(0);
   const [isPublic, setIsPublic] = useState(true);
@@ -49,9 +55,25 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
     } catch { /* non-fatal */ }
   };
 
+  const fetchClaimable = async () => {
+    if (!walletAddress) return;
+    try {
+      const wins = await fetchMyDuelWins(walletAddress);
+      const unclaimed: MyDuelWin[] = [];
+      for (const dw of wins) {
+        try {
+          const onChain = await fetchDuel(connection, dw.duel_id);
+          if (onChain && !onChain.winnerClaimed) unclaimed.push(dw);
+        } catch { /* skip */ }
+      }
+      setClaimableDuels(unclaimed);
+    } catch { /* non-fatal */ }
+  };
+
   useEffect(() => {
     fetchDuels();
     fetchRecent();
+    fetchClaimable();
     pollRef.current = window.setInterval(fetchDuels, 10000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [walletAddress]);
@@ -157,6 +179,46 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
             </button>
           </div>
         </div>
+
+        {/* Unclaimed Duel Wins */}
+        {claimableDuels.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-[#14F195] font-black text-sm uppercase tracking-wider mb-3">Unclaimed Wins</h2>
+            <div className="space-y-2">
+              {claimableDuels.map((dw) => {
+                const houseCut = Math.floor(dw.total_pot_lamports * 0.1);
+                const prize = dw.total_pot_lamports - houseCut;
+                const oppName = dw.opponent_username || `${dw.opponent_wallet.slice(0, 4)}...${dw.opponent_wallet.slice(-4)}`;
+                return (
+                  <div key={dw.duel_id} className="flex items-center justify-between p-3 bg-[#14F195]/5 border border-[#14F195]/20 rounded-lg">
+                    <div className="min-w-0">
+                      <span className="text-white text-xs font-[1000] italic">vs {oppName}</span>
+                      <span className="text-zinc-500 text-[10px] ml-2">{dw.player1_score}–{dw.player2_score}</span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-[#14F195] text-xs font-bold">{(prize / 1_000_000_000).toFixed(4)} SOL</span>
+                      <button
+                        disabled={claimingDuelId === dw.duel_id}
+                        onClick={async () => {
+                          if (!onClaimDuelPrize) return;
+                          setClaimingDuelId(dw.duel_id);
+                          try {
+                            await onClaimDuelPrize(dw.duel_id);
+                            setClaimableDuels(prev => prev.filter(d => d.duel_id !== dw.duel_id));
+                          } catch { /* re-enables button */ }
+                          finally { setClaimingDuelId(null); }
+                        }}
+                        className="px-3 py-1.5 bg-[#14F195] text-black font-[1000] text-[10px] uppercase italic rounded disabled:opacity-50"
+                      >
+                        {claimingDuelId === dw.duel_id ? 'Claiming...' : 'Claim'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Open Duels */}
         <div>
