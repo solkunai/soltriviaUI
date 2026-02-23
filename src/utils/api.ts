@@ -19,6 +19,15 @@ export const getAuthHeaders = (): Record<string, string> => {
   };
 };
 
+// Admin-authenticated headers: includes x-admin-secret for protected EFs (manage-questions, manage-quests, etc.)
+export const getAdminHeaders = (): Record<string, string> => {
+  const adminSecret = import.meta.env.VITE_ADMIN_SECRET || '';
+  return {
+    ...getAuthHeaders(),
+    'x-admin-secret': adminSecret,
+  };
+};
+
 // Types
 export interface SubmitEntryParams {
   wallet_address: string;
@@ -140,8 +149,8 @@ export async function initializeProgram(options?: { revenueWallet?: string; useD
 }
 
 // Ensure current round exists on-chain (create_round if needed). Call before sending enter_round.
-export async function ensureRoundOnChain(options?: { date?: string; round_number?: number; useDevnet?: boolean }): Promise<{ ok: boolean; round_id_u64: number; created?: boolean; signature?: string }> {
-  const body: { date?: string; round_number?: number; useDevnet?: boolean } = { ...options };
+export async function ensureRoundOnChain(options?: { date?: string; round_number?: number; tier_index?: number; useDevnet?: boolean }): Promise<{ ok: boolean; round_id_u64: number; created?: boolean; signature?: string }> {
+  const body: { date?: string; round_number?: number; tier_index?: number; useDevnet?: boolean } = { ...options };
   if (options?.useDevnet) body.useDevnet = true;
   const response = await fetch(`${FUNCTIONS_URL}/ensure-round-on-chain`, {
     method: 'POST',
@@ -151,25 +160,6 @@ export async function ensureRoundOnChain(options?: { date?: string; round_number
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || 'Failed to ensure round on-chain');
-  }
-  return response.json();
-}
-
-// Test-only: Post 5 winners for a round (no DB). So you can claim on test page with one entrant.
-export async function postWinnersTest(options: { roundIdU64: number; winners: string[]; useDevnet?: boolean }): Promise<{ success: boolean; signature: string }> {
-  const body: { round_id_u64: number; winners: string[]; useDevnet?: boolean } = {
-    round_id_u64: options.roundIdU64,
-    winners: options.winners,
-  };
-  if (options.useDevnet) body.useDevnet = true;
-  const response = await fetch(`${FUNCTIONS_URL}/post-winners-test`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || 'Failed to post winners (test)');
   }
   return response.json();
 }
@@ -200,12 +190,13 @@ export async function refundRoundOnChain(
 // Start game (after payment)
 export async function startGame(
   walletAddress: string,
-  entryTxSignature: string
+  entryTxSignature: string,
+  tierIndex?: number,
 ): Promise<{ sessionId: string; roundId: string; totalQuestions: number; resumed: boolean; freeEntry?: boolean; freeEntriesRemaining?: number; freeEntryReason?: 'new_user' | 'welcome_bonus' }> {
   const response = await fetch(`${FUNCTIONS_URL}/start-game`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ walletAddress, entryTxSignature }),
+    body: JSON.stringify({ walletAddress, entryTxSignature, tier_index: tierIndex ?? 0 }),
   });
 
   if (!response.ok) {
@@ -900,6 +891,7 @@ export interface ClaimablePayout {
   prize_lamports: number;
   contract_round_id: number;
   round_title: string;
+  tier_index: number;
 }
 
 /** Fetch round payouts for a wallet with daily_rounds date/round_number (for claim button). */
@@ -907,7 +899,7 @@ export async function fetchClaimableRoundPayouts(walletAddress: string): Promise
   if (!isSupabaseConfigured || !walletAddress?.trim()) return [];
   const { data: payouts, error: payErr } = await supabase
     .from('round_payouts')
-    .select('round_id, rank, prize_lamports')
+    .select('round_id, rank, prize_lamports, tier_index')
     .eq('wallet_address', walletAddress.trim())
     .is('paid_at', null);
   if (payErr || !payouts?.length) return [];
@@ -925,7 +917,7 @@ export async function fetchClaimableRoundPayouts(walletAddress: string): Promise
     const daysSinceEpoch = Math.floor((day - epoch) / 86400_000);
     return daysSinceEpoch * 4 + (roundNumber & 3);
   }
-  return (payouts as { round_id: string; rank: number; prize_lamports: number }[])
+  return (payouts as { round_id: string; rank: number; prize_lamports: number; tier_index?: number }[])
     .map((p) => {
       const r = byId[p.round_id];
       if (!r) return null;
@@ -938,6 +930,7 @@ export async function fetchClaimableRoundPayouts(walletAddress: string): Promise
         prize_lamports: p.prize_lamports ?? 0,
         contract_round_id,
         round_title: `${r.date} Round ${r.round_number + 1}`,
+        tier_index: p.tier_index ?? 0,
       };
     })
     .filter((x): x is ClaimablePayout => x != null)
@@ -955,7 +948,7 @@ export async function markPayoutPaid(
   const url = `${FUNCTIONS_URL}/mark-payout-paid`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: getAuthHeaders(),
+    headers: getAdminHeaders(),
     body: JSON.stringify({
       round_id: roundId,
       rank,
@@ -970,12 +963,12 @@ export async function markPayoutPaid(
 }
 
 /** Mark payout as claimed (self-service after user claims on-chain). So profile shows "Claimed" and does not show Claim again. */
-export async function markPayoutClaimed(roundId: string, walletAddress: string): Promise<{ success: boolean; error?: string }> {
+export async function markPayoutClaimed(roundId: string, walletAddress: string, tierIndex?: number): Promise<{ success: boolean; error?: string }> {
   const url = `${FUNCTIONS_URL}/mark-payout-claimed`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ round_id: roundId, wallet_address: walletAddress }),
+    body: JSON.stringify({ round_id: roundId, wallet_address: walletAddress, ...(tierIndex != null && { tier_index: tierIndex }) }),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) return { success: false, error: (json as { error?: string }).error || 'Failed to mark claimed' };
@@ -1028,12 +1021,12 @@ export async function fetchClaimedRoundPayouts(walletAddress: string): Promise<C
 }
 
 /** Request posting round winners on-chain (Solana contract). Optional path when claim fails with RoundNotFinalized (first claimer can trigger it alongside complete-session). */
-export async function postWinnersOnChain(roundId: string): Promise<{ success: boolean; signature?: string; error?: string }> {
+export async function postWinnersOnChain(roundId: string, tierIndex?: number): Promise<{ success: boolean; signature?: string; error?: string }> {
   const url = `${FUNCTIONS_URL}/post-winners-on-chain`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ round_id: roundId }),
+    body: JSON.stringify({ round_id: roundId, ...(tierIndex != null && { tier_index: tierIndex }) }),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) return { success: false, error: (json as { error?: string }).error || 'Failed to post winners on-chain' };
@@ -1345,12 +1338,30 @@ export interface CustomGameData {
   round_count: number;
   time_limit_seconds: number;
   total_plays: number;
-  status: 'active' | 'expired' | 'banned';
+  status: 'active' | 'started' | 'completed' | 'finalized' | 'expired' | 'banned';
   expires_at: string;
   created_at: string;
   is_expired: boolean;
   player_best_score: number | null;
   player_attempts: number;
+  // Prize pool fields (paid games)
+  prize_model: 'free' | 'player_funded';
+  on_chain_game_id: number | null;
+  entry_fee_lamports: number;
+  max_players: number | null;
+  game_duration_minutes: number | null;
+  max_winners: number;
+  prize_split_bps: number[];
+  platform_cut_bps: number;
+  player_count: number;
+  total_pot_lamports: number;
+  prize_pot_lamports: number;
+  started_at: string | null;
+  ends_at: string | null;
+  finalized_at: string | null;
+  winner_wallets: string[] | null;
+  winner_amounts: number[] | null;
+  player_has_entered: boolean;
   leaderboard: Array<{
     rank: number;
     wallet_address: string;
@@ -1511,6 +1522,61 @@ export async function getMyCustomGames(walletAddress: string): Promise<{ games: 
   return response.json();
 }
 
+// ─── Custom Game Prize Pool Functions ────────────────────────────────────
+
+export async function joinCustomGame(gameId: string, walletAddress: string, txSignature: string): Promise<{
+  success: boolean;
+  player_count: number;
+  game_started: boolean;
+  ends_at: string | null;
+}> {
+  const response = await fetch(`${FUNCTIONS_URL}/join-custom-game`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ game_id: gameId, wallet_address: walletAddress, tx_signature: txSignature }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to join custom game');
+  }
+  return response.json();
+}
+
+export async function startCustomGameTimer(gameId: string, walletAddress: string): Promise<{
+  success: boolean;
+  started_at: string;
+  ends_at: string;
+}> {
+  const response = await fetch(`${FUNCTIONS_URL}/start-custom-game-timer`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ game_id: gameId, wallet_address: walletAddress }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to start custom game timer');
+  }
+  return response.json();
+}
+
+export async function finalizeCustomGame(gameId: string): Promise<{
+  success: boolean;
+  winners: string[];
+  amounts: number[];
+  signature: string;
+}> {
+  const response = await fetch(`${FUNCTIONS_URL}/finalize-custom-game`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ game_id: gameId }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to finalize custom game');
+  }
+  return response.json();
+}
+
 // ─── Realtime Subscriptions ───────────────────────────────────────────────
 /** Realtime subscription: pool and players update when someone enters. Uses polling when Realtime disabled. */
 export function subscribeCurrentRoundStats(
@@ -1543,4 +1609,342 @@ export function subscribeCurrentRoundStats(
   return {
     unsubscribe: () => supabase.removeChannel(ch),
   };
+}
+
+// ─── Duels API ─────────────────────────────────────────────────────────────
+
+export interface DuelInfo {
+  duel_id: number;
+  db_duel_id: string;
+  status: string;
+  entry_fee_lamports: number;
+  total_pot_lamports: number;
+  is_public: boolean;
+  share_code: string;
+  share_url: string;
+  player1: { wallet: string; username: string | null; avatar: string | null; score: number; correct: number; finished: boolean };
+  player2: { wallet: string; username: string | null; avatar: string | null; score: number; correct: number; finished: boolean } | null;
+  winner_wallet: string | null;
+  expires_at: string;
+  created_at: string;
+  resolved_at: string | null;
+  my_session?: { current_question_index: number; score: number; correct_count: number; finished: boolean };
+}
+
+export interface CreateDuelResponse {
+  duel_id: number;
+  db_duel_id: string;
+  share_code: string;
+  share_url: string;
+  question_count: number;
+  expires_at: string;
+}
+
+export interface JoinDuelResponse {
+  success: boolean;
+  duel_id: number;
+  db_duel_id: string;
+  status: string;
+  opponent_wallet: string;
+  question_count: number;
+  time_per_question: number;
+}
+
+export interface DuelQuestionResponse {
+  duel_id: string;
+  questions: Array<{ index: number; id: string; category: string; question: string; options: string[] }>;
+  total_questions: number;
+  time_per_question: number;
+}
+
+export interface SubmitDuelAnswerParams {
+  db_duel_id: string;
+  wallet_address: string;
+  question_id: string;
+  question_index: number;
+  selected_index?: number;
+  time_taken_ms: number;
+  time_expired?: boolean;
+}
+
+export interface SubmitDuelAnswerResponse {
+  correct: boolean;
+  correctIndex: number;
+  pointsEarned: number;
+  totalScore: number;
+  correctCount: number;
+  opponentScore: number;
+  opponentCorrectCount: number;
+  isLastQuestion: boolean;
+  duelComplete: boolean;
+  winner: string | null;
+}
+
+export async function createDuel(params: {
+  wallet_address: string;
+  tx_signature: string;
+  duel_id: number;
+  entry_fee_lamports: number;
+  is_public: boolean;
+}): Promise<CreateDuelResponse> {
+  const res = await fetch(`${FUNCTIONS_URL}/create-duel`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to create duel');
+  return data;
+}
+
+export async function joinDuel(params: {
+  wallet_address: string;
+  tx_signature: string;
+  duel_id: number;
+}): Promise<JoinDuelResponse> {
+  const res = await fetch(`${FUNCTIONS_URL}/join-duel`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to join duel');
+  return data;
+}
+
+export async function getDuel(params: {
+  duel_id?: number;
+  share_code?: string;
+  wallet_address?: string;
+}): Promise<DuelInfo> {
+  const res = await fetch(`${FUNCTIONS_URL}/get-duel`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to get duel');
+  return data;
+}
+
+export async function getDuelQuestions(db_duel_id: string, wallet_address: string): Promise<DuelQuestionResponse> {
+  const res = await fetch(`${FUNCTIONS_URL}/get-duel-questions`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ db_duel_id, wallet_address }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to get duel questions');
+  return data;
+}
+
+export async function submitDuelAnswer(params: SubmitDuelAnswerParams): Promise<SubmitDuelAnswerResponse> {
+  const res = await fetch(`${FUNCTIONS_URL}/submit-duel-answer`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to submit duel answer');
+  return data;
+}
+
+export async function getOpenDuels(): Promise<Array<{ id: string; duel_id: number; player1_wallet: string; entry_fee_lamports: number; is_public: boolean; share_code: string; created_at: string; expires_at: string }>> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('duels')
+    .select('id, duel_id, player1_wallet, entry_fee_lamports, is_public, share_code, created_at, expires_at')
+    .eq('status', 'waiting')
+    .eq('is_public', true)
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/** Completed duel for leaderboard display. */
+export interface CompletedDuel {
+  id: string;
+  duel_id: number;
+  player1_wallet: string;
+  player2_wallet: string | null;
+  player1_score: number;
+  player2_score: number;
+  player1_correct: number;
+  player2_correct: number;
+  player1_time_ms: number;
+  player2_time_ms: number;
+  winner_wallet: string | null;
+  entry_fee_lamports: number;
+  total_pot_lamports: number;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+  player1_username: string | null;
+  player1_avatar: string | null;
+  player2_username: string | null;
+  player2_avatar: string | null;
+}
+
+/** Fetch recent completed/resolved duels with player profiles for leaderboard. */
+export async function fetchCompletedDuels(limit = 20, offset = 0): Promise<{ duels: CompletedDuel[]; totalCount: number }> {
+  if (!isSupabaseConfigured) return { duels: [], totalCount: 0 };
+  const { data, count, error } = await supabase
+    .from('duels')
+    .select('id, duel_id, player1_wallet, player2_wallet, player1_score, player2_score, player1_correct, player2_correct, player1_time_ms, player2_time_ms, winner_wallet, entry_fee_lamports, total_pot_lamports, status, created_at, resolved_at', { count: 'exact' })
+    .in('status', ['completed', 'resolved'])
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (error || !data?.length) return { duels: [], totalCount: count ?? 0 };
+
+  const wallets = new Set<string>();
+  data.forEach((d: any) => { wallets.add(d.player1_wallet); if (d.player2_wallet) wallets.add(d.player2_wallet); });
+  let profiles: { wallet_address: string; username: string | null; avatar_url: string | null }[] = [];
+  if (wallets.size > 0) {
+    const { data: p } = await supabase.from('player_profiles').select('wallet_address, username, avatar_url').in('wallet_address', [...wallets]);
+    profiles = p ?? [];
+  }
+  const byWallet = Object.fromEntries(profiles.map(p => [p.wallet_address, p]));
+
+  const duels: CompletedDuel[] = data.map((d: any) => ({
+    ...d,
+    player1_username: byWallet[d.player1_wallet]?.username ?? null,
+    player1_avatar: byWallet[d.player1_wallet]?.avatar_url ?? null,
+    player2_username: d.player2_wallet ? (byWallet[d.player2_wallet]?.username ?? null) : null,
+    player2_avatar: d.player2_wallet ? (byWallet[d.player2_wallet]?.avatar_url ?? null) : null,
+  }));
+  return { duels, totalCount: count ?? 0 };
+}
+
+/** Duel win count leaderboard entry. */
+export interface DuelWinLeaderEntry {
+  wallet_address: string;
+  username: string | null;
+  avatar: string | null;
+  win_count: number;
+  total_duels: number;
+  total_earned_lamports: number;
+  is_seeker_verified?: boolean;
+}
+
+/** Fetch duel wins leaderboard (aggregated by winner_wallet). */
+export async function fetchDuelWinsLeaderboard(): Promise<DuelWinLeaderEntry[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('duels')
+    .select('winner_wallet, entry_fee_lamports')
+    .in('status', ['completed', 'resolved'])
+    .not('winner_wallet', 'is', null);
+  if (error || !data?.length) return [];
+
+  // Aggregate wins per wallet
+  const wins = new Map<string, { count: number; earned: number }>();
+  for (const d of data as { winner_wallet: string; entry_fee_lamports: number }[]) {
+    const w = d.winner_wallet;
+    const cur = wins.get(w) || { count: 0, earned: 0 };
+    cur.count++;
+    cur.earned += (d.entry_fee_lamports || 0) * 2; // winner gets pot (2x entry)
+    wins.set(w, cur);
+  }
+
+  // Count total duels per wallet (as p1 or p2)
+  const { data: allDuels } = await supabase
+    .from('duels')
+    .select('player1_wallet, player2_wallet')
+    .in('status', ['completed', 'resolved']);
+  const totalDuels = new Map<string, number>();
+  for (const d of (allDuels ?? []) as { player1_wallet: string; player2_wallet: string | null }[]) {
+    totalDuels.set(d.player1_wallet, (totalDuels.get(d.player1_wallet) ?? 0) + 1);
+    if (d.player2_wallet) totalDuels.set(d.player2_wallet, (totalDuels.get(d.player2_wallet) ?? 0) + 1);
+  }
+
+  const wallets = [...wins.keys()];
+  let profiles: { wallet_address: string; username: string | null; avatar_url: string | null; is_seeker_verified?: boolean }[] = [];
+  if (wallets.length > 0) {
+    const { data: p } = await supabase.from('player_profiles').select('wallet_address, username, avatar_url, is_seeker_verified').in('wallet_address', wallets.slice(0, 100));
+    profiles = p ?? [];
+  }
+  const byWallet = Object.fromEntries(profiles.map(p => [p.wallet_address, p]));
+
+  return wallets
+    .map(w => ({
+      wallet_address: w,
+      username: byWallet[w]?.username ?? null,
+      avatar: byWallet[w]?.avatar_url ?? null,
+      win_count: wins.get(w)!.count,
+      total_duels: totalDuels.get(w) ?? 0,
+      total_earned_lamports: wins.get(w)!.earned,
+      is_seeker_verified: byWallet[w]?.is_seeker_verified ?? false,
+    }))
+    .sort((a, b) => b.win_count - a.win_count || b.total_earned_lamports - a.total_earned_lamports)
+    .slice(0, 50);
+}
+
+/** Custom game leaderboard entry (top players by total custom game score). */
+export interface CustomGameLeaderEntry {
+  wallet_address: string;
+  username: string | null;
+  avatar: string | null;
+  games_played: number;
+  total_score: number;
+  best_score: number;
+  is_seeker_verified?: boolean;
+}
+
+/** Fetch custom game top players (aggregated from custom_game_sessions). */
+export async function fetchCustomGameLeaderboard(): Promise<CustomGameLeaderEntry[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('custom_game_sessions')
+    .select('wallet_address, score')
+    .eq('status', 'completed');
+  if (error || !data?.length) return [];
+
+  // Aggregate per wallet
+  const stats = new Map<string, { games: number; total: number; best: number }>();
+  for (const row of data as { wallet_address: string; score: number }[]) {
+    const cur = stats.get(row.wallet_address) || { games: 0, total: 0, best: 0 };
+    cur.games++;
+    cur.total += row.score ?? 0;
+    cur.best = Math.max(cur.best, row.score ?? 0);
+    stats.set(row.wallet_address, cur);
+  }
+
+  const wallets = [...stats.keys()];
+  let profiles: { wallet_address: string; username: string | null; avatar_url: string | null; is_seeker_verified?: boolean }[] = [];
+  if (wallets.length > 0) {
+    const { data: p } = await supabase.from('player_profiles').select('wallet_address, username, avatar_url, is_seeker_verified').in('wallet_address', wallets.slice(0, 100));
+    profiles = p ?? [];
+  }
+  const byWallet = Object.fromEntries(profiles.map(p => [p.wallet_address, p]));
+
+  return wallets
+    .map(w => ({
+      wallet_address: w,
+      username: byWallet[w]?.username ?? null,
+      avatar: byWallet[w]?.avatar_url ?? null,
+      games_played: stats.get(w)!.games,
+      total_score: stats.get(w)!.total,
+      best_score: stats.get(w)!.best,
+      is_seeker_verified: byWallet[w]?.is_seeker_verified ?? false,
+    }))
+    .sort((a, b) => b.best_score - a.best_score || b.total_score - a.total_score)
+    .slice(0, 50);
+}
+
+export function subscribeDuelUpdates(
+  dbDuelId: string,
+  onUpdate: (duel: Record<string, unknown>) => void
+): { unsubscribe: () => void } {
+  if (!REALTIME_ON) return { unsubscribe: () => {} };
+  const ch = supabase
+    .channel(`duel-${dbDuelId}`)
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'duels', filter: `id=eq.${dbDuelId}` },
+      (payload) => { onUpdate(payload.new as Record<string, unknown>); }
+    );
+  ch.subscribe();
+  return { unsubscribe: () => supabase.removeChannel(ch) };
 }

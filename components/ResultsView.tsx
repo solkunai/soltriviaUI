@@ -16,9 +16,35 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
   const canPlayAgain = roundEntriesLeft > 0 || (lives ?? 0) > 0;
 
   const handleShare = () => {
-    const text = `I just scored ${results.points}XP on SOL Trivia! 🧠⚡\n\nAccuracy: ${results.score}/10\nTime: ${results.time}s\n\nThink you're smarter? Join the arena on Solana!\n\n@soltrivia_app\nhttps://soltrivia.app\n\n#SOLTrivia #Solana #Trivia #Web3 #Crypto`;
-    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+    const score = results.score;
+    const pts = results.points;
+    const t = results.time;
+    const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+
+    let text: string;
+    if (score === 10) {
+      text = pick([
+        `10/10 on @soltrivia_app. flawless. ${pts} XP.\n\ni am simply built different.\n\nyour move, anon.\n\nsoltrivia.app`,
+        `perfect score on @soltrivia_app. few understand.\n\n${pts} XP | ${t}s | not a single miss\n\ncope and seethe or come try to beat it\n\nsoltrivia.app`,
+      ]);
+    } else if (score >= 8) {
+      text = pick([
+        `just dropped ${pts} XP on @soltrivia_app\n\n${score}/10 | ${t}s | on-chain\n\nskill issue if you can't beat this\n\nsoltrivia.app`,
+        `${score}/10 on today's @soltrivia_app round. ${pts} XP.\n\nser, this is what peak performance looks like on Solana.\n\nprove you're built different\n\nsoltrivia.app`,
+      ]);
+    } else if (score >= 5) {
+      text = pick([
+        `${score}/10 on @soltrivia_app... not my finest hour ngl\n\nstill mogging most of you tho. come prove me wrong\n\nsoltrivia.app`,
+        `${score}/10 on @soltrivia_app. ${pts} XP. probably nothing.\n\nbet you can't do better tho\n\nsoltrivia.app`,
+      ]);
+    } else {
+      text = pick([
+        `got absolutely cooked on @soltrivia_app today. ${score}/10.\n\nthe trenches are brutal ser.\n\nsomeone please avenge me\n\nsoltrivia.app`,
+        `${score}/10 on @soltrivia_app and honestly i deserve this\n\nthis is what happens when you ape into trivia at 3am\n\nsurely you can do better... right?\n\nsoltrivia.app`,
+      ]);
+    }
+
+    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   return (

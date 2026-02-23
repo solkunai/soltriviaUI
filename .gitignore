@@ -38,7 +38,43 @@ seeker-app/app-release-signed.apk
 seeker-app/android.keystore
 seeker-app/*.keystore
 seeker-app/assetlinks.json
+seeker-app/.gradle/
+seeker-app/build/
 
 # Signing keystores (never commit)
 publishing/*.keystore
 *.keystore
+
+# APK binaries (too large for git)
+publishing/*.apk
+publishing/*.idsig
+
+# Solana contract source & build artifacts (deployed on-chain, not needed for web app)
+programs/
+soltrivia_v2/
+target/
+Anchor.toml
+
+# Unused React Native app (replaced by TWA in seeker-app/)
+soltrivia-native/
+
+# Question bank JSON files (imported to Supabase DB, not used at runtime)
+*-questions.json
+practice-questions.json
+
+# One-time utility scripts
+fix-questions.cjs
+generate-vapid-keys.cjs
+seed-new-questions.sql
+
+# Marketing assets (not part of web app)
+marketing/
+
+# Seeker TWA Android app (standalone project, not part of web app)
+seeker-app/
+
+# SQL migrations (already applied in Supabase, not needed in repo)
+supabase/migrations/
+
+# MCP config (contains Supabase access token)
+.mcp.json

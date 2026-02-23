@@ -41,11 +41,23 @@ const FAQ_ITEMS: FAQItem[] = [
   },
   {
     q: 'What are Custom Games?',
-    a: 'Create your own trivia with custom questions, share a link with friends, and compete on a per-game leaderboard. Games expire after 7 days. Players get 3 attempts each. Free to join, no prize pot in v1.',
+    a: 'Create your own trivia with custom questions, share a link with friends, and compete on a per-game leaderboard. Games expire after 7 days. Players get 3 attempts each. Free to join — no SOL entry fee and no prize pool. Custom games are purely for fun and bragging rights.',
   },
   {
     q: 'How much does it cost to create a Custom Game?',
     a: 'Game Pass holders pay only 0.0025 SOL (platform fee). Without Game Pass, it costs 0.0225 SOL (0.02 SOL creation fee + 0.0025 SOL platform fee).',
+  },
+  {
+    q: 'What are 1v1 Duels?',
+    a: 'Duels are real-time 1v1 trivia battles with SOL wagers. Pick an entry fee (0.01–1 SOL), create or join a duel, and go head-to-head with 5 questions in 10 seconds each. The winner takes the pot. You can challenge friends via a share link or find opponents in the public lobby.',
+  },
+  {
+    q: 'How do Duel prizes work?',
+    a: 'Both players put up the same entry fee (+ 0.0025 SOL platform fee each). The winner is determined by highest score, with time as a tiebreaker. After both finish, the smart contract is resolved on-chain and the winner can claim the prize from their Profile page.',
+  },
+  {
+    q: 'What happens if my Duel expires?',
+    a: 'If no opponent joins within 30 minutes, the duel expires and can be cancelled. The creator gets their entry fee refunded on-chain. You can also cancel a waiting duel at any time before an opponent joins.',
   },
   {
     q: 'What are Seeker Perks?',

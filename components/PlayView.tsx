@@ -1,22 +1,28 @@
-import React from 'react';
-import { PAID_TRIVIA_ENABLED } from '../src/utils/constants';
+import React, { useState } from 'react';
+import { PAID_TRIVIA_ENABLED, V2_TIER_FEES, V2_TIER_LABELS, TXN_FEE_LAMPORTS } from '../src/utils/constants';
 
 interface PlayViewProps {
   lives: number | null;
   roundEntriesUsed: number;
   roundEntriesMax: number;
-  onStartQuiz: () => void;
+  onStartQuiz: (tierIndex: number) => void;
   onOpenBuyLives: () => void;
   onStartPractice: () => void;
   practiceRunsLeft: number;
   hasGamePass?: boolean;
   onCreateCustomGame?: () => void;
+  onEnterDuels?: () => void;
 }
 
-const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, onCreateCustomGame }) => {
+const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, onCreateCustomGame, onEnterDuels }) => {
+  const [selectedTier, setSelectedTier] = useState(0);
   const roundEntriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
   const livesNum = lives ?? 0;
   const canPlay = roundEntriesLeft > 0 || livesNum > 0;
+
+  const tierFee = V2_TIER_FEES[selectedTier];
+  const totalFee = (tierFee + TXN_FEE_LAMPORTS) / 1_000_000_000;
+
   return (
     <div className="h-full flex flex-col items-center justify-start md:justify-center p-4 pt-6 md:p-12 relative overflow-hidden bg-[#050505] overflow-y-auto">
       {/* Background */}
@@ -27,8 +33,8 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
 
       <div className="relative z-10 w-full max-w-md md:max-w-lg flex flex-col items-center">
         {/* Mascot + Title */}
-        <div className="flex flex-col items-center mb-6 md:mb-8">
-          <div className="w-24 h-24 md:w-36 md:h-36 mb-3 md:mb-4 floating">
+        <div className="flex flex-col items-center mb-5 md:mb-6">
+          <div className="w-20 h-20 md:w-32 md:h-32 mb-2 md:mb-3 floating">
             <img
               src="brainy-gaming.png"
               alt="Brainy"
@@ -45,7 +51,7 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-2 gap-2.5 w-full mb-4 md:mb-5">
+        <div className="grid grid-cols-2 gap-2.5 w-full mb-3 md:mb-4">
           <div className={`bg-[#0A0A0A] border rounded-xl p-3 md:p-4 text-center ${roundEntriesLeft > 0 ? 'border-[#14F195]/20' : 'border-white/5'}`}>
             <span className="text-zinc-500 text-[8px] font-black uppercase block mb-1 tracking-widest italic">Round Entries</span>
             <span className={`font-[1000] text-lg md:text-xl italic tabular-nums leading-none ${roundEntriesLeft > 0 ? 'text-[#14F195]' : 'text-zinc-600'}`}>
@@ -63,15 +69,40 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
           </button>
         </div>
 
+        {/* Tier Selector */}
+        {PAID_TRIVIA_ENABLED && (
+          <div className="w-full mb-3 md:mb-4">
+            <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic block mb-2 text-center">Select Entry Tier</span>
+            <div className="grid grid-cols-4 gap-1.5 md:gap-2">
+              {V2_TIER_LABELS.map((label, i) => {
+                const active = selectedTier === i;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setSelectedTier(i)}
+                    className={`py-2.5 md:py-3 rounded-xl text-center transition-all border ${
+                      active
+                        ? 'bg-[#14F195]/20 border-[#14F195] text-[#14F195]'
+                        : 'bg-[#0A0A0A] border-white/10 text-zinc-500 hover:border-white/20'
+                    }`}
+                  >
+                    <span className="font-[1000] text-sm md:text-base italic leading-none block">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Primary: Compete for SOL */}
         <button
-          onClick={PAID_TRIVIA_ENABLED ? (canPlay ? onStartQuiz : onOpenBuyLives) : undefined}
+          onClick={PAID_TRIVIA_ENABLED ? (canPlay ? () => onStartQuiz(selectedTier) : onOpenBuyLives) : undefined}
           disabled={!PAID_TRIVIA_ENABLED}
           className={`w-full h-16 md:h-20 rounded-2xl flex items-center justify-between px-6 md:px-8 transition-all relative overflow-hidden mb-2.5 ${PAID_TRIVIA_ENABLED ? 'bg-gradient-to-r from-[#00FFA3] to-[#14F195] active:scale-[0.98] group shadow-[0_10px_30px_-8px_rgba(20,241,149,0.4)] hover:shadow-[0_15px_40px_-8px_rgba(20,241,149,0.6)] border border-white/20' : 'bg-zinc-800/60 border border-zinc-700/40 cursor-not-allowed'}`}
         >
           {PAID_TRIVIA_ENABLED && <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>}
           <div className="flex flex-col items-start relative z-10">
-            <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] mb-0.5 ${PAID_TRIVIA_ENABLED ? 'text-black/50' : 'text-zinc-500'}`}>{PAID_TRIVIA_ENABLED ? 'WIN REAL SOL' : 'PAUSED — UPGRADING'}</span>
+            <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] mb-0.5 ${PAID_TRIVIA_ENABLED ? 'text-black/50' : 'text-zinc-500'}`}>{PAID_TRIVIA_ENABLED ? `ENTRY: ${totalFee} SOL` : 'PAUSED — UPGRADING'}</span>
             <span className={`${PAID_TRIVIA_ENABLED ? 'text-black' : 'text-zinc-500'} text-xl md:text-3xl font-[1000] italic leading-none uppercase tracking-tighter`}>
               {canPlay ? 'COMPETE FOR SOL' : 'GET EXTRA LIVES'}
             </span>
@@ -104,7 +135,28 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
           ) : null}
         </button>
 
-        {/* Tertiary: Create Custom Game */}
+        {/* 1v1 Duels */}
+        {onEnterDuels && (
+          <button
+            onClick={onEnterDuels}
+            className="w-full h-12 md:h-14 bg-[#0A0A0A] border-2 border-[#FF3131]/30 hover:border-[#FF3131]/60 rounded-2xl flex items-center justify-between px-6 active:scale-[0.98] transition-all group relative overflow-hidden mb-2.5"
+          >
+            <div className="flex items-center gap-2 relative z-10">
+              <svg className="w-4 h-4 text-[#FF3131]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span className="text-[#FF3131] text-sm md:text-base font-[1000] italic leading-none uppercase tracking-tighter">
+                1V1 DUELS
+              </span>
+            </div>
+            <div className="flex items-center gap-2 relative z-10">
+              <span className="bg-[#FF3131]/20 text-[#FF3131] text-[7px] font-black italic uppercase tracking-wider px-1.5 py-0.5 rounded-full">LIVE</span>
+              <span className="text-zinc-500 text-[9px] font-black italic">0.01–1 SOL</span>
+            </div>
+          </button>
+        )}
+
+        {/* Create Custom Game */}
         {onCreateCustomGame && (
           <button
             onClick={onCreateCustomGame}
@@ -126,7 +178,7 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
 
         {/* Info */}
         <p className="text-[8px] md:text-[9px] text-zinc-500 text-center font-black uppercase tracking-widest px-4 opacity-50 italic leading-relaxed">
-          2 free entries every 6h • 0.0225 SOL per entry • Top 5 split prize pool
+          2 free entries every 6h • Top 5 split prize pool
         </p>
       </div>
     </div>

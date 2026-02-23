@@ -17,25 +17,37 @@ const PATH_TO_VIEW: Record<string, View> = {
   '/privacy': View.PRIVACY,
   '/admin': View.ADMIN,
   '/adminlogin': View.ADMIN,
+  '/custom-games': View.CUSTOM_GAMES_HUB,
   '/create-game': View.CUSTOM_GAME_CREATE,
+  '/duels': View.DUEL_LOBBY,
 };
 function viewFromPath(): View {
   if (typeof window === 'undefined') return View.HOME;
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   // Dynamic route: /game/:slug → custom game lobby
   if (path.startsWith('/game/') && path.length > 6) return View.CUSTOM_GAME_LOBBY;
+  // Dynamic route: /duel/:shareCode → duel waiting/join flow
+  if (path.startsWith('/duel/') && path.length > 6) return View.DUEL_WAITING;
   return PATH_TO_VIEW[path] ?? View.HOME;
 }
-function pathForView(view: View, customSlug?: string | null): string {
+function pathForView(view: View, customSlug?: string | null, duelShareCode?: string | null): string {
   if (view === View.HOME) return '/';
   if (view === View.ADMIN) return '/admin';
   if (view === View.CONTRACT_TEST) return import.meta.env.VITE_ENABLE_CONTRACT_TEST === 'true' ? '/contract-test' : '/';
+  if (view === View.CUSTOM_GAMES_HUB) return '/custom-games';
   if (view === View.CUSTOM_GAME_CREATE) return '/create-game';
   if ([View.CUSTOM_GAME_LOBBY, View.CUSTOM_GAME_PLAY, View.CUSTOM_GAME_RESULTS].includes(view)) {
     if (customSlug) return `/game/${customSlug}`;
     const current = window.location.pathname;
     if (current.startsWith('/game/')) return current;
     return '/';
+  }
+  if (view === View.DUEL_LOBBY) return '/duels';
+  if ([View.DUEL_WAITING, View.DUEL_PLAY, View.DUEL_RESULTS].includes(view)) {
+    if (duelShareCode) return `/duel/${duelShareCode}`;
+    const current = window.location.pathname;
+    if (current.startsWith('/duel/')) return current;
+    return '/duels';
   }
   return '/' + view.toLowerCase();
 }
@@ -65,12 +77,17 @@ import ContractTestView from './components/ContractTestView';
 import CategorySelectorModal from './components/CategorySelectorModal';
 import ContentDisclaimerModal, { hasAcceptedContentDisclaimer } from './components/ContentDisclaimerModal';
 import CreateCustomGameView from './components/CreateCustomGameView';
+import CustomGamesHubView from './components/CustomGamesHubView';
 import CustomGameLobbyView from './components/CustomGameLobbyView';
 import CustomGameQuizView from './components/CustomGameQuizView';
 import CustomGameResultsView from './components/CustomGameResultsView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, type CustomGameData } from './src/utils/api';
-import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS } from './src/utils/constants';
-import { buildEnterRoundInstruction, contractRoundIdFromDateAndNumber } from './src/utils/soltriviaContract';
+import DuelLobbyView from './components/DuelLobbyView';
+import DuelWaitingView from './components/DuelWaitingView';
+import DuelQuizView from './components/DuelQuizView';
+import DuelResultsView from './components/DuelResultsView';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, createDuel, joinDuel, getDuel, type CustomGameData } from './src/utils/api';
+import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES } from './src/utils/constants';
+import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildClaimCustomPrizeIx, fetchGameConfig } from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
 import { useKeepAlive } from './src/hooks/useKeepAlive';
@@ -121,13 +138,35 @@ const App: React.FC = () => {
     return null;
   });
   const [customGameSessionId, setCustomGameSessionId] = useState<string | null>(null);
-  const [customGameData, setCustomGameData] = useState<{ name: string; questionCount: number; roundCount: number; timeLimitSeconds: number } | null>(null);
+  const [customGameData, setCustomGameData] = useState<{ name: string; questionCount: number; roundCount: number; timeLimitSeconds: number; isPaidGame?: boolean; prizePotSol?: number } | null>(null);
   const [customGameResults, setCustomGameResults] = useState<{
     score: number; correctCount: number; totalQuestions: number; totalPoints: number;
     timeTakenMs: number; rank: number | null; gameName: string; slug: string;
+    isPaidGame?: boolean; prizePotSol?: number;
   } | null>(null);
   const [customGameAttemptsUsed, setCustomGameAttemptsUsed] = useState(0);
   const [showContentDisclaimer, setShowContentDisclaimer] = useState(false);
+
+  // Duel state
+  const [duelId, setDuelId] = useState<number | null>(null);           // on-chain duel ID
+  const [dbDuelId, setDbDuelId] = useState<string | null>(null);       // Supabase UUID
+  const [duelShareCode, setDuelShareCode] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const path = window.location.pathname;
+    if (path.startsWith('/duel/') && path.length > 6) return path.slice(6);
+    return null;
+  });
+  const [duelEntryFee, setDuelEntryFee] = useState(0);
+  const [duelIsPublic, setDuelIsPublic] = useState(true);
+  const [duelExpiresAt, setDuelExpiresAt] = useState('');
+  const [duelOpponent, setDuelOpponent] = useState<{ wallet: string; username: string | null; avatar: string | null } | null>(null);
+  const [duelIsPlayer1, setDuelIsPlayer1] = useState(true);
+  const [duelResults, setDuelResults] = useState<{
+    myScore: number; myCorrect: number;
+    opponentScore: number; opponentCorrect: number;
+    winner: string | null; duelComplete: boolean;
+    totalPot: number;
+  } | null>(null);
 
   // Ref: current wallet so async fetch can avoid applying stale result for a different wallet (reload race)
   const currentWalletRef = useRef<string | null>(null);
@@ -138,7 +177,7 @@ const App: React.FC = () => {
   const livesShowAfterRef = useRef<number | null>(null);
 
   // Only active-game views truly require wallet (quiz in progress, viewing results)
-  const walletRequiredViews = [View.QUIZ, View.RESULTS, View.CUSTOM_GAME_CREATE, View.CUSTOM_GAME_PLAY];
+  const walletRequiredViews = [View.QUIZ, View.RESULTS, View.CUSTOM_GAME_CREATE, View.CUSTOM_GAME_PLAY, View.DUEL_PLAY, View.DUEL_RESULTS];
 
   // Lives: on load/reload do not show count for 5s; keep fetching then show (avoids wrong value from wallet race)
   useEffect(() => {
@@ -212,20 +251,23 @@ const App: React.FC = () => {
 
   // Sync path to URL when view changes (so reload keeps the same page)
   useEffect(() => {
-    const want = pathForView(currentView, customGameSlug);
+    const want = pathForView(currentView, customGameSlug, duelShareCode);
     if (window.location.pathname.replace(/\/$/, '') !== want.replace(/\/$/, '')) {
       window.history.replaceState(null, '', want);
     }
-  }, [currentView, customGameSlug]);
+  }, [currentView, customGameSlug, duelShareCode]);
 
-  // Back/forward: update view from path (+ extract custom game slug)
+  // Back/forward: update view from path (+ extract custom game slug / duel share code)
   useEffect(() => {
     const onPopState = () => {
       const view = viewFromPath();
       setCurrentView(view);
+      const path = window.location.pathname;
       if (view === View.CUSTOM_GAME_LOBBY) {
-        const path = window.location.pathname;
         if (path.startsWith('/game/') && path.length > 6) setCustomGameSlug(path.slice(6));
+      }
+      if (view === View.DUEL_WAITING) {
+        if (path.startsWith('/duel/') && path.length > 6) setDuelShareCode(path.slice(6));
       }
     };
     window.addEventListener('popstate', onPopState);
@@ -242,7 +284,7 @@ const App: React.FC = () => {
   }, [currentView, connected, currentSessionId]);
 
   // Redirect to HOME only when user disconnects from views that need wallet data
-  const disconnectRedirectViews = [View.QUIZ, View.RESULTS, View.PROFILE, View.CUSTOM_GAME_PLAY, View.CUSTOM_GAME_RESULTS];
+  const disconnectRedirectViews = [View.QUIZ, View.RESULTS, View.PROFILE, View.CUSTOM_GAME_PLAY, View.CUSTOM_GAME_RESULTS, View.DUEL_PLAY, View.DUEL_RESULTS];
   const prevConnectedRef = useRef<boolean | undefined>(undefined);
   useEffect(() => {
     const wasConnected = prevConnectedRef.current;
@@ -650,7 +692,7 @@ const App: React.FC = () => {
     } catch (_) {}
   };
 
-  const handleStartQuiz = async () => {
+  const handleStartQuiz = async (tierIndex: number = 0) => {
     if (!PAID_TRIVIA_ENABLED) return;
     if (!connected || !publicKey) {
       setShowWalletRequired(true);
@@ -737,24 +779,26 @@ const App: React.FC = () => {
         });
         await ensureRoundOnChain(
           SOLANA_NETWORK === 'devnet'
-            ? { date: today, round_number: roundNumber, useDevnet: true }
-            : { date: today, round_number: roundNumber }
+            ? { date: today, round_number: roundNumber, tier_index: tierIndex, useDevnet: true }
+            : { date: today, round_number: roundNumber, tier_index: tierIndex }
         );
         const roundIdU64 = contractRoundIdFromDateAndNumber(today, roundNumber);
         instructions = [
-          buildEnterRoundInstruction(
-            roundIdU64,
+          buildEnterTierRoundIx(
             publicKey,
+            roundIdU64,
+            tierIndex,
             new PublicKey(REVENUE_WALLET)
           ),
         ];
       } else {
         const PRIZE_POOL_WALLET = import.meta.env.VITE_PRIZE_POOL_WALLET || 'C9U6pL7FcroUBcSGQR2iCEGmAydVjzEE7ZYaJuVJuEEo';
+        const tierEntryFee = V2_TIER_FEES[tierIndex] ?? ENTRY_FEE_LAMPORTS;
         instructions = [
           SystemProgram.transfer({
             fromPubkey: publicKey,
             toPubkey: new PublicKey(PRIZE_POOL_WALLET),
-            lamports: ENTRY_FEE_LAMPORTS,
+            lamports: tierEntryFee,
           }),
           SystemProgram.transfer({
             fromPubkey: publicKey,
@@ -771,6 +815,20 @@ const App: React.FC = () => {
       }).compileToV0Message();
 
       const transaction = new VersionedTransaction(messageV0);
+
+      // Debug: simulate transaction to get detailed error before wallet sends
+      try {
+        const simResult = await connection.simulateTransaction(transaction, { sigVerify: false });
+        if (simResult.value.err) {
+          console.error('🔴 TX simulation failed:', JSON.stringify(simResult.value.err));
+          console.error('🔴 Logs:', simResult.value.logs);
+        } else {
+          console.log('✅ TX simulation OK. Logs:', simResult.value.logs);
+        }
+      } catch (simErr) {
+        console.error('🔴 Simulation call error:', simErr);
+      }
+
       const signature = await sendTransaction(transaction, connection);
 
       // Wait for confirmation
@@ -782,7 +840,7 @@ const App: React.FC = () => {
       await Promise.race([confirmationPromise, timeoutPromise]);
 
       // Call backend to start game session
-      const gameResult = await startGame(publicKey.toBase58(), signature);
+      const gameResult = await startGame(publicKey.toBase58(), signature, tierIndex);
 
       console.log('🎮 startGame result:', JSON.stringify(gameResult));
 
@@ -836,6 +894,10 @@ const App: React.FC = () => {
   };
 
   // ─── Custom Games Handlers ─────────────────────────────────────────────────
+  const handleNavigateToCustomGames = () => {
+    setCurrentView(View.CUSTOM_GAMES_HUB);
+  };
+
   const handleNavigateToCreateGame = () => {
     if (!connected) {
       setShowWalletRequired(true);
@@ -881,6 +943,8 @@ const App: React.FC = () => {
         questionCount: gameData.question_count,
         roundCount: gameData.round_count,
         timeLimitSeconds: gameData.time_limit_seconds,
+        isPaidGame: gameData.prize_model === 'player_funded',
+        prizePotSol: gameData.prize_pot_lamports / 1e9,
       });
       setCustomGameAttemptsUsed(gameData.player_attempts + (res.resumed ? 0 : 1));
       setCurrentView(View.CUSTOM_GAME_PLAY);
@@ -897,6 +961,8 @@ const App: React.FC = () => {
       totalQuestions: customGameData?.questionCount ?? 0,
       gameName: customGameData?.name ?? '',
       slug: customGameSlug ?? '',
+      isPaidGame: customGameData?.isPaidGame,
+      prizePotSol: customGameData?.prizePotSol,
     });
     setCustomGameSessionId(null);
     setCustomGameData(null);
@@ -913,6 +979,286 @@ const App: React.FC = () => {
       alert(err.message || 'Failed to start custom game');
     }
   };
+
+  // ─── Custom Games: Paid Game Handlers ──────────────────────────────────────
+  const handleJoinCustomGame = async (gameData: CustomGameData) => {
+    if (!connected || !publicKey || !gameData.on_chain_game_id) {
+      setShowWalletRequired(true);
+      return;
+    }
+    const { blockhash } = await connection.getLatestBlockhash();
+    const ix = buildEnterCustomGameIx(
+      publicKey,
+      gameData.on_chain_game_id,
+      new PublicKey(REVENUE_WALLET),
+    );
+    const messageV0 = new TransactionMessage({
+      payerKey: publicKey,
+      recentBlockhash: blockhash,
+      instructions: [ix],
+    }).compileToV0Message();
+    const tx = new VersionedTransaction(messageV0);
+    const signature = await sendTransaction(tx, connection);
+    await connection.confirmTransaction(signature, 'confirmed');
+
+    // Register entry in Supabase
+    await joinCustomGame(gameData.game_id, publicKey.toBase58(), signature);
+  };
+
+  const handleStartCustomGameTimer = async (gameData: CustomGameData) => {
+    if (!connected || !publicKey) {
+      setShowWalletRequired(true);
+      return;
+    }
+    await startCustomGameTimer(gameData.game_id, publicKey.toBase58());
+  };
+
+  const handleClaimCustomPrize = async (onChainGameId: number) => {
+    if (!connected || !publicKey) {
+      setShowWalletRequired(true);
+      return;
+    }
+    const { blockhash } = await connection.getLatestBlockhash();
+    const ix = buildClaimCustomPrizeIx(publicKey, onChainGameId);
+    const messageV0 = new TransactionMessage({
+      payerKey: publicKey,
+      recentBlockhash: blockhash,
+      instructions: [ix],
+    }).compileToV0Message();
+    const tx = new VersionedTransaction(messageV0);
+    const signature = await sendTransaction(tx, connection);
+    await connection.confirmTransaction(signature, 'confirmed');
+  };
+
+  // ─── Duels Handlers ──────────────────────────────────────────────────────────
+  const handleCreateDuel = async (entryFee: number, isPublic: boolean) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    try {
+      // Fetch nextDuelId from on-chain config
+      const config = await fetchGameConfig(connection);
+      if (!config) throw new Error('Failed to read on-chain config');
+      const nextDuelId = config.nextDuelId;
+
+      const { blockhash } = await connection.getLatestBlockhash();
+      const ix = buildCreateDuelIx(
+        publicKey,
+        entryFee,
+        isPublic,
+        nextDuelId,
+        new PublicKey(REVENUE_WALLET),
+      );
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+
+      // Call create-duel EF
+      const result = await createDuel({
+        wallet_address: publicKey.toBase58(),
+        tx_signature: signature,
+        duel_id: nextDuelId,
+        entry_fee_lamports: entryFee,
+        is_public: isPublic,
+      });
+
+      setDuelId(nextDuelId);
+      setDbDuelId(result.db_duel_id);
+      setDuelShareCode(result.share_code);
+      setDuelEntryFee(entryFee);
+      setDuelIsPublic(isPublic);
+      setDuelExpiresAt(result.expires_at);
+      setDuelOpponent(null);
+      setDuelResults(null);
+      setDuelIsPlayer1(true);
+      window.history.pushState({}, '', `/duel/${result.share_code}`);
+      setCurrentView(View.DUEL_WAITING);
+    } catch (err: any) {
+      console.error('Failed to create duel:', err);
+      if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to create duel. Please try again.');
+      }
+    }
+  };
+
+  const handleJoinDuel = async (onChainDuelId: number, entryFee: number) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    try {
+      const { blockhash } = await connection.getLatestBlockhash();
+      const ix = buildJoinDuelIx(
+        publicKey,
+        onChainDuelId,
+        new PublicKey(REVENUE_WALLET),
+      );
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+
+      // Call join-duel EF
+      const result = await joinDuel({
+        wallet_address: publicKey.toBase58(),
+        tx_signature: signature,
+        duel_id: onChainDuelId,
+      });
+
+      setDuelId(onChainDuelId);
+      setDbDuelId(result.db_duel_id);
+      setDuelEntryFee(entryFee);
+      setDuelIsPlayer1(false);
+      setDuelResults(null);
+
+      // Fetch duel details for opponent info
+      const duelInfo = await getDuel({ duel_id: onChainDuelId, wallet_address: publicKey.toBase58() });
+      setDuelOpponent({
+        wallet: duelInfo.player1.wallet,
+        username: duelInfo.player1.username ?? null,
+        avatar: duelInfo.player1.avatar ?? null,
+      });
+      if (duelInfo.share_code) setDuelShareCode(duelInfo.share_code);
+
+      setCurrentView(View.DUEL_PLAY);
+    } catch (err: any) {
+      console.error('Failed to join duel:', err);
+      if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to join duel. Please try again.');
+      }
+    }
+  };
+
+  const handleJoinByShareCode = async (shareCode: string) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    try {
+      const duelInfo = await getDuel({ share_code: shareCode, wallet_address: publicKey.toBase58() });
+      if (duelInfo.status !== 'waiting') {
+        alert('This duel is no longer available.');
+        return;
+      }
+      await handleJoinDuel(duelInfo.duel_id, duelInfo.entry_fee_lamports);
+    } catch (err: any) {
+      console.error('Failed to join by share code:', err);
+      alert(err.message || 'Invalid share code or duel not found.');
+    }
+  };
+
+  const handleDuelJoined = async (opponentWallet: string, joinedDbDuelId: string) => {
+    // Called when opponent joins our waiting duel (Realtime or poll)
+    try {
+      const duelInfo = await getDuel({ duel_id: duelId!, wallet_address: publicKey!.toBase58() });
+      setDuelOpponent({
+        wallet: opponentWallet,
+        username: duelInfo.player2?.username ?? null,
+        avatar: duelInfo.player2?.avatar ?? null,
+      });
+      setDbDuelId(joinedDbDuelId);
+      setCurrentView(View.DUEL_PLAY);
+    } catch {
+      setDuelOpponent({ wallet: opponentWallet, username: null, avatar: null });
+      setDbDuelId(joinedDbDuelId);
+      setCurrentView(View.DUEL_PLAY);
+    }
+  };
+
+  const handleCancelDuel = async () => {
+    if (!connected || !publicKey || duelId == null) return;
+    try {
+      const { blockhash } = await connection.getLatestBlockhash();
+      const ix = buildCancelDuelIx(publicKey, duelId);
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      setDuelId(null);
+      setDbDuelId(null);
+      setDuelShareCode(null);
+      setCurrentView(View.DUEL_LOBBY);
+    } catch (err: any) {
+      console.error('Failed to cancel duel:', err);
+      if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to cancel duel.');
+      }
+    }
+  };
+
+  const handleDuelFinish = (results: {
+    myScore: number; myCorrect: number;
+    opponentScore: number; opponentCorrect: number;
+    winner: string | null; duelComplete: boolean;
+  }) => {
+    setDuelResults({
+      ...results,
+      totalPot: duelEntryFee * 2,
+    });
+    setCurrentView(View.DUEL_RESULTS);
+  };
+
+  const handleClaimDuelPrize = async () => {
+    if (!connected || !publicKey || duelId == null) return;
+    try {
+      const { blockhash } = await connection.getLatestBlockhash();
+      const ix = buildClaimDuelPrizeIx(publicKey, duelId);
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      alert('Prize claimed successfully!');
+    } catch (err: any) {
+      console.error('Failed to claim duel prize:', err);
+      if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to claim prize. Please try again.');
+      }
+    }
+  };
+
+  // Handle direct duel link: /duel/:shareCode on page load
+  useEffect(() => {
+    if (currentView !== View.DUEL_WAITING || !duelShareCode || dbDuelId) return;
+    // Fetch duel info by share code to populate state
+    (async () => {
+      try {
+        const walletAddr = publicKey?.toBase58();
+        const duelInfo = await getDuel({ share_code: duelShareCode, wallet_address: walletAddr });
+        setDuelId(duelInfo.duel_id);
+        setDbDuelId(duelInfo.db_duel_id);
+        setDuelEntryFee(duelInfo.entry_fee_lamports);
+        setDuelIsPublic(duelInfo.is_public);
+        setDuelExpiresAt(duelInfo.expires_at);
+        setDuelIsPlayer1(duelInfo.player1.wallet === walletAddr);
+
+        if (duelInfo.status === 'waiting') {
+          // If current user is player1, show waiting view
+          if (duelInfo.player1.wallet === walletAddr) {
+            // Already on waiting view, state is populated
+          } else {
+            // Visitor: auto-join when they click join (show lobby-like join UI)
+            // For now, redirect to lobby with the code pre-filled
+            setCurrentView(View.DUEL_LOBBY);
+          }
+        } else if (duelInfo.status === 'playing' || duelInfo.status === 'completed' || duelInfo.status === 'resolved') {
+          // Duel already started/finished
+          setCurrentView(View.DUEL_LOBBY);
+        }
+      } catch {
+        // Invalid share code, go to lobby
+        setCurrentView(View.DUEL_LOBBY);
+      }
+    })();
+  }, [currentView, duelShareCode, dbDuelId, publicKey]);
 
   const handleBuyLivesSuccess = (newLivesCount?: number) => {
     if (typeof newLivesCount === 'number') {
@@ -948,8 +1294,9 @@ const App: React.FC = () => {
             hasGamePass={hasGamePass}
             isSeekerVerified={isSeekerVerified}
             onBuyGamePass={() => setShowCategorySelector(true)}
-            onCreateCustomGame={handleNavigateToCreateGame}
+            onCreateCustomGame={handleNavigateToCustomGames}
             onViewCustomGame={handleViewCustomGame}
+            onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)}
           />
         );
       case View.LEADERBOARD:
@@ -964,7 +1311,7 @@ const App: React.FC = () => {
       case View.PLAY:
         return <PlayView lives={livesDisplayReady ? lives : null} roundEntriesUsed={roundEntriesUsed} roundEntriesMax={ROUND_ENTRIES_MAX} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => {
           if (!connected) { setShowWalletRequired(true); } else { setIsBuyLivesOpen(true); }
-        }} onStartPractice={handleStartPractice} practiceRunsLeft={practiceRunsLeft} hasGamePass={hasGamePass} onCreateCustomGame={handleNavigateToCreateGame} />;
+        }} onStartPractice={handleStartPractice} practiceRunsLeft={practiceRunsLeft} hasGamePass={hasGamePass} onCreateCustomGame={handleNavigateToCustomGames} onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)} />;
       case View.QUESTS:
         return <QuestsView onGoToProfile={() => setCurrentView(View.PROFILE)} onOpenGuide={() => setIsGuideOpen(true)} />;
       case View.PROFILE:
@@ -1088,6 +1435,16 @@ const App: React.FC = () => {
         return <AdminRoute />;
       case View.CONTRACT_TEST:
         return <ContractTestView />;
+      case View.CUSTOM_GAMES_HUB:
+        return (
+          <CustomGamesHubView
+            walletAddress={publicKey?.toBase58() ?? null}
+            hasGamePass={hasGamePass}
+            onCreateGame={handleNavigateToCreateGame}
+            onViewGame={handleViewCustomGame}
+            onBack={() => setCurrentView(View.HOME)}
+          />
+        );
       case View.CUSTOM_GAME_CREATE:
         return connected ? (
           <CreateCustomGameView
@@ -1102,6 +1459,9 @@ const App: React.FC = () => {
             slug={customGameSlug}
             walletAddress={publicKey?.toBase58() ?? null}
             onStartGame={handleStartCustomGame}
+            onJoinGame={handleJoinCustomGame}
+            onStartTimer={handleStartCustomGameTimer}
+            onClaimPrize={handleClaimCustomPrize}
             onBack={() => setCurrentView(View.HOME)}
             onConnectWallet={() => setShowWalletRequired(true)}
           />
@@ -1129,6 +1489,8 @@ const App: React.FC = () => {
             results={customGameResults}
             attemptsUsed={customGameAttemptsUsed}
             maxAttempts={CUSTOM_GAME_MAX_ATTEMPTS}
+            isPaidGame={customGameResults.isPaidGame}
+            prizePotSol={customGameResults.prizePotSol}
             onPlayAgain={handleCustomGamePlayAgain}
             onViewLeaderboard={() => {
               if (customGameSlug) setCurrentView(View.CUSTOM_GAME_LOBBY);
@@ -1137,6 +1499,67 @@ const App: React.FC = () => {
               setCustomGameResults(null);
               setCurrentView(View.HOME);
             }}
+          />
+        ) : null;
+      case View.DUEL_LOBBY:
+        return (
+          <DuelLobbyView
+            walletAddress={publicKey?.toBase58() ?? null}
+            onCreateDuel={handleCreateDuel}
+            onJoinDuel={handleJoinDuel}
+            onJoinByCode={handleJoinByShareCode}
+            onConnectWallet={() => setShowWalletRequired(true)}
+            onBack={() => setCurrentView(View.HOME)}
+          />
+        );
+      case View.DUEL_WAITING:
+        return duelId != null && dbDuelId && duelShareCode ? (
+          <DuelWaitingView
+            duelId={duelId}
+            dbDuelId={dbDuelId}
+            shareCode={duelShareCode}
+            entryFee={duelEntryFee}
+            isPublic={duelIsPublic}
+            expiresAt={duelExpiresAt}
+            onDuelJoined={handleDuelJoined}
+            onCancel={handleCancelDuel}
+            onBack={() => setCurrentView(View.DUEL_LOBBY)}
+          />
+        ) : null;
+      case View.DUEL_PLAY:
+        return connected && dbDuelId && duelId != null && duelOpponent ? (
+          <DuelQuizView
+            dbDuelId={dbDuelId}
+            duelId={duelId}
+            walletAddress={publicKey!.toBase58()}
+            opponentWallet={duelOpponent.wallet}
+            opponentUsername={duelOpponent.username}
+            opponentAvatar={duelOpponent.avatar}
+            isPlayer1={duelIsPlayer1}
+            onFinish={handleDuelFinish}
+            onQuit={() => setCurrentView(View.DUEL_LOBBY)}
+          />
+        ) : null;
+      case View.DUEL_RESULTS:
+        return connected && duelResults && duelId != null ? (
+          <DuelResultsView
+            duelId={duelId}
+            dbDuelId={dbDuelId!}
+            myWallet={publicKey!.toBase58()}
+            myScore={duelResults.myScore}
+            myCorrect={duelResults.myCorrect}
+            opponentWallet={duelOpponent?.wallet ?? ''}
+            opponentUsername={duelOpponent?.username ?? null}
+            opponentAvatar={duelOpponent?.avatar ?? null}
+            opponentScore={duelResults.opponentScore}
+            opponentCorrect={duelResults.opponentCorrect}
+            winnerWallet={duelResults.winner}
+            entryFee={duelEntryFee}
+            totalPot={duelResults.totalPot}
+            duelComplete={duelResults.duelComplete}
+            onClaimPrize={handleClaimDuelPrize}
+            onPlayAgain={() => setCurrentView(View.DUEL_LOBBY)}
+            onBackToLobby={() => setCurrentView(View.DUEL_LOBBY)}
           />
         ) : null;
       default:
@@ -1164,13 +1587,14 @@ const App: React.FC = () => {
             isSeekerVerified={isSeekerVerified}
             onBuyGamePass={() => setShowCategorySelector(true)}
             onCreateCustomGame={handleNavigateToCreateGame}
+            onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)}
           />
         );
     }
   };
 
   // Hide sidebar during active quiz or legal full-page views
-  const hideSidebar = currentView === View.QUIZ || currentView === View.TERMS || currentView === View.PRIVACY || currentView === View.CUSTOM_GAME_PLAY;
+  const hideSidebar = currentView === View.QUIZ || currentView === View.TERMS || currentView === View.PRIVACY || currentView === View.CUSTOM_GAME_PLAY || currentView === View.DUEL_PLAY;
 
   // Footer removed – Terms & Privacy links are in the How to Play modal
 

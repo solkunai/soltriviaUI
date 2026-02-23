@@ -1,5 +1,5 @@
 // Feature flag: disable paid trivia while smart contract upgrade is pending
-export const PAID_TRIVIA_ENABLED = false;
+export const PAID_TRIVIA_ENABLED = true;
 
 // Wallet addresses (from environment variables)
 export const PRIZE_POOL_WALLET = import.meta.env.VITE_PRIZE_POOL_WALLET || 'C9U6pL7FcroUBcSGQR2iCEGmAydVjzEE7ZYaJuVJuEEo'; // Entry fees (0.02 SOL) go here
@@ -77,6 +77,26 @@ export const CATEGORY_LABELS: Record<PracticeCategory, string> = {
   science: 'Science & Tech',
 };
 
+// ─── V2 Contract Constants ───────────────────────────────────────────────
+export const V2_PROGRAM_ID = 'A3CSWY7bJukyKgR8RXXq1jbRAvqTY5jYtArF5Xt9dhjE';
+export const OPERATOR_WALLET = 'GRjf5emRyuwsk4Hf19xTLEdjttqx7QSKsh6RzGMd9XTr';
+export const OWNER_WALLET = 'A3pqxWWtgxY9qspd4wffSJQNAb99bbrUHYb1doMQmPcK'; // Ledger
+
+// Tier entry fees (lamports) — player pays this + 0.0025 platform fee
+export const V2_TIER_FEES = [20_000_000, 100_000_000, 500_000_000, 1_000_000_000] as const;
+export const V2_TIER_LABELS = ['0.02 SOL', '0.1 SOL', '0.5 SOL', '1 SOL'] as const;
+
+// Duel fee presets (lamports) — each player pays this + 0.0025 platform fee
+export const V2_DUEL_FEES = [10_000_000, 50_000_000, 100_000_000, 250_000_000, 500_000_000, 1_000_000_000] as const;
+export const V2_DUEL_LABELS = ['0.01 SOL', '0.05 SOL', '0.1 SOL', '0.25 SOL', '0.5 SOL', '1 SOL'] as const;
+export const DUEL_QUESTIONS_COUNT = 5;
+export const DUEL_SECONDS_PER_QUESTION = 10;
+export const DUEL_EXPIRY_MINUTES = 30;
+
+// Prize distribution (basis points, top 5)
+export const TRIVIA_PRIZE_BPS = [5000, 2000, 1500, 1000, 500] as const;
+export const TRIVIA_PRIZE_LABELS = ['50%', '20%', '15%', '10%', '5%'] as const;
+
 // ─── Custom Games ─────────────────────────────────────────────────────────
 export const CUSTOM_GAME_CREATION_FEE_LAMPORTS = ENTRY_FEE_LAMPORTS; // 0.02 SOL (non-pass holders only)
 export const CUSTOM_GAME_PLATFORM_FEE_LAMPORTS = TXN_FEE_LAMPORTS;   // 0.0025 SOL (everyone)
@@ -97,6 +117,40 @@ export const VALID_ROUND_COUNTS: Record<number, number[]> = {
   10: [1, 2, 5, 10],
   15: [1, 3, 5, 15],
 };
+
+// ─── Custom Game Prize Pool ──────────────────────────────────────────────
+export const CUSTOM_GAME_ENTRY_FEE_PRESETS = [
+  50_000_000,     // 0.05 SOL
+  100_000_000,    // 0.1 SOL
+  500_000_000,    // 0.5 SOL
+  1_000_000_000,  // 1 SOL
+  5_000_000_000,  // 5 SOL
+] as const;
+export const CUSTOM_GAME_ENTRY_FEE_LABELS = ['0.05', '0.1', '0.5', '1', '5'] as const;
+export const CUSTOM_GAME_MIN_ENTRY_FEE = 10_000_000;      // 0.01 SOL
+export const CUSTOM_GAME_MAX_ENTRY_FEE = 10_000_000_000;   // 10 SOL
+export const CUSTOM_GAME_MAX_PLAYER_PRESETS = [5, 10, 25, 50, 100] as const;
+export const CUSTOM_GAME_MIN_PLAYERS = 2;
+export const CUSTOM_GAME_DURATION_PRESETS = [
+  { minutes: 60, label: '1 Hour' },
+  { minutes: 120, label: '2 Hours' },
+  { minutes: 240, label: '4 Hours' },
+  { minutes: 480, label: '8 Hours' },
+  { minutes: 720, label: '12 Hours' },
+  { minutes: 1440, label: '24 Hours' },
+  { minutes: 2880, label: '48 Hours' },
+] as const;
+export const CUSTOM_GAME_WINNER_SPLITS: Record<number, number[]> = {
+  1: [10000, 0, 0, 0, 0],
+  3: [5000, 3000, 2000, 0, 0],
+  5: [5000, 2000, 1500, 1000, 500],
+};
+export const CUSTOM_GAME_WINNER_SPLIT_LABELS: Record<number, string[]> = {
+  1: ['100%'],
+  3: ['50%', '30%', '20%'],
+  5: ['50%', '20%', '15%', '10%', '5%'],
+};
+export const CUSTOM_GAME_PLATFORM_CUT_BPS = 1000; // 10% of pot
 
 export const APP_IDENTITY = {
   name: 'SOL Trivia',

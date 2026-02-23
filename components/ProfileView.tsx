@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
-import { DEFAULT_AVATAR, REVENUE_WALLET, SOLANA_NETWORK } from '../src/utils/constants';
+import { DEFAULT_AVATAR, REVENUE_WALLET, SOLANA_NETWORK, V2_TIER_LABELS } from '../src/utils/constants';
 
 function claimExplorerUrl(signature: string): string {
   const base = 'https://explorer.solana.com';
@@ -10,8 +10,9 @@ function claimExplorerUrl(signature: string): string {
   return `${base}/tx/${signature}${cluster}`;
 }
 import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame } from '../src/utils/api';
-import { buildClaimPrizeInstruction } from '../src/utils/soltriviaContract';
+import { buildClaimTierPrizeIx } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
+import { isPushSupported, hasActiveSubscription, subscribeToPush, unsubscribeFromPush } from '../src/utils/notifications';
 
 interface ProfileViewProps {
   username: string;
@@ -81,6 +82,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const [customGamesLoading, setCustomGamesLoading] = useState(false);
   const [customGameTab, setCustomGameTab] = useState<'created' | 'played'>('created');
   const [linkCopiedSlug, setLinkCopiedSlug] = useState<string | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
   const WINS_PER_PAGE = 3;
   const HISTORY_PER_PAGE = 5;
   const CUSTOM_GAMES_PER_PAGE = 5;
@@ -411,6 +414,27 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
     } catch { /* non-fatal */ }
   };
 
+  // Check push notification subscription status on mount
+  useEffect(() => {
+    if (!publicKey || !isPushSupported()) return;
+    hasActiveSubscription().then(setNotificationsEnabled).catch(() => {});
+  }, [publicKey]);
+
+  const handleToggleNotifications = async () => {
+    if (!publicKey || notifLoading) return;
+    setNotifLoading(true);
+    try {
+      if (notificationsEnabled) {
+        const ok = await unsubscribeFromPush(publicKey.toBase58());
+        if (ok) setNotificationsEnabled(false);
+      } else {
+        const ok = await subscribeToPush(publicKey.toBase58());
+        if (ok) setNotificationsEnabled(true);
+      }
+    } catch { /* non-fatal */ }
+    setNotifLoading(false);
+  };
+
   const handleClaimPrize = async (payout: ClaimablePayout) => {
     if (!publicKey || !sendTransaction || !connection) return;
     setClaimingRoundId(payout.round_id);
@@ -419,7 +443,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         revenueWallet: REVENUE_WALLET,
         useDevnet: SOLANA_NETWORK === 'devnet',
       }).catch(() => {}); // idempotent; non-fatal if already inited
-      const ix = buildClaimPrizeInstruction(payout.contract_round_id, publicKey);
+      const tierIndex = payout.tier_index ?? 0;
+      const ix = buildClaimTierPrizeIx(publicKey, payout.contract_round_id, tierIndex);
       const { blockhash } = await connection.getLatestBlockhash();
       const msg = new TransactionMessage({
         payerKey: publicKey,
@@ -431,8 +456,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
       if (sim.value.err) {
         const err = sim.value.err as { InstructionError?: [number, { Custom?: number }] };
         const customCode = err?.InstructionError?.[1]?.Custom;
-        if (customCode === 6002) {
-          const postRes = await postWinnersOnChain(payout.round_id);
+        // V2 error 6009 = RoundNotFinalized — trigger post-winners
+        if (customCode === 6009) {
+          const postRes = await postWinnersOnChain(payout.round_id, tierIndex);
           if (postRes.success) {
             alert('Prize finalization has been sent on-chain. Please try claiming again in about 30 seconds.');
           } else {
@@ -440,9 +466,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           }
           return;
         }
-        if (customCode === 6003) {
-          await markPayoutClaimed(payout.round_id, publicKey.toBase58()).catch(() => {});
-          setClaimablePayouts((prev) => prev.filter((p) => p.round_id !== payout.round_id));
+        // V2 error 6012 = AlreadyClaimed
+        if (customCode === 6012) {
+          await markPayoutClaimed(payout.round_id, publicKey.toBase58(), tierIndex).catch(() => {});
+          setClaimablePayouts((prev) => prev.filter((p) => !(p.round_id === payout.round_id && (p.tier_index ?? 0) === tierIndex)));
           const claimed = await fetchClaimedRoundPayouts(publicKey.toBase58());
           setClaimedPayouts(claimed);
           alert('This prize has already been claimed.');
@@ -454,8 +481,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
       }
       const sig = await sendTransaction(tx, connection);
       await connection.confirmTransaction(sig, 'confirmed');
-      await markPayoutClaimed(payout.round_id, publicKey.toBase58()).catch(() => {});
-      setClaimablePayouts((prev) => prev.filter((p) => p.round_id !== payout.round_id));
+      await markPayoutClaimed(payout.round_id, publicKey.toBase58(), tierIndex).catch(() => {});
+      setClaimablePayouts((prev) => prev.filter((p) => !(p.round_id === payout.round_id && (p.tier_index ?? 0) === tierIndex)));
       const claimed = await fetchClaimedRoundPayouts(publicKey.toBase58());
       setClaimedPayouts(claimed);
       setLastClaimTx({
@@ -508,61 +535,82 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   return (
     <div className="min-h-full bg-[#050505] overflow-x-hidden safe-top relative flex flex-col">
       {/* Sticky Profile Header */}
-      <div className="flex items-center justify-between px-6 py-4 md:py-6 border-b border-white/5 bg-[#050505] sticky top-0 z-[60]">
+      <div className="flex items-center justify-between px-6 py-3 md:py-4 border-b border-white/5 bg-[#050505] sticky top-0 z-[60]">
         <h2 className="text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter text-white">PROFILE</h2>
-        <button 
-          onClick={onOpenGuide}
-          className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] flex items-center justify-center shadow-lg active:scale-95 transition-all"
-        >
-          <span className="text-white font-black text-lg md:text-xl italic leading-none">?</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          {/* Compact Notification Toggle */}
+          {isPushSupported() && (
+            <button
+              onClick={handleToggleNotifications}
+              disabled={notifLoading}
+              className={`flex items-center gap-2 h-8 md:h-9 px-3 rounded-full border transition-all active:scale-95 ${
+                notificationsEnabled
+                  ? 'bg-[#14F195]/10 border-[#14F195]/30 text-[#14F195]'
+                  : 'bg-white/5 border-white/10 text-zinc-500 hover:border-white/20'
+              } ${notifLoading ? 'opacity-50' : ''}`}
+            >
+              <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider italic whitespace-nowrap">
+                {notificationsEnabled ? 'ON' : 'OFF'}
+              </span>
+            </button>
+          )}
+          <button
+            onClick={onOpenGuide}
+            className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-gradient-to-br from-[#9945FF] via-[#3b82f6] to-[#14F195] flex items-center justify-center shadow-lg active:scale-95 transition-all"
+          >
+            <span className="text-white font-black text-lg md:text-xl italic leading-none">?</span>
+          </button>
+        </div>
       </div>
 
-      <div className="p-4 md:p-12 lg:p-20 max-w-[1400px] mx-auto w-full pb-32 md:pb-48 relative">
+      <div className="p-4 md:p-8 lg:p-12 max-w-[1100px] mx-auto w-full pb-32 md:pb-40 relative">
         {/* XP at top */}
-        <div className="mb-6 md:mb-10 flex justify-center md:justify-start">
-          <div className="inline-flex items-baseline gap-2 px-6 py-4 md:px-8 md:py-5 bg-[#0A0A0A] border border-[#14F195]/20 rounded-2xl shadow-[0_0_20px_rgba(20,241,149,0.08)]">
+        <div className="mb-4 md:mb-6 flex justify-center md:justify-start">
+          <div className="inline-flex items-baseline gap-2 px-5 py-3 md:px-6 md:py-3 bg-[#0A0A0A] border border-[#14F195]/20 rounded-xl shadow-[0_0_20px_rgba(20,241,149,0.08)]">
             <span className="text-zinc-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] italic">TOTAL XP</span>
-            <span className="text-[#14F195] text-3xl md:text-5xl font-[1000] italic tabular-nums leading-none">
+            <span className="text-[#14F195] text-2xl md:text-3xl font-[1000] italic tabular-nums leading-none">
               {loading ? '—' : (stats?.total_points ?? 0).toLocaleString()}
             </span>
           </div>
         </div>
 
-        {/* Profile Hero Section - Optimized for Mobile */}
-        <div className="flex flex-col md:flex-row items-center md:items-start gap-4 md:gap-14 mb-8 md:mb-20 relative z-10 pt-2 md:pt-0">
+        {/* Profile Hero Section */}
+        <div className="flex flex-col md:flex-row items-center md:items-start gap-4 md:gap-8 mb-6 md:mb-10 relative z-10 pt-2 md:pt-0">
           <div className="relative flex-shrink-0">
-              <div className="w-24 h-24 md:w-52 md:h-52 p-1 bg-gradient-to-br from-[#14F195] via-[#3b82f6] to-[#9945FF] rounded-[24px] md:rounded-[32px] shadow-2xl">
-                  <div className="w-full h-full bg-zinc-900 rounded-[21px] md:rounded-[28px] overflow-hidden">
+              <div className="w-24 h-24 md:w-32 md:h-32 p-1 bg-gradient-to-br from-[#14F195] via-[#3b82f6] to-[#9945FF] rounded-[20px] md:rounded-[24px] shadow-xl">
+                  <div className="w-full h-full bg-zinc-900 rounded-[17px] md:rounded-[21px] overflow-hidden">
                       <img src={currentAvatar || avatar} alt="Avatar" className="w-full h-full object-cover grayscale" onError={() => setCurrentAvatar(DEFAULT_AVATAR)} />
                   </div>
               </div>
               <button
                 onClick={() => setShowAvatarUpload(true)}
-                className="absolute -bottom-2 -right-2 bg-[#14F195] hover:bg-[#14F195]/90 border border-[#14F195] text-black font-[1000] text-[10px] md:text-xs px-3 md:px-4 py-2 md:py-2 italic rounded-xl md:rounded-2xl shadow-2xl transition-all active:scale-95"
+                className="absolute -bottom-2 -right-2 bg-[#14F195] hover:bg-[#14F195]/90 border border-[#14F195] text-black font-[1000] text-[10px] px-3 py-1.5 italic rounded-lg shadow-xl transition-all active:scale-95"
               >
-                📷 Upload
+                Upload
               </button>
           </div>
 
           <div className="flex-1 flex flex-col items-center md:items-start text-center md:text-left">
-              <div className="mb-4 md:mb-10">
-                <span className="text-[#14F195] text-[8px] md:text-xs font-black uppercase tracking-[0.5em] italic block mb-1 md:mb-3 opacity-70">PROTOCOL OPERATIVE</span>
-                <h1 className="text-3xl md:text-8xl font-[1000] italic uppercase tracking-tighter text-white leading-none md:leading-[0.75] mb-3 md:mb-6">{currentUsername}</h1>
-                <div className="h-1 w-12 md:h-1.5 md:w-20 bg-[#14F195] mx-auto md:mx-0 shadow-[0_0_10px_#14F195]"></div>
+              <div className="mb-3 md:mb-5">
+                <span className="text-[#14F195] text-[8px] md:text-[10px] font-black uppercase tracking-[0.5em] italic block mb-1 md:mb-2 opacity-70">PROTOCOL OPERATIVE</span>
+                <h1 className="text-3xl md:text-5xl font-[1000] italic uppercase tracking-tighter text-white leading-none mb-2 md:mb-3">{currentUsername}</h1>
+                <div className="h-0.5 w-10 md:h-1 md:w-14 bg-[#14F195] mx-auto md:mx-0 shadow-[0_0_10px_#14F195]"></div>
               </div>
-              
-              <button 
-                onClick={onEdit} 
-                className="px-8 md:px-12 py-3 md:py-5 bg-white/[0.03] border border-white/10 hover:bg-[#14F195] hover:text-black text-white font-[1000] uppercase text-[10px] md:text-sm tracking-widest italic rounded-full transition-all active:scale-95 shadow-2xl hover:scale-105"
+
+              <button
+                onClick={onEdit}
+                className="px-6 md:px-8 py-2.5 md:py-3 bg-white/[0.03] border border-white/10 hover:bg-[#14F195] hover:text-black text-white font-[1000] uppercase text-[10px] md:text-xs tracking-widest italic rounded-full transition-all active:scale-95 hover:scale-105"
               >
                 Edit Profile
               </button>
           </div>
         </div>
 
-        {/* Global Stats Grid - Optimized for Mobile */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-8 mb-8 md:mb-20 relative z-10">
+        {/* Global Stats Grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3 mb-5 md:mb-8 relative z-10">
           {loading ? (
             <>
               <ProfileStatCard label="TOTAL WON" value="—" unit="SOL" highlight />
@@ -581,15 +629,15 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         </div>
 
         {/* Seeker Perks Section */}
-        <div className="mb-8 md:mb-12 relative z-10">
-          <div className="bg-[#0A0A0A] border border-[#9945FF]/20 rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl">
-            <div className="px-6 py-4 md:px-10 md:py-6 border-b border-white/5 bg-gradient-to-r from-[#9945FF]/10 to-transparent">
-              <h2 className="text-xl md:text-3xl font-[1000] italic uppercase tracking-tighter text-white">Seeker Perks</h2>
-              <p className="text-zinc-500 text-[10px] md:text-xs font-bold uppercase tracking-wider mt-1">
+        <div className="mb-5 md:mb-8 relative z-10">
+          <div className="bg-[#0A0A0A] border border-[#9945FF]/20 rounded-xl md:rounded-2xl overflow-hidden shadow-lg">
+            <div className="px-5 py-3 md:px-6 md:py-4 border-b border-white/5 bg-gradient-to-r from-[#9945FF]/10 to-transparent">
+              <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">Seeker Perks</h2>
+              <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-wider mt-0.5">
                 Exclusive benefits for Solana Seeker device owners
               </p>
             </div>
-            <div className="p-6 md:p-10">
+            <div className="p-4 md:p-6">
               {seekerProfile?.is_seeker_verified ? (
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 mb-4">
@@ -662,16 +710,17 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           </div>
         </div>
 
+
         {/* Refer & Earn Section */}
         {referralStats && (
-          <div className="mb-8 md:mb-12 relative z-10">
-            <div className="bg-[#0A0A0A] border border-[#14F195]/20 rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl">
-              <div className="px-6 py-4 md:px-10 md:py-6 border-b border-white/5 bg-gradient-to-r from-[#14F195]/5 to-transparent">
-                <h2 className="text-xl md:text-3xl font-[1000] italic uppercase tracking-tighter text-white">Refer & Earn</h2>
-                <p className="text-zinc-500 text-[10px] md:text-xs font-bold uppercase tracking-wider mt-1">Share your link. Earn 1,000 XP per referral.</p>
+          <div className="mb-5 md:mb-8 relative z-10">
+            <div className="bg-[#0A0A0A] border border-[#14F195]/20 rounded-xl md:rounded-2xl overflow-hidden shadow-lg">
+              <div className="px-5 py-3 md:px-6 md:py-4 border-b border-white/5 bg-gradient-to-r from-[#14F195]/5 to-transparent">
+                <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">Refer & Earn</h2>
+                <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-wider mt-0.5">Share your link. Earn 1,000 XP per referral.</p>
               </div>
 
-              <div className="p-6 md:p-10 space-y-6">
+              <div className="p-4 md:p-6 space-y-4">
                 {/* Referral Link */}
                 <div>
                   <label className="text-zinc-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] italic block mb-2">Your Referral Link</label>
@@ -693,25 +742,25 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 </div>
 
                 {/* Referral Stats Row */}
-                <div className="grid grid-cols-3 gap-3 md:gap-6">
-                  <div className="bg-black/30 border border-white/5 rounded-xl p-4 md:p-6 text-center">
-                    <span className="text-[#14F195] text-2xl md:text-4xl font-[1000] italic block">{referralStats.completed_referrals}</span>
-                    <span className="text-zinc-500 text-[8px] md:text-[10px] font-black uppercase tracking-widest italic">Completed</span>
+                <div className="grid grid-cols-3 gap-2 md:gap-3">
+                  <div className="bg-black/30 border border-white/5 rounded-lg p-3 md:p-4 text-center">
+                    <span className="text-[#14F195] text-xl md:text-2xl font-[1000] italic block">{referralStats.completed_referrals}</span>
+                    <span className="text-zinc-500 text-[8px] md:text-[9px] font-black uppercase tracking-widest italic">Completed</span>
                   </div>
-                  <div className="bg-black/30 border border-white/5 rounded-xl p-4 md:p-6 text-center">
-                    <span className="text-yellow-400 text-2xl md:text-4xl font-[1000] italic block">{referralStats.pending_referrals}</span>
-                    <span className="text-zinc-500 text-[8px] md:text-[10px] font-black uppercase tracking-widest italic">Pending</span>
+                  <div className="bg-black/30 border border-white/5 rounded-lg p-3 md:p-4 text-center">
+                    <span className="text-yellow-400 text-xl md:text-2xl font-[1000] italic block">{referralStats.pending_referrals}</span>
+                    <span className="text-zinc-500 text-[8px] md:text-[9px] font-black uppercase tracking-widest italic">Pending</span>
                   </div>
-                  <div className="bg-black/30 border border-white/5 rounded-xl p-4 md:p-6 text-center">
-                    <span className="text-white text-2xl md:text-4xl font-[1000] italic block">{referralStats.referral_points.toLocaleString()}</span>
-                    <span className="text-zinc-500 text-[8px] md:text-[10px] font-black uppercase tracking-widest italic">XP Earned</span>
+                  <div className="bg-black/30 border border-white/5 rounded-lg p-3 md:p-4 text-center">
+                    <span className="text-white text-xl md:text-2xl font-[1000] italic block">{referralStats.referral_points.toLocaleString()}</span>
+                    <span className="text-zinc-500 text-[8px] md:text-[9px] font-black uppercase tracking-widest italic">XP Earned</span>
                   </div>
                 </div>
 
                 {/* Share to X Button */}
                 <button
                   onClick={() => {
-                    const text = `I'm playing SOL Trivia — crypto trivia where you win real SOL! 🧠💰\n\nJoin using my link and let's compete:\n${referralStats.referral_url}\n\n@SolTriviaApp`;
+                    const text = `i'm farming XP on @soltrivia_app — trivia on solana where you win real SOL\n\njoin with my link and we both eat\n\n${referralStats.referral_url}`;
                     window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
                   }}
                   className="w-full py-3 md:py-4 bg-white/[0.03] border border-white/10 hover:bg-white/[0.06] rounded-xl text-white font-[1000] text-xs md:text-sm uppercase italic tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
@@ -743,11 +792,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
 
         {/* Custom Games Section */}
         {(createdGames.length > 0 || playedGames.length > 0) && (
-          <div className="mb-8 md:mb-12 relative z-10">
-            <div className="bg-[#0A0A0A] border border-[#38BDF8]/20 rounded-[24px] md:rounded-[32px] overflow-hidden shadow-2xl">
-              <div className="px-6 py-4 md:px-10 md:py-6 border-b border-white/5 bg-gradient-to-r from-[#38BDF8]/10 to-transparent">
-                <h2 className="text-xl md:text-3xl font-[1000] italic uppercase tracking-tighter text-white">Custom Games</h2>
-                <p className="text-zinc-500 text-[10px] md:text-xs font-bold uppercase tracking-wider mt-1">
+          <div className="mb-5 md:mb-8 relative z-10">
+            <div className="bg-[#0A0A0A] border border-[#38BDF8]/20 rounded-xl md:rounded-2xl overflow-hidden shadow-lg">
+              <div className="px-5 py-3 md:px-6 md:py-4 border-b border-white/5 bg-gradient-to-r from-[#38BDF8]/10 to-transparent">
+                <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">Custom Games</h2>
+                <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-wider mt-0.5">
                   Games you created & played
                 </p>
               </div>
@@ -918,12 +967,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
             <div className="space-y-3">
               {claimablePayouts.slice(claimablePage * WINS_PER_PAGE, (claimablePage + 1) * WINS_PER_PAGE).map((p) => (
                 <div
-                  key={p.round_id}
+                  key={`${p.round_id}-${p.tier_index ?? 0}`}
                   className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 md:px-6 bg-[#0A0A0A] border border-white/10 rounded-xl"
                 >
                   <div>
                     <span className="text-[#14F195] font-bold text-sm md:text-base">{p.round_title}</span>
                     <span className="text-zinc-500 text-xs ml-2">#{p.rank}</span>
+                    {(p.tier_index ?? 0) > 0 && <span className="text-purple-400 text-[10px] font-black ml-2 uppercase">{V2_TIER_LABELS[p.tier_index ?? 0]}</span>}
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-white font-bold">{(p.prize_lamports / 1_000_000_000).toFixed(4)} SOL</span>
@@ -983,10 +1033,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           </div>
         )}
 
-        {/* Trivia History Table - Optimized for Mobile */}
-        <div className="bg-[#0A0A0A] border border-white/5 relative z-10 shadow-2xl rounded-[24px] md:rounded-[40px] overflow-hidden">
-          <div className="px-6 py-4 md:px-10 md:py-8 border-b border-white/5 bg-[#0D0D0D]">
-              <h2 className="text-xl md:text-4xl font-[1000] italic uppercase tracking-tighter text-white">Trivia History</h2>
+        {/* Trivia History Table */}
+        <div className="bg-[#0A0A0A] border border-white/5 relative z-10 shadow-lg rounded-xl md:rounded-2xl overflow-hidden">
+          <div className="px-5 py-3 md:px-6 md:py-4 border-b border-white/5 bg-[#0D0D0D]">
+              <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">Trivia History</h2>
           </div>
           <div className="overflow-x-auto no-scrollbar">
             {loading ? (
@@ -995,12 +1045,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
             <table className="w-full min-w-[500px] md:min-w-[700px]">
                 <thead className="bg-black/40 text-[8px] md:text-xs font-black text-zinc-500 uppercase tracking-[0.4em]">
                   <tr>
-                     <th className="px-6 py-4 md:px-10 md:py-6 text-left">Arena</th>
-                     <th className="px-6 py-4 md:px-10 md:py-6 text-left">Date</th>
-                     <th className="px-6 py-4 md:px-10 md:py-6 text-center">Rank</th>
-                     <th className="px-6 py-4 md:px-10 md:py-6 text-center">Time</th>
-                     <th className="px-6 py-4 md:px-10 md:py-6 text-center">Correct</th>
-                     <th className="px-6 py-4 md:px-10 md:py-6 text-right">Payout</th>
+                     <th className="px-6 py-4 md:px-6 md:py-4 text-left">Arena</th>
+                     <th className="px-6 py-4 md:px-6 md:py-4 text-left">Date</th>
+                     <th className="px-6 py-4 md:px-6 md:py-4 text-center">Rank</th>
+                     <th className="px-6 py-4 md:px-6 md:py-4 text-center">Time</th>
+                     <th className="px-6 py-4 md:px-6 md:py-4 text-center">Correct</th>
+                     <th className="px-6 py-4 md:px-6 md:py-4 text-right">Payout</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.03]">
@@ -1013,22 +1063,22 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                     ) : (
                       history.slice(historyPage * HISTORY_PER_PAGE, (historyPage + 1) * HISTORY_PER_PAGE).map((row, i) => (
                         <tr key={i} className="hover:bg-white/[0.01] transition-colors group">
-                          <td className="px-6 py-5 md:px-10 md:py-8 font-[1000] uppercase text-[#14F195] text-sm md:text-lg italic tracking-tight">
+                          <td className="px-6 py-5 md:px-6 md:py-4 font-[1000] uppercase text-[#14F195] text-sm md:text-lg italic tracking-tight">
                             #{row.round_id.slice(0, 6)}
                           </td>
-                          <td className="px-6 py-5 md:px-10 md:py-8 text-left text-zinc-400 text-[10px] md:text-sm font-bold tabular-nums whitespace-nowrap">
+                          <td className="px-6 py-5 md:px-6 md:py-4 text-left text-zinc-400 text-[10px] md:text-sm font-bold tabular-nums whitespace-nowrap">
                             {row.finished_at ? new Date(row.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'}
                           </td>
-                          <td className="px-6 py-5 md:px-10 md:py-8 text-center font-[1000] italic text-white text-base md:text-xl tabular-nums">
+                          <td className="px-6 py-5 md:px-6 md:py-4 text-center font-[1000] italic text-white text-base md:text-xl tabular-nums">
                             #{row.rank || '-'}
                           </td>
-                          <td className="px-6 py-5 md:px-10 md:py-8 text-center font-[1000] italic text-zinc-400 text-sm md:text-xl tabular-nums">
+                          <td className="px-6 py-5 md:px-6 md:py-4 text-center font-[1000] italic text-zinc-400 text-sm md:text-xl tabular-nums">
                             {row.time_taken_seconds}s
                           </td>
-                          <td className="px-6 py-5 md:px-10 md:py-8 text-center font-[1000] italic text-white text-sm md:text-xl tabular-nums">
+                          <td className="px-6 py-5 md:px-6 md:py-4 text-center font-[1000] italic text-white text-sm md:text-xl tabular-nums">
                             {row.correct_answers}/{row.total_questions}
                           </td>
-                          <td className="px-6 py-5 md:px-10 md:py-8 text-right font-[1000] italic text-[#14F195] text-lg md:text-3xl tabular-nums drop-shadow-[0_0_10px_rgba(20,241,149,0.3)]">
+                          <td className="px-6 py-5 md:px-6 md:py-4 text-right font-[1000] italic text-[#14F195] text-lg md:text-3xl tabular-nums drop-shadow-[0_0_10px_rgba(20,241,149,0.3)]">
                             {row.payout_sol > 0 ? `+${row.payout_sol.toFixed(3)} SOL` : `+${row.xp_earned.toLocaleString()} XP`}
                           </td>
                         </tr>
@@ -1062,12 +1112,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
 };
 
 const ProfileStatCard: React.FC<{ label: string, value: string, unit?: string, suffix?: string, highlight?: boolean }> = ({ label, value, unit, suffix, highlight }) => (
-    <div className={`bg-[#0A0A0A] border p-4 md:p-10 rounded-[20px] md:rounded-[32px] shadow-2xl group hover:scale-[1.03] transition-all duration-300 ${highlight ? 'border-[#14F195]/30 bg-gradient-to-br from-[#14F195]/5 to-transparent' : 'border-white/5'}`}>
-        <span className="text-[7px] md:text-xs text-zinc-500 font-black uppercase tracking-[0.2em] md:tracking-[0.3em] block mb-2 md:mb-4 group-hover:text-zinc-200 transition-colors italic">{label}</span>
-        <div className="flex items-baseline gap-1 md:gap-2">
-            <span className={`text-xl md:text-5xl font-[1000] italic leading-none tracking-tighter ${highlight ? 'text-[#14F195]' : 'text-white'}`}>{value}</span>
-            {unit && <span className="text-[#14F195] font-[1000] text-[8px] md:text-lg italic tracking-widest">{unit}</span>}
-            {suffix && <span className="text-xl md:text-4xl">{suffix}</span>}
+    <div className={`bg-[#0A0A0A] border p-3 md:p-5 rounded-xl md:rounded-2xl shadow-lg group hover:scale-[1.02] transition-all duration-300 ${highlight ? 'border-[#14F195]/30 bg-gradient-to-br from-[#14F195]/5 to-transparent' : 'border-white/5'}`}>
+        <span className="text-[7px] md:text-[10px] text-zinc-500 font-black uppercase tracking-[0.2em] md:tracking-[0.3em] block mb-1.5 md:mb-2 group-hover:text-zinc-200 transition-colors italic">{label}</span>
+        <div className="flex items-baseline gap-1 md:gap-1.5">
+            <span className={`text-xl md:text-3xl font-[1000] italic leading-none tracking-tighter ${highlight ? 'text-[#14F195]' : 'text-white'}`}>{value}</span>
+            {unit && <span className="text-[#14F195] font-[1000] text-[8px] md:text-sm italic tracking-widest">{unit}</span>}
+            {suffix && <span className="text-xl md:text-2xl">{suffix}</span>}
         </div>
     </div>
 );

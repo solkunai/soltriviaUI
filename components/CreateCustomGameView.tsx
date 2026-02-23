@@ -14,6 +14,17 @@ import {
   CUSTOM_GAME_SLUG_MIN,
   CUSTOM_GAME_SLUG_MAX,
   VALID_ROUND_COUNTS,
+  CUSTOM_GAME_ENTRY_FEE_PRESETS,
+  CUSTOM_GAME_ENTRY_FEE_LABELS,
+  CUSTOM_GAME_MIN_ENTRY_FEE,
+  CUSTOM_GAME_MAX_ENTRY_FEE,
+  CUSTOM_GAME_MAX_PLAYER_PRESETS,
+  CUSTOM_GAME_MIN_PLAYERS,
+  CUSTOM_GAME_DURATION_PRESETS,
+  CUSTOM_GAME_WINNER_SPLITS,
+  CUSTOM_GAME_WINNER_SPLIT_LABELS,
+  CUSTOM_GAME_PLATFORM_CUT_BPS,
+  TXN_FEE_LAMPORTS,
 } from '../src/utils/constants';
 
 interface CreateCustomGameViewProps {
@@ -28,7 +39,8 @@ interface QuestionDraft {
   correctIndex: 0 | 1 | 2 | 3;
 }
 
-type Step = 'settings' | 'questions' | 'review';
+type Step = 'settings' | 'prize' | 'questions' | 'review';
+const ALL_STEPS: Step[] = ['settings', 'prize', 'questions', 'review'];
 
 const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass, onGameCreated, onBack }) => {
   const { publicKey, sendTransaction } = useWallet();
@@ -44,6 +56,14 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   const [roundCount, setRoundCount] = useState<number>(1);
   const [timeLimit, setTimeLimit] = useState<number>(15);
 
+  // Prize Pool
+  const [prizeModel, setPrizeModel] = useState<'free' | 'player_funded'>('free');
+  const [entryFeeLamports, setEntryFeeLamports] = useState<number>(CUSTOM_GAME_ENTRY_FEE_PRESETS[1]); // 0.1 SOL default
+  const [customEntryFee, setCustomEntryFee] = useState('');
+  const [maxPlayers, setMaxPlayers] = useState<number>(10);
+  const [gameDurationMinutes, setGameDurationMinutes] = useState<number>(1440); // 24h default
+  const [maxWinners, setMaxWinners] = useState<number>(3);
+
   // Questions
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
   const [currentQIdx, setCurrentQIdx] = useState(0);
@@ -57,6 +77,15 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   // Valid round counts for selected question count
   const validRounds = useMemo(() => VALID_ROUND_COUNTS[questionCount] || [1], [questionCount]);
 
+  // Prize calculations
+  const isPaid = prizeModel === 'player_funded';
+  const activeEntryFee = customEntryFee ? Math.round(parseFloat(customEntryFee) * 1_000_000_000) : entryFeeLamports;
+  const estimatedPot = isPaid ? activeEntryFee * maxPlayers : 0;
+  const platformCut = Math.floor(estimatedPot * CUSTOM_GAME_PLATFORM_CUT_BPS / 10000);
+  const prizePot = estimatedPot - platformCut;
+  const winnerSplitBps = CUSTOM_GAME_WINNER_SPLITS[maxWinners];
+  const winnerAmounts = winnerSplitBps.filter((b: number) => b > 0).map((b: number) => Math.floor(prizePot * b / 10000));
+
   // Reset round count if invalid for new question count
   const handleQuestionCountChange = (count: 5 | 10 | 15) => {
     setQuestionCount(count);
@@ -66,14 +95,24 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
     }
   };
 
-  // Fee
-  const totalFeeLamports = hasGamePass
+  // Fee (creation fee for the game itself — separate from entry fee)
+  const creationFeeLamports = hasGamePass
     ? CUSTOM_GAME_PLATFORM_FEE_LAMPORTS
     : CUSTOM_GAME_CREATION_FEE_LAMPORTS + CUSTOM_GAME_PLATFORM_FEE_LAMPORTS;
-  const totalFeeSol = totalFeeLamports / 1_000_000_000;
+  const creationFeeSol = creationFeeLamports / 1_000_000_000;
 
-  // Initialize questions when moving to question builder
-  const goToQuestions = () => {
+  // Custom entry fee validation
+  const handleCustomFeeChange = (val: string) => {
+    const cleaned = val.replace(/[^0-9.]/g, '');
+    setCustomEntryFee(cleaned);
+  };
+  const isCustomFeeValid = !customEntryFee || (
+    parseFloat(customEntryFee) >= CUSTOM_GAME_MIN_ENTRY_FEE / 1_000_000_000 &&
+    parseFloat(customEntryFee) <= CUSTOM_GAME_MAX_ENTRY_FEE / 1_000_000_000
+  );
+
+  // Navigate: settings → prize
+  const goToPrize = () => {
     if (!gameName.trim()) { setError('Game name is required'); return; }
     if (gameName.trim().length > CUSTOM_GAME_NAME_MAX) { setError(`Game name max ${CUSTOM_GAME_NAME_MAX} chars`); return; }
     if (customSlug && (customSlug.length < CUSTOM_GAME_SLUG_MIN || customSlug.length > CUSTOM_GAME_SLUG_MAX)) {
@@ -81,6 +120,17 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
     }
     if (customSlug && !/^[a-z0-9-]+$/.test(customSlug)) {
       setError('Slug can only contain lowercase letters, numbers, and hyphens'); return;
+    }
+    setError(null);
+    setStep('prize');
+  };
+
+  // Navigate: prize → questions
+  const goToQuestions = () => {
+    if (isPaid) {
+      if (!isCustomFeeValid) { setError('Entry fee must be between 0.01 and 10 SOL'); return; }
+      if (activeEntryFee < CUSTOM_GAME_MIN_ENTRY_FEE) { setError('Minimum entry fee is 0.01 SOL'); return; }
+      if (maxPlayers < CUSTOM_GAME_MIN_PLAYERS) { setError(`Minimum ${CUSTOM_GAME_MIN_PLAYERS} players`); return; }
     }
     setError(null);
 
@@ -143,7 +193,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(REVENUE_WALLET),
-          lamports: totalFeeLamports,
+          lamports: creationFeeLamports,
         }),
       ];
 
@@ -163,7 +213,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
       ]);
 
       // Call Edge Function
-      const result = await createCustomGame({
+      const params: any = {
         walletAddress: publicKey.toBase58(),
         txSignature: signature,
         name: gameName.trim(),
@@ -177,7 +227,19 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
           correctIndex: q.correctIndex,
         })),
         contentDisclaimerAccepted: true,
-      });
+      };
+
+      // Add prize pool fields for paid games
+      if (isPaid) {
+        params.prize_model = 'player_funded';
+        params.entry_fee_lamports = activeEntryFee;
+        params.max_players = maxPlayers;
+        params.game_duration_minutes = gameDurationMinutes;
+        params.max_winners = maxWinners;
+        params.prize_split_bps = CUSTOM_GAME_WINNER_SPLITS[maxWinners];
+      }
+
+      const result = await createCustomGame(params);
 
       setCreatedSlug(result.slug);
     } catch (err: any) {
@@ -194,8 +256,8 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
     return (
       <div className="min-h-full flex items-center justify-center p-6 bg-[#050505]">
         <div className="text-center max-w-md w-full">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-[#14F195]/10 border border-[#14F195]/20 flex items-center justify-center">
-            <svg className="w-10 h-10 text-[#14F195]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-[#38BDF8]/10 border border-[#38BDF8]/20 flex items-center justify-center">
+            <svg className="w-10 h-10 text-[#38BDF8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
@@ -203,7 +265,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
           <p className="text-zinc-400 text-sm mb-6">Share the link with your friends</p>
 
           <div className="bg-[#0A0A0A] border border-white/10 rounded-xl p-4 mb-6">
-            <p className="text-[#14F195] text-sm font-mono break-all">{shareUrl}</p>
+            <p className="text-[#38BDF8] text-sm font-mono break-all">{shareUrl}</p>
           </div>
 
           <div className="flex gap-3 mb-4">
@@ -217,8 +279,10 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
             </button>
             <button
               onClick={() => {
-                const text = `I just created a custom trivia game "${gameName}" on @SolTrivia! Think you can beat it?`;
-                window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`, '_blank');
+                const text = isPaid
+                  ? `just dropped a prize pool trivia game on @soltrivia_app\n\n"${gameName}" | entry: ${(activeEntryFee / 1_000_000_000).toFixed(2)} SOL\n\nthink you're smart enough to win? ape in\n\n${shareUrl}`
+                  : `just created "${gameName}" on @soltrivia_app\n\nfree trivia game, harder than it looks\n\nprove you're not ngmi\n\n${shareUrl}`;
+                window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
               }}
               className="flex-1 min-h-[44px] px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-zinc-400 font-black uppercase text-xs tracking-wider hover:bg-white/10 transition-all active:scale-[0.98]"
             >
@@ -228,7 +292,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
           <button
             onClick={() => onGameCreated(createdSlug)}
-            className="w-full min-h-[48px] px-6 py-3 bg-[#14F195] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#00FFA3] transition-all active:scale-[0.98]"
+            className="w-full min-h-[48px] px-6 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]"
           >
             Go to Game
           </button>
@@ -246,18 +310,22 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
       <div className="relative z-10 w-full max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <button onClick={step === 'settings' ? onBack : () => setStep(step === 'review' ? 'questions' : 'settings')} className="text-zinc-500 hover:text-zinc-300 font-black uppercase text-[10px] tracking-wider transition-colors flex items-center gap-2">
+          <button onClick={() => {
+            const idx = ALL_STEPS.indexOf(step);
+            if (idx <= 0) onBack();
+            else setStep(ALL_STEPS[idx - 1]);
+          }} className="text-zinc-500 hover:text-zinc-300 font-black uppercase text-[10px] tracking-wider transition-colors flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
             Back
           </button>
           <div className="flex gap-2">
-            {(['settings', 'questions', 'review'] as Step[]).map((s, i) => (
-              <div key={s} className={`w-8 h-1 rounded-full transition-all ${step === s ? 'bg-[#14F195]' : i < ['settings', 'questions', 'review'].indexOf(step) ? 'bg-[#14F195]/40' : 'bg-white/10'}`} />
+            {ALL_STEPS.map((s, i) => (
+              <div key={s} className={`w-8 h-1 rounded-full transition-all ${step === s ? 'bg-[#38BDF8]' : i < ALL_STEPS.indexOf(step) ? 'bg-[#38BDF8]/40' : 'bg-white/10'}`} />
             ))}
           </div>
         </div>
 
-        <p className="text-[#14F195] text-[9px] font-black uppercase tracking-[0.4em] mb-2">Create Custom Game</p>
+        <p className="text-[#38BDF8] text-[9px] font-black uppercase tracking-[0.4em] mb-2">Create Custom Game</p>
 
         {error && (
           <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-4">
@@ -278,7 +346,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 value={gameName}
                 onChange={(e) => setGameName(e.target.value.slice(0, CUSTOM_GAME_NAME_MAX))}
                 placeholder="My Trivia Night"
-                className="w-full min-h-[44px] px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none focus:border-[#14F195]/40 transition-colors"
+                className="w-full min-h-[44px] px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
               />
               <p className="text-zinc-700 text-[10px] mt-1">{gameName.length}/{CUSTOM_GAME_NAME_MAX}</p>
             </div>
@@ -293,7 +361,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   value={customSlug}
                   onChange={(e) => setCustomSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, CUSTOM_GAME_SLUG_MAX))}
                   placeholder="auto-generated"
-                  className="flex-1 min-h-[44px] px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-mono text-sm placeholder-zinc-600 focus:outline-none focus:border-[#14F195]/40 transition-colors"
+                  className="flex-1 min-h-[44px] px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-mono text-sm placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
                 />
               </div>
             </div>
@@ -306,7 +374,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   <button
                     key={count}
                     onClick={() => handleQuestionCountChange(count)}
-                    className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-lg transition-all active:scale-[0.98] ${questionCount === count ? 'bg-[#14F195] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-lg transition-all active:scale-[0.98] ${questionCount === count ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
                   >
                     {count}
                   </button>
@@ -322,7 +390,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   <button
                     key={count}
                     onClick={() => setRoundCount(count)}
-                    className={`min-w-[44px] min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-lg transition-all active:scale-[0.98] ${roundCount === count ? 'bg-[#14F195] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    className={`min-w-[44px] min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-lg transition-all active:scale-[0.98] ${roundCount === count ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
                   >
                     {count}
                   </button>
@@ -339,7 +407,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   <button
                     key={t}
                     onClick={() => setTimeLimit(t)}
-                    className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-lg transition-all active:scale-[0.98] ${timeLimit === t ? 'bg-[#14F195] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-lg transition-all active:scale-[0.98] ${timeLimit === t ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
                   >
                     {t}s
                   </button>
@@ -348,20 +416,180 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
             </div>
 
             <button
+              onClick={goToPrize}
+              className="w-full min-h-[48px] px-6 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]"
+            >
+              Next: Prize Pool
+            </button>
+          </div>
+        )}
+
+        {/* STEP 2: Prize Pool */}
+        {step === 'prize' && (
+          <div className="space-y-6">
+            <h2 className="text-2xl md:text-4xl font-[1000] italic text-white uppercase tracking-tighter">Prize Pool</h2>
+
+            {/* Free vs Paid Toggle */}
+            <div>
+              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Game Type</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPrizeModel('free')}
+                  className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!isPaid ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                >
+                  Free Game
+                </button>
+                <button
+                  onClick={() => setPrizeModel('player_funded')}
+                  className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${isPaid ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                >
+                  Prize Pool
+                </button>
+              </div>
+              <p className="text-zinc-600 text-[10px] mt-1">
+                {isPaid ? 'Players pay an entry fee. Winners split the prize pool.' : 'No entry fee. Players compete for XP and bragging rights.'}
+              </p>
+            </div>
+
+            {isPaid && (
+              <>
+                {/* Entry Fee */}
+                <div>
+                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Entry Fee (SOL)</label>
+                  <div className="flex gap-2 flex-wrap mb-2">
+                    {CUSTOM_GAME_ENTRY_FEE_PRESETS.map((fee, i) => (
+                      <button
+                        key={fee}
+                        onClick={() => { setEntryFeeLamports(fee); setCustomEntryFee(''); }}
+                        className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customEntryFee && entryFeeLamports === fee ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                      >
+                        {CUSTOM_GAME_ENTRY_FEE_LABELS[i]}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={customEntryFee}
+                    onChange={(e) => handleCustomFeeChange(e.target.value)}
+                    placeholder="Custom (0.01 - 10 SOL)"
+                    className={`w-full min-h-[44px] px-4 py-3 bg-white/5 border rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none transition-colors ${!isCustomFeeValid ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-[#38BDF8]/40'}`}
+                  />
+                  {!isCustomFeeValid && <p className="text-red-400 text-[10px] mt-1">Entry fee must be between 0.01 and 10 SOL</p>}
+                </div>
+
+                {/* Max Players */}
+                <div>
+                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Max Players</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {CUSTOM_GAME_MAX_PLAYER_PRESETS.map((count) => (
+                      <button
+                        key={count}
+                        onClick={() => setMaxPlayers(count)}
+                        className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${maxPlayers === count ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                      >
+                        {count}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Game Duration */}
+                <div>
+                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Game Duration</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {CUSTOM_GAME_DURATION_PRESETS.map((d) => (
+                      <button
+                        key={d.minutes}
+                        onClick={() => setGameDurationMinutes(d.minutes)}
+                        className={`min-h-[40px] px-3 py-2 rounded-xl font-black text-[11px] uppercase transition-all active:scale-[0.98] ${gameDurationMinutes === d.minutes ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-zinc-600 text-[10px] mt-1">Players can join and play during this window</p>
+                </div>
+
+                {/* Winners */}
+                <div>
+                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Winner Count</label>
+                  <div className="flex gap-2">
+                    {([1, 3, 5] as const).map((w) => (
+                      <button
+                        key={w}
+                        onClick={() => setMaxWinners(w)}
+                        className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl transition-all active:scale-[0.98] ${maxWinners === w ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                      >
+                        <span className="font-[1000] italic text-lg block">{w}</span>
+                        <span className="text-[8px] font-black uppercase tracking-wider opacity-70">
+                          {w === 1 ? 'Winner' : 'Winners'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex gap-2 flex-wrap">
+                    {CUSTOM_GAME_WINNER_SPLIT_LABELS[maxWinners].map((label, i) => (
+                      <span key={i} className="px-2 py-1 bg-[#38BDF8]/10 border border-[#38BDF8]/20 rounded text-[#38BDF8] text-[10px] font-black">
+                        {i + 1}{i === 0 ? 'st' : i === 1 ? 'nd' : i === 2 ? 'rd' : 'th'}: {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Prize Calculator */}
+                <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 space-y-2">
+                  <p className="text-zinc-400 text-[10px] font-black uppercase tracking-wider mb-3">Estimated Prize Breakdown</p>
+                  <div className="flex justify-between text-zinc-500 text-xs">
+                    <span>Entry fee</span>
+                    <span>{(activeEntryFee / 1_000_000_000).toFixed(2)} SOL x {maxPlayers} players</span>
+                  </div>
+                  <div className="flex justify-between text-zinc-400 text-xs font-bold">
+                    <span>Total pot</span>
+                    <span>{(estimatedPot / 1_000_000_000).toFixed(2)} SOL</span>
+                  </div>
+                  <div className="flex justify-between text-zinc-600 text-[10px]">
+                    <span>Platform cut (10%)</span>
+                    <span>-{(platformCut / 1_000_000_000).toFixed(4)} SOL</span>
+                  </div>
+                  <div className="flex justify-between text-zinc-600 text-[10px]">
+                    <span className="pl-4">5% to revenue, 5% to you (creator)</span>
+                    <span></span>
+                  </div>
+                  <div className="border-t border-white/5 pt-2 mt-2">
+                    <div className="flex justify-between text-[#38BDF8] text-sm font-[1000] italic">
+                      <span>Prize pool</span>
+                      <span>{(prizePot / 1_000_000_000).toFixed(2)} SOL</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1 mt-2">
+                    {winnerAmounts.map((amt, i) => (
+                      <div key={i} className="flex justify-between text-zinc-400 text-[11px]">
+                        <span>{i + 1}{i === 0 ? 'st' : i === 1 ? 'nd' : i === 2 ? 'rd' : 'th'} place ({CUSTOM_GAME_WINNER_SPLIT_LABELS[maxWinners][i]})</span>
+                        <span className="text-white font-bold">{(amt / 1_000_000_000).toFixed(4)} SOL</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-zinc-700 text-[9px] mt-2">+ {TXN_FEE_LAMPORTS / 1_000_000_000} SOL platform fee per entry</p>
+                </div>
+              </>
+            )}
+
+            <button
               onClick={goToQuestions}
-              className="w-full min-h-[48px] px-6 py-3 bg-[#14F195] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#00FFA3] transition-all active:scale-[0.98]"
+              className="w-full min-h-[48px] px-6 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]"
             >
               Next: Write Questions
             </button>
           </div>
         )}
 
-        {/* STEP 2: Question Builder */}
+        {/* STEP 3: Question Builder */}
         {step === 'questions' && questions.length > 0 && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-[1000] italic text-white uppercase tracking-tighter">Question {currentQIdx + 1}</h2>
-              <span className="text-[#14F195] text-sm font-[1000] italic">{currentQIdx + 1} / {questionCount}</span>
+              <span className="text-[#38BDF8] text-sm font-[1000] italic">{currentQIdx + 1} / {questionCount}</span>
             </div>
 
             {/* Progress dots */}
@@ -372,9 +600,9 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   onClick={() => setCurrentQIdx(i)}
                   className={`w-6 h-6 rounded-full text-[9px] font-black transition-all ${
                     i === currentQIdx
-                      ? 'bg-[#14F195] text-black'
+                      ? 'bg-[#38BDF8] text-black'
                       : isQuestionValid(q)
-                        ? 'bg-[#14F195]/20 text-[#14F195] border border-[#14F195]/30'
+                        ? 'bg-[#38BDF8]/20 text-[#38BDF8] border border-[#38BDF8]/30'
                         : 'bg-white/5 text-zinc-600 border border-white/10'
                   }`}
                 >
@@ -391,7 +619,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 onChange={(e) => updateQuestion('questionText', e.target.value.slice(0, CUSTOM_GAME_QUESTION_TEXT_MAX))}
                 placeholder="What is the capital of France?"
                 rows={3}
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none focus:border-[#14F195]/40 transition-colors resize-none"
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors resize-none"
               />
               <p className="text-zinc-700 text-[10px] mt-1">{questions[currentQIdx].questionText.length}/{CUSTOM_GAME_QUESTION_TEXT_MAX}</p>
             </div>
@@ -405,8 +633,8 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                     onClick={() => updateQuestion('correctIndex', idx as 0 | 1 | 2 | 3)}
                     className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center font-[1000] italic text-sm transition-all active:scale-[0.95] ${
                       questions[currentQIdx].correctIndex === idx
-                        ? 'bg-[#14F195] text-black'
-                        : 'bg-white/5 border border-white/10 text-zinc-500 hover:border-[#14F195]/30'
+                        ? 'bg-[#38BDF8] text-black'
+                        : 'bg-white/5 border border-white/10 text-zinc-500 hover:border-[#38BDF8]/30'
                     }`}
                   >
                     {label}
@@ -416,11 +644,11 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                     value={questions[currentQIdx].options[idx]}
                     onChange={(e) => updateQuestion(`option${idx}`, e.target.value.slice(0, CUSTOM_GAME_OPTION_TEXT_MAX))}
                     placeholder={`Option ${label}`}
-                    className="flex-1 min-h-[44px] px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none focus:border-[#14F195]/40 transition-colors"
+                    className="flex-1 min-h-[44px] px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
                   />
                 </div>
               ))}
-              <p className="text-zinc-600 text-[10px]">Tap the letter to mark the correct answer. Currently: <span className="text-[#14F195] font-black">{['A', 'B', 'C', 'D'][questions[currentQIdx].correctIndex]}</span></p>
+              <p className="text-zinc-600 text-[10px]">Tap the letter to mark the correct answer. Currently: <span className="text-[#38BDF8] font-black">{['A', 'B', 'C', 'D'][questions[currentQIdx].correctIndex]}</span></p>
             </div>
 
             {/* Nav */}
@@ -435,7 +663,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
               {currentQIdx < questionCount - 1 ? (
                 <button
                   onClick={() => setCurrentQIdx(currentQIdx + 1)}
-                  className="flex-1 min-h-[44px] px-4 py-3 bg-[#14F195] text-black font-[1000] italic uppercase text-sm tracking-tighter rounded-xl hover:bg-[#00FFA3] transition-all active:scale-[0.98]"
+                  className="flex-1 min-h-[44px] px-4 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-sm tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]"
                 >
                   Next
                 </button>
@@ -444,7 +672,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   onClick={goToReview}
                   disabled={!allQuestionsValid}
                   className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic uppercase text-sm tracking-tighter transition-all active:scale-[0.98] ${
-                    allQuestionsValid ? 'bg-[#14F195] text-black hover:bg-[#00FFA3]' : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
+                    allQuestionsValid ? 'bg-[#38BDF8] text-black hover:bg-[#7DD3FC]' : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
                   }`}
                 >
                   Review Game
@@ -481,18 +709,49 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
               )}
             </div>
 
+            {/* Prize Pool Summary (paid games) */}
+            {isPaid && (
+              <div className="bg-[#38BDF8]/5 border border-[#38BDF8]/20 rounded-2xl p-6">
+                <p className="text-[#38BDF8] text-[9px] font-black uppercase tracking-[0.3em] mb-3">Prize Pool Game</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-zinc-600 text-[8px] font-black uppercase block">Entry Fee</span>
+                    <span className="text-white font-[1000] italic">{(activeEntryFee / 1_000_000_000).toFixed(2)} SOL</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-600 text-[8px] font-black uppercase block">Max Players</span>
+                    <span className="text-white font-[1000] italic">{maxPlayers}</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-600 text-[8px] font-black uppercase block">Duration</span>
+                    <span className="text-white font-[1000] italic">{CUSTOM_GAME_DURATION_PRESETS.find(d => d.minutes === gameDurationMinutes)?.label || `${gameDurationMinutes}m`}</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-600 text-[8px] font-black uppercase block">Winners</span>
+                    <span className="text-white font-[1000] italic">{maxWinners} ({CUSTOM_GAME_WINNER_SPLIT_LABELS[maxWinners].join('/')})</span>
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-[#38BDF8]/10">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-zinc-400">Est. Prize Pool</span>
+                    <span className="text-[#38BDF8] font-[1000] italic">{(prizePot / 1_000_000_000).toFixed(2)} SOL</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Questions Preview */}
             <div className="space-y-2">
               <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block">Questions Preview</label>
               {questions.map((q, i) => (
                 <details key={i} className="bg-white/[0.02] border border-white/5 rounded-xl overflow-hidden">
                   <summary className="px-4 py-3 cursor-pointer flex items-center gap-3 hover:bg-white/[0.03] transition-colors">
-                    <span className={`w-6 h-6 rounded-full text-[9px] font-black flex items-center justify-center shrink-0 ${isQuestionValid(q) ? 'bg-[#14F195]/20 text-[#14F195]' : 'bg-red-500/20 text-red-400'}`}>{i + 1}</span>
+                    <span className={`w-6 h-6 rounded-full text-[9px] font-black flex items-center justify-center shrink-0 ${isQuestionValid(q) ? 'bg-[#38BDF8]/20 text-[#38BDF8]' : 'bg-red-500/20 text-red-400'}`}>{i + 1}</span>
                     <span className="text-white text-sm font-bold truncate flex-1">{q.questionText || '(empty)'}</span>
                   </summary>
                   <div className="px-4 pb-3 space-y-1">
                     {q.options.map((opt, j) => (
-                      <div key={j} className={`text-xs px-3 py-1.5 rounded ${j === q.correctIndex ? 'text-[#14F195] bg-[#14F195]/10' : 'text-zinc-500'}`}>
+                      <div key={j} className={`text-xs px-3 py-1.5 rounded ${j === q.correctIndex ? 'text-[#38BDF8] bg-[#38BDF8]/10' : 'text-zinc-500'}`}>
                         {['A', 'B', 'C', 'D'][j]}. {opt || '(empty)'}
                       </div>
                     ))}
@@ -505,7 +764,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
             <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4">
               <div className="flex justify-between items-center">
                 <span className="text-zinc-400 text-xs font-black uppercase">Total Fee</span>
-                <span className="text-[#14F195] text-lg font-[1000] italic">{totalFeeSol} SOL</span>
+                <span className="text-[#38BDF8] text-lg font-[1000] italic">{creationFeeSol} SOL</span>
               </div>
               <div className="mt-2 space-y-1">
                 {!hasGamePass && (
@@ -519,7 +778,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   <span>{CUSTOM_GAME_PLATFORM_FEE_LAMPORTS / 1_000_000_000} SOL</span>
                 </div>
                 {hasGamePass && (
-                  <p className="text-[#14F195] text-[10px] font-black mt-1">Game Pass: creation fee waived!</p>
+                  <p className="text-[#38BDF8] text-[10px] font-black mt-1">Game Pass: creation fee waived!</p>
                 )}
               </div>
             </div>
@@ -528,10 +787,10 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
               onClick={handleCreate}
               disabled={creating}
               className={`w-full min-h-[52px] px-6 py-4 rounded-xl font-[1000] italic uppercase text-xl tracking-tighter transition-all active:scale-[0.98] ${
-                creating ? 'bg-zinc-800 text-zinc-500 cursor-wait' : 'bg-[#14F195] text-black hover:bg-[#00FFA3] shadow-[0_10px_40px_-10px_rgba(20,241,149,0.3)]'
+                creating ? 'bg-zinc-800 text-zinc-500 cursor-wait' : 'bg-[#38BDF8] text-black hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)]'
               }`}
             >
-              {creating ? 'Creating...' : `Create Game (${totalFeeSol} SOL)`}
+              {creating ? 'Creating...' : `Create Game (${creationFeeSol} SOL)`}
             </button>
           </div>
         )}

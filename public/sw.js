@@ -88,3 +88,50 @@ self.addEventListener('fetch', (e) => {
       .catch(() => caches.match(request))
   );
 });
+
+// ===================== PUSH NOTIFICATIONS =====================
+
+// Receive push message from server and display as notification
+self.addEventListener('push', (e) => {
+  if (!e.data) return;
+
+  let data;
+  try {
+    data = e.data.json();
+  } catch {
+    data = { title: 'SolTrivia', body: e.data.text() };
+  }
+
+  const options = {
+    body: data.body || '',
+    icon: '/android-chrome-192x192.png',
+    badge: '/favicon.png',
+    tag: data.tag || 'soltrivia-default',
+    data: { url: data.url || '/' },
+    vibrate: [100, 50, 100],
+    renotify: true,
+  };
+
+  e.waitUntil(self.registration.showNotification(data.title || 'SolTrivia', options));
+});
+
+// Handle notification click — open the app to the relevant page
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const targetUrl = e.notification.data?.url || '/';
+
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      // If app is already open, focus it and navigate
+      for (const client of clients) {
+        if (new URL(client.url).origin === self.location.origin) {
+          client.focus();
+          client.navigate(targetUrl);
+          return;
+        }
+      }
+      // Otherwise open a new window
+      return self.clients.openWindow(targetUrl);
+    })
+  );
+});

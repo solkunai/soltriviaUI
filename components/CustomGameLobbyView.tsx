@@ -1,12 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getCustomGame, type CustomGameData } from '../src/utils/api';
-import { CUSTOM_GAME_MAX_ATTEMPTS } from '../src/utils/constants';
-import { DEFAULT_AVATAR } from '../src/utils/constants';
+import {
+  CUSTOM_GAME_MAX_ATTEMPTS,
+  CUSTOM_GAME_MIN_PLAYERS,
+  DEFAULT_AVATAR,
+} from '../src/utils/constants';
 
 interface CustomGameLobbyViewProps {
   slug: string;
   walletAddress: string | null;
   onStartGame: (gameData: CustomGameData) => void;
+  onJoinGame: (gameData: CustomGameData) => Promise<void>;
+  onStartTimer: (gameData: CustomGameData) => Promise<void>;
+  onClaimPrize: (onChainGameId: number) => Promise<void>;
   onBack: () => void;
   onConnectWallet: () => void;
 }
@@ -15,6 +21,9 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   slug,
   walletAddress,
   onStartGame,
+  onJoinGame,
+  onStartTimer,
+  onClaimPrize,
   onBack,
   onConnectWallet,
 }) => {
@@ -22,24 +31,72 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [startingTimer, setStartingTimer] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [countdown, setCountdown] = useState('');
 
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const shareUrl = `${window.location.origin}/game/${slug}`;
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await getCustomGame(slug, walletAddress || undefined);
-        setGameData(data);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load game');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+  const fetchGame = useCallback(async () => {
+    try {
+      const data = await getCustomGame(slug, walletAddress || undefined);
+      setGameData(data);
+      setError(null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load game');
+    }
   }, [slug, walletAddress]);
+
+  // Initial load
+  useEffect(() => {
+    setLoading(true);
+    fetchGame().finally(() => setLoading(false));
+  }, [fetchGame]);
+
+  // Polling for paid games in active/started/completed states
+  useEffect(() => {
+    if (!gameData || gameData.prize_model === 'free') return;
+    if (['finalized', 'expired', 'banned'].includes(gameData.status)) return;
+
+    const interval = gameData.status === 'completed' ? 5000 : 10000;
+    pollRef.current = setInterval(fetchGame, interval);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [gameData?.status, gameData?.prize_model, fetchGame]);
+
+  // Countdown timer for started games
+  useEffect(() => {
+    if (!gameData?.ends_at || gameData.status !== 'started') {
+      setCountdown('');
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      return;
+    }
+    const updateCountdown = () => {
+      const diff = Math.max(0, new Date(gameData.ends_at!).getTime() - Date.now());
+      if (diff <= 0) {
+        setCountdown('Ended');
+        fetchGame();
+        return;
+      }
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setCountdown(h > 0 ? `${h}h ${m}m ${s}s` : m > 0 ? `${m}m ${s}s` : `${s}s`);
+    };
+    updateCountdown();
+    countdownRef.current = setInterval(updateCountdown, 1000);
+    return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
+  }, [gameData?.ends_at, gameData?.status]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
@@ -50,24 +107,66 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
 
   const handleShareX = () => {
     if (!gameData) return;
-    const text = `Join my custom trivia game "${gameData.name}" on @SolTrivia!`;
-    const url = `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
-    window.open(url, '_blank');
+    const isPaid = gameData.prize_model === 'player_funded';
+    const fee = gameData.entry_fee_lamports / 1e9;
+    const text = isPaid
+      ? `i just built a trivia game with real SOL on the line\n\n"${gameData.name}" on @soltrivia_app | entry: ${fee} SOL\n\nput your wallet where your brain is, anon\n\n${shareUrl}`
+      : `"${gameData.name}" on @soltrivia_app — free to play, harder than you think\n\nbet you can't beat my score. prove me wrong\n\n${shareUrl}`;
+    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  // Loading
+  const handleJoin = async () => {
+    if (!gameData) return;
+    setJoining(true);
+    try {
+      await onJoinGame(gameData);
+      await fetchGame();
+    } catch (err: any) {
+      if (!err.message?.includes('User rejected')) alert(err.message || 'Failed to join game');
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const handleStartTimerClick = async () => {
+    if (!gameData) return;
+    setStartingTimer(true);
+    try {
+      await onStartTimer(gameData);
+      await fetchGame();
+    } catch (err: any) {
+      alert(err.message || 'Failed to start game timer');
+    } finally {
+      setStartingTimer(false);
+    }
+  };
+
+  const handleClaim = async () => {
+    if (!gameData?.on_chain_game_id) return;
+    setClaiming(true);
+    try {
+      await onClaimPrize(gameData.on_chain_game_id);
+      await fetchGame();
+    } catch (err: any) {
+      if (!err.message?.includes('User rejected')) alert(err.message || 'Failed to claim prize');
+    } finally {
+      setClaiming(false);
+    }
+  };
+
+  // ── Loading ──
   if (loading) {
     return (
       <div className="min-h-full flex items-center justify-center bg-[#050505]">
         <div className="text-center">
           <p className="text-white text-xl font-black uppercase mb-4">Loading Game...</p>
-          <div className="w-16 h-16 border-4 border-[#14F195] border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <div className="w-16 h-16 border-4 border-[#38BDF8] border-t-transparent rounded-full animate-spin mx-auto"></div>
         </div>
       </div>
     );
   }
 
-  // Error
+  // ── Error ──
   if (error || !gameData) {
     return (
       <div className="min-h-full flex items-center justify-center bg-[#050505] p-6">
@@ -79,7 +178,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           </div>
           <h2 className="text-2xl font-[1000] italic text-white uppercase mb-2">Game Not Found</h2>
           <p className="text-zinc-400 text-sm mb-6">{error || 'This game does not exist or has been removed.'}</p>
-          <button onClick={onBack} className="min-h-[44px] px-8 py-3 bg-[#14F195] text-black font-[1000] italic uppercase rounded-xl hover:bg-[#00FFA3] transition-all active:scale-[0.98]">
+          <button onClick={onBack} className="min-h-[44px] px-8 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]">
             Back to Home
           </button>
         </div>
@@ -87,7 +186,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     );
   }
 
-  // Expired
+  // ── Expired ──
   if (gameData.is_expired || gameData.status === 'expired') {
     return (
       <div className="min-h-full flex items-center justify-center bg-[#050505] p-6">
@@ -98,9 +197,9 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             </svg>
           </div>
           <h2 className="text-2xl font-[1000] italic text-white uppercase mb-2">Game Expired</h2>
-          <p className="text-zinc-400 text-sm mb-2">"{gameData.name}" has expired after 7 days.</p>
+          <p className="text-zinc-400 text-sm mb-2">"{gameData.name}" has expired.</p>
           <p className="text-zinc-600 text-xs mb-6">Custom games are available for 7 days after creation.</p>
-          <button onClick={onBack} className="min-h-[44px] px-8 py-3 bg-[#14F195] text-black font-[1000] italic uppercase rounded-xl hover:bg-[#00FFA3] transition-all active:scale-[0.98]">
+          <button onClick={onBack} className="min-h-[44px] px-8 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]">
             Back to Home
           </button>
         </div>
@@ -108,14 +207,14 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     );
   }
 
-  // Banned
+  // ── Banned ──
   if (gameData.status === 'banned') {
     return (
       <div className="min-h-full flex items-center justify-center bg-[#050505] p-6">
         <div className="text-center max-w-md">
           <h2 className="text-2xl font-[1000] italic text-red-400 uppercase mb-2">Game Removed</h2>
           <p className="text-zinc-400 text-sm mb-6">This game has been removed for violating content guidelines.</p>
-          <button onClick={onBack} className="min-h-[44px] px-8 py-3 bg-[#14F195] text-black font-[1000] italic uppercase rounded-xl hover:bg-[#00FFA3] transition-all active:scale-[0.98]">
+          <button onClick={onBack} className="min-h-[44px] px-8 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]">
             Back to Home
           </button>
         </div>
@@ -123,21 +222,73 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     );
   }
 
+  // ── Main Lobby ──
+  const isPaid = gameData.prize_model === 'player_funded';
+  const isCreator = !!(walletAddress && gameData.creator_wallet === walletAddress);
+  const hasEntered = gameData.player_has_entered;
+  const attemptsUsed = gameData.player_attempts ?? 0;
+  const canPlay = attemptsUsed < CUSTOM_GAME_MAX_ATTEMPTS;
+  const entryFeeSOL = gameData.entry_fee_lamports / 1e9;
+  const prizePotSOL = gameData.prize_pot_lamports / 1e9;
+
+  // Check if current wallet is a winner
+  const winnerIndex = (isPaid && gameData.winner_wallets)
+    ? gameData.winner_wallets.indexOf(walletAddress ?? '')
+    : -1;
+  const isWinner = winnerIndex >= 0;
+  const winnerAmountSOL = isWinner ? (gameData.winner_amounts?.[winnerIndex] ?? 0) / 1e9 : 0;
+
+  // Prize breakdown
+  const prizeBreakdown: { rank: number; pct: string; sol: number }[] = [];
+  if (isPaid && gameData.prize_split_bps?.length) {
+    for (let i = 0; i < gameData.max_winners; i++) {
+      const bps = gameData.prize_split_bps[i] || 0;
+      if (bps > 0) {
+        prizeBreakdown.push({
+          rank: i + 1,
+          pct: `${bps / 100}%`,
+          sol: (prizePotSOL * bps) / 10000,
+        });
+      }
+    }
+  }
+
+  // Expiry display
   const expiresAt = new Date(gameData.expires_at);
   const now = new Date();
   const hoursLeft = Math.max(0, Math.round((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60)));
   const daysLeft = Math.floor(hoursLeft / 24);
   const expiryLabel = daysLeft > 0 ? `${daysLeft}d ${hoursLeft % 24}h left` : `${hoursLeft}h left`;
-
-  const attemptsUsed = gameData.player_attempts ?? 0;
-  const canPlay = attemptsUsed < CUSTOM_GAME_MAX_ATTEMPTS;
   const creatorShort = gameData.creator_username || `${gameData.creator_wallet.slice(0, 4)}...${gameData.creator_wallet.slice(-4)}`;
+
+  // Status display
+  const statusColors: Record<string, string> = {
+    active: 'text-[#38BDF8] bg-[#38BDF8]/10 border-[#38BDF8]/20',
+    started: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
+    completed: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
+    finalized: 'text-[#38BDF8] bg-[#38BDF8]/10 border-[#38BDF8]/20',
+  };
+  const statusLabels: Record<string, string> = {
+    active: 'Lobby Open',
+    started: 'In Progress',
+    completed: 'Completed',
+    finalized: 'Prizes Available',
+  };
+
+  // CTA logic
+  const canCreatorStart = isPaid && isCreator && gameData.status === 'active' && gameData.player_count >= CUSTOM_GAME_MIN_PLAYERS;
+  const showJoinButton = isPaid && !hasEntered && !isCreator && gameData.status === 'active';
+
+  // Duration label
+  const durationLabel = gameData.game_duration_minutes
+    ? (gameData.game_duration_minutes >= 60 ? `${gameData.game_duration_minutes / 60}h` : `${gameData.game_duration_minutes}m`)
+    : null;
 
   return (
     <div className="min-h-full flex flex-col bg-[#050505] p-4 sm:p-6 md:p-12 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none">
         <div className="scan-line opacity-10"></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[#14F195]/5 rounded-full blur-[120px]"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[#38BDF8]/5 rounded-full blur-[120px]"></div>
       </div>
 
       <div className="relative z-10 w-full max-w-2xl mx-auto">
@@ -149,7 +300,17 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
 
         {/* Game Info Card */}
         <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6 md:p-8 mb-6">
-          <p className="text-[#14F195] text-[9px] font-black uppercase tracking-[0.4em] mb-2">Custom Game</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[#38BDF8] text-[9px] font-black uppercase tracking-[0.4em]">
+              {isPaid ? 'Prize Game' : 'Custom Game'}
+            </p>
+            {isPaid && (
+              <span className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg border ${statusColors[gameData.status] || 'text-zinc-400 bg-white/5 border-white/10'}`}>
+                {statusLabels[gameData.status] || gameData.status}
+              </span>
+            )}
+          </div>
+
           <h1 className="text-3xl md:text-5xl font-[1000] italic text-white uppercase tracking-tighter mb-4 leading-tight">
             {gameData.name}
           </h1>
@@ -164,7 +325,64 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             <span className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-zinc-400 text-[10px] font-black uppercase tracking-wider">
               {gameData.time_limit_seconds}s per Q
             </span>
+            {isPaid && (
+              <span className="px-3 py-1.5 bg-[#38BDF8]/10 border border-[#38BDF8]/20 rounded-lg text-[#38BDF8] text-[10px] font-black uppercase tracking-wider">
+                {entryFeeSOL} SOL Entry
+              </span>
+            )}
           </div>
+
+          {/* Prize Pool Info (paid games only) */}
+          {isPaid && (
+            <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 mb-6">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                <div className="text-center">
+                  <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Entry Fee</span>
+                  <span className="text-white text-lg font-[1000] italic">{entryFeeSOL}</span>
+                  <span className="text-zinc-500 text-[9px] block">SOL</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Prize Pool</span>
+                  <span className="text-[#38BDF8] text-lg font-[1000] italic">{prizePotSOL.toFixed(2)}</span>
+                  <span className="text-zinc-500 text-[9px] block">SOL</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Players</span>
+                  <span className="text-white text-lg font-[1000] italic">
+                    {gameData.player_count}{gameData.max_players ? `/${gameData.max_players}` : ''}
+                  </span>
+                </div>
+                <div className="text-center">
+                  <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">
+                    {gameData.status === 'started' ? 'Time Left' : 'Duration'}
+                  </span>
+                  {gameData.status === 'started' && countdown ? (
+                    <span className="text-yellow-400 text-lg font-[1000] italic">{countdown}</span>
+                  ) : (
+                    <span className="text-white text-lg font-[1000] italic">{durationLabel || '\u2014'}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Prize breakdown */}
+              {prizeBreakdown.length > 0 && (
+                <div className="border-t border-white/5 pt-3">
+                  <p className="text-zinc-600 text-[8px] font-black uppercase tracking-widest mb-2">Prize Split (Top {gameData.max_winners})</p>
+                  <div className="flex gap-2">
+                    {prizeBreakdown.map((p) => (
+                      <div key={p.rank} className="flex-1 bg-white/[0.03] border border-white/5 rounded-lg p-2 text-center">
+                        <span className={`text-[10px] font-black block ${p.rank === 1 ? 'text-[#38BDF8]' : 'text-zinc-400'}`}>
+                          #{p.rank} ({p.pct})
+                        </span>
+                        <span className="text-white text-xs font-[1000] italic">{p.sol.toFixed(3)}</span>
+                        <span className="text-zinc-600 text-[8px] block">SOL</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-4 mb-6">
             <div className="text-center">
@@ -198,34 +416,152 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           </div>
         </div>
 
-        {/* Play Button */}
+        {/* Action Area */}
         <div className="mb-6">
           {!walletAddress ? (
             <button
               onClick={onConnectWallet}
-              className="w-full min-h-[56px] px-6 py-4 bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#14F195] text-white font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:shadow-[0_10px_40px_-10px_rgba(20,241,149,0.4)] transition-all active:scale-[0.98]"
+              className="w-full min-h-[56px] px-6 py-4 bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#38BDF8] text-white font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:shadow-[0_10px_40px_-10px_rgba(56,189,248,0.4)] transition-all active:scale-[0.98]"
             >
-              Connect Wallet to Play
+              Connect Wallet {isPaid ? 'to Join' : 'to Play'}
             </button>
-          ) : canPlay ? (
-            <button
-              onClick={() => onStartGame(gameData)}
-              className="w-full min-h-[56px] px-6 py-4 bg-[#14F195] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#00FFA3] shadow-[0_10px_40px_-10px_rgba(20,241,149,0.3)] transition-all active:scale-[0.98]"
-            >
-              Play Now
-            </button>
-          ) : (
-            <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
-              <span className="text-zinc-400 font-[1000] italic uppercase text-lg">Max Attempts Reached</span>
-              {gameData.player_best_score != null && (
-                <p className="text-zinc-500 text-xs font-black mt-1">Your best: {gameData.player_best_score} XP</p>
+          ) : isPaid ? (
+            /* ── Paid Game CTAs ── */
+            <>
+              {/* Finalized: claim or view results */}
+              {gameData.status === 'finalized' && (
+                isWinner ? (
+                  <button
+                    onClick={handleClaim}
+                    disabled={claiming}
+                    className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {claiming ? 'Claiming...' : `Claim Prize (${winnerAmountSOL.toFixed(3)} SOL)`}
+                  </button>
+                ) : (
+                  <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
+                    <span className="text-zinc-400 font-[1000] italic uppercase text-lg">Game Finalized</span>
+                    <p className="text-zinc-500 text-xs font-black mt-1">View the leaderboard below to see winners.</p>
+                  </div>
+                )
               )}
-            </div>
-          )}
-          {walletAddress && canPlay && (
-            <p className="text-zinc-600 text-[10px] font-black uppercase tracking-wider text-center mt-2">
-              Attempts: {attemptsUsed} / {CUSTOM_GAME_MAX_ATTEMPTS}
-            </p>
+
+              {/* Completed: awaiting finalization */}
+              {gameData.status === 'completed' && (
+                <div className="w-full min-h-[56px] px-6 py-4 bg-blue-500/10 border border-blue-500/20 rounded-xl text-center">
+                  <span className="text-blue-400 font-[1000] italic uppercase text-lg">Finalizing Results...</span>
+                  <p className="text-zinc-500 text-xs font-black mt-1">Winners will be announced shortly.</p>
+                </div>
+              )}
+
+              {/* Started: play or status */}
+              {gameData.status === 'started' && (
+                isCreator ? (
+                  <div className="w-full min-h-[56px] px-6 py-4 bg-yellow-400/10 border border-yellow-400/20 rounded-xl text-center">
+                    <span className="text-yellow-400 font-[1000] italic uppercase text-lg">Game In Progress</span>
+                    <p className="text-zinc-500 text-xs font-black mt-1">{countdown ? `${countdown} remaining` : 'Players are competing'}</p>
+                  </div>
+                ) : hasEntered && canPlay ? (
+                  <button
+                    onClick={() => onStartGame(gameData)}
+                    className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98]"
+                  >
+                    Play Now
+                  </button>
+                ) : hasEntered && !canPlay ? (
+                  <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
+                    <span className="text-zinc-400 font-[1000] italic uppercase text-lg">Max Attempts Reached</span>
+                    {gameData.player_best_score != null && (
+                      <p className="text-zinc-500 text-xs font-black mt-1">Your best: {gameData.player_best_score} XP</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
+                    <span className="text-zinc-400 font-[1000] italic uppercase text-lg">Entry Required</span>
+                    <p className="text-zinc-500 text-xs font-black mt-1">Game is in progress but you haven't joined.</p>
+                  </div>
+                )
+              )}
+
+              {/* Active: join / start timer / waiting */}
+              {gameData.status === 'active' && (
+                <>
+                  {showJoinButton && (
+                    <button
+                      onClick={handleJoin}
+                      disabled={joining}
+                      className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98] disabled:opacity-50"
+                    >
+                      {joining ? 'Joining...' : `Join Game (${entryFeeSOL} SOL)`}
+                    </button>
+                  )}
+
+                  {hasEntered && !isCreator && (
+                    <div className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8]/10 border border-[#38BDF8]/20 rounded-xl text-center">
+                      <span className="text-[#38BDF8] font-[1000] italic uppercase text-lg">You're In!</span>
+                      <p className="text-zinc-400 text-xs font-black mt-1">Waiting for the creator to start the game.</p>
+                    </div>
+                  )}
+
+                  {isCreator && (
+                    <div className="flex flex-col gap-3">
+                      {canCreatorStart ? (
+                        <button
+                          onClick={handleStartTimerClick}
+                          disabled={startingTimer}
+                          className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98] disabled:opacity-50"
+                        >
+                          {startingTimer ? 'Starting...' : 'Start Game Timer'}
+                        </button>
+                      ) : (
+                        <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
+                          <span className="text-zinc-400 font-[1000] italic uppercase text-sm">
+                            Need {CUSTOM_GAME_MIN_PLAYERS}+ players to start
+                          </span>
+                          <p className="text-zinc-500 text-xs font-black mt-1">
+                            {gameData.player_count} / {CUSTOM_GAME_MIN_PLAYERS} players joined
+                          </p>
+                        </div>
+                      )}
+                      <p className="text-zinc-600 text-[10px] font-black uppercase tracking-wider text-center">
+                        You are the creator — you cannot play your own game.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Attempt counter for entered players */}
+              {hasEntered && !isCreator && canPlay && ['active', 'started'].includes(gameData.status) && (
+                <p className="text-zinc-600 text-[10px] font-black uppercase tracking-wider text-center mt-2">
+                  Attempts: {attemptsUsed} / {CUSTOM_GAME_MAX_ATTEMPTS}
+                </p>
+              )}
+            </>
+          ) : (
+            /* ── Free Game CTAs ── */
+            <>
+              {canPlay ? (
+                <button
+                  onClick={() => onStartGame(gameData)}
+                  className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98]"
+                >
+                  Play Now
+                </button>
+              ) : (
+                <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
+                  <span className="text-zinc-400 font-[1000] italic uppercase text-lg">Max Attempts Reached</span>
+                  {gameData.player_best_score != null && (
+                    <p className="text-zinc-500 text-xs font-black mt-1">Your best: {gameData.player_best_score} XP</p>
+                  )}
+                </div>
+              )}
+              {canPlay && (
+                <p className="text-zinc-600 text-[10px] font-black uppercase tracking-wider text-center mt-2">
+                  Attempts: {attemptsUsed} / {CUSTOM_GAME_MAX_ATTEMPTS}
+                </p>
+              )}
+            </>
           )}
         </div>
 
@@ -236,12 +572,17 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             <div className="space-y-2">
               {gameData.leaderboard.map((entry, i) => {
                 const isYou = walletAddress && entry.wallet_address === walletAddress;
+                const entryWinnerIdx = (isPaid && gameData.winner_wallets)
+                  ? gameData.winner_wallets.indexOf(entry.wallet_address)
+                  : -1;
+                const prizeAmount = entryWinnerIdx >= 0 ? (gameData.winner_amounts?.[entryWinnerIdx] ?? 0) / 1e9 : 0;
+
                 return (
                   <div
                     key={entry.wallet_address}
-                    className={`flex items-center gap-3 p-3 rounded-xl transition-all ${isYou ? 'bg-[#14F195]/10 border border-[#14F195]/20' : 'bg-white/[0.02] border border-white/5'}`}
+                    className={`flex items-center gap-3 p-3 rounded-xl transition-all ${isYou ? 'bg-[#38BDF8]/10 border border-[#38BDF8]/20' : 'bg-white/[0.02] border border-white/5'}`}
                   >
-                    <span className={`w-8 text-center font-[1000] italic text-sm ${i < 3 ? 'text-[#14F195]' : 'text-zinc-500'}`}>
+                    <span className={`w-8 text-center font-[1000] italic text-sm ${i < 3 ? 'text-[#38BDF8]' : 'text-zinc-500'}`}>
                       #{entry.rank}
                     </span>
                     <img
@@ -251,15 +592,21 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                       onError={(e) => { e.currentTarget.src = DEFAULT_AVATAR; }}
                     />
                     <div className="flex-1 min-w-0">
-                      <span className={`font-black italic text-sm truncate block ${isYou ? 'text-[#14F195]' : 'text-white'}`}>
+                      <span className={`font-black italic text-sm truncate block ${isYou ? 'text-[#38BDF8]' : 'text-white'}`}>
                         {entry.username}
-                        {isYou && <span className="text-[#14F195] text-[9px] ml-1 uppercase">(You)</span>}
+                        {isYou && <span className="text-[#38BDF8] text-[9px] ml-1 uppercase">(You)</span>}
                       </span>
                     </div>
                     <div className="text-right">
-                      <span className="text-[#14F195] font-[1000] italic text-sm">{entry.score.toLocaleString()}</span>
+                      <span className="text-[#38BDF8] font-[1000] italic text-sm">{entry.score.toLocaleString()}</span>
                       <span className="text-zinc-600 text-[8px] font-black uppercase block">XP</span>
                     </div>
+                    {isPaid && prizeAmount > 0 && gameData.status === 'finalized' && (
+                      <div className="text-right ml-2">
+                        <span className="text-yellow-400 font-[1000] italic text-xs">{prizeAmount.toFixed(3)}</span>
+                        <span className="text-zinc-600 text-[8px] font-black uppercase block">SOL</span>
+                      </div>
+                    )}
                     {entry.is_seeker_verified && (
                       <span className="text-[8px] font-black text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded uppercase">SGT</span>
                     )}

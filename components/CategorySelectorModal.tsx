@@ -53,6 +53,8 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [selectedToken, setSelectedToken] = useState<PaymentToken>('SOL');
+  // Saved tx signature for retry after backend failure (payment was already sent)
+  const [failedTxSignature, setFailedTxSignature] = useState<string | null>(null);
   const [prices, setPrices] = useState<TokenPrices | null>(null);
 
   // USD-based pricing
@@ -89,64 +91,79 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
   const handlePurchasePass = async () => {
     if (!connected || !publicKey) return;
 
-    if (!prices || !tokenAmount) {
-      setPurchaseError('Prices not loaded yet. Please wait a moment.');
-      return;
-    }
-
     setPurchasing(true);
     setPurchaseError(null);
 
     try {
-      // Pre-check: verify the user has enough token balance
-      if (selectedToken !== 'SOL') {
-        const balance = await getSplTokenBalance(connection, publicKey, selectedToken);
-        if (balance < tokenAmount!) {
-          const needed = formatTokenAmount(tokenAmount!, selectedToken);
-          setPurchaseError(`Insufficient ${selectedToken} balance. You need at least ${needed} ${selectedToken}.`);
+      let signatureToVerify = failedTxSignature;
+
+      // If we have a saved signature from a previous failed attempt, skip payment and just retry verification
+      if (!signatureToVerify) {
+        if (!prices || !tokenAmount) {
+          setPurchaseError('Prices not loaded yet. Please wait a moment.');
           setPurchasing(false);
           return;
         }
+
+        // Pre-check: verify the user has enough token balance
+        if (selectedToken !== 'SOL') {
+          const balance = await getSplTokenBalance(connection, publicKey, selectedToken);
+          if (balance < tokenAmount!) {
+            const needed = formatTokenAmount(tokenAmount!, selectedToken);
+            setPurchaseError(`Insufficient ${selectedToken} balance. You need at least ${needed} ${selectedToken}.`);
+            setPurchasing(false);
+            return;
+          }
+        }
+
+        const { blockhash } = await connection.getLatestBlockhash();
+
+        let instructions;
+        if (selectedToken === 'SOL') {
+          instructions = [
+            SystemProgram.transfer({
+              fromPubkey: publicKey,
+              toPubkey: new PublicKey(REVENUE_WALLET),
+              lamports: Number(tokenAmount),
+            }),
+          ];
+        } else {
+          instructions = buildSplTransferInstructions(publicKey, selectedToken, tokenAmount);
+        }
+
+        const messageV0 = new TransactionMessage({
+          payerKey: publicKey,
+          recentBlockhash: blockhash,
+          instructions,
+        }).compileToV0Message();
+
+        const transaction = new VersionedTransaction(messageV0);
+        signatureToVerify = await sendTransaction(transaction, connection);
+
+        // Wait for confirmation
+        await Promise.race([
+          connection.confirmTransaction(signatureToVerify, 'confirmed'),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Confirmation timeout')), 30000)),
+        ]);
       }
 
-      const { blockhash } = await connection.getLatestBlockhash();
+      // Save signature before backend call — if backend fails, we can retry with it
+      setFailedTxSignature(signatureToVerify);
 
-      let instructions;
-      if (selectedToken === 'SOL') {
-        instructions = [
-          SystemProgram.transfer({
-            fromPubkey: publicKey,
-            toPubkey: new PublicKey(REVENUE_WALLET),
-            lamports: Number(tokenAmount),
-          }),
-        ];
-      } else {
-        instructions = buildSplTransferInstructions(publicKey, selectedToken, tokenAmount);
-      }
-
-      const messageV0 = new TransactionMessage({
-        payerKey: publicKey,
-        recentBlockhash: blockhash,
-        instructions,
-      }).compileToV0Message();
-
-      const transaction = new VersionedTransaction(messageV0);
-      const signature = await sendTransaction(transaction, connection);
-
-      // Wait for confirmation
-      await Promise.race([
-        connection.confirmTransaction(signature, 'confirmed'),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Confirmation timeout')), 30000)),
-      ]);
-
-      // Register with backend (pass token info)
-      await purchaseGamePass(publicKey.toBase58(), signature, selectedToken, usdPrice);
+      // Register with backend (pass token info) — works for both fresh and retry
+      await purchaseGamePass(publicKey.toBase58(), signatureToVerify, selectedToken, usdPrice);
+      setFailedTxSignature(null);
       onGamePassPurchased();
     } catch (err: any) {
       if (err.message?.includes('User rejected')) {
         // User cancelled — do nothing
+        setFailedTxSignature(null);
       } else if (err.message?.includes('insufficient funds') || err.message?.includes('Insufficient')) {
+        setFailedTxSignature(null);
         setPurchaseError(`Insufficient balance. You need enough ${selectedToken} plus SOL for transaction fees.`);
+      } else if (failedTxSignature) {
+        // Payment was already sent but backend failed — keep signature for retry
+        setPurchaseError('Payment sent but activation failed. Tap "Retry Activation" to try again — no extra payment needed.');
       } else {
         setPurchaseError(err.message || 'Purchase failed. Please try again.');
       }
@@ -241,7 +258,7 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
           {/* Game Pass Purchase Section */}
           {!hasGamePass && (
             <div className="mt-5 p-4 bg-gradient-to-br from-[#9945FF]/10 to-[#14F195]/10 border border-[#9945FF]/20 rounded-xl">
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-3">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#9945FF] to-[#14F195] flex items-center justify-center">
                   <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -249,12 +266,28 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
                 </div>
                 <div>
                   <h3 className="text-white font-[900] italic uppercase text-sm tracking-tight">Game Pass</h3>
-                  <p className="text-zinc-500 text-[10px] font-bold">Unlock all categories + unlimited practice</p>
+                  <p className="text-zinc-500 text-[10px] font-bold">One-time purchase, lifetime access</p>
                 </div>
               </div>
 
-              {/* Token Selector for Game Pass */}
-              <span className="text-zinc-400 text-[10px] font-black italic uppercase tracking-wider block mt-3 mb-2">Choose your payment method</span>
+              {/* Benefits List */}
+              <div className="space-y-1.5 mb-4 pl-1">
+                {[
+                  'Unlimited daily practice plays (vs 5/day)',
+                  'All 7 categories unlocked (sports, history, geography, entertainment, science)',
+                  'Create custom games for just 0.0025 SOL (vs 0.0225)',
+                ].map((benefit) => (
+                  <div key={benefit} className="flex items-start gap-2">
+                    <svg className="w-3.5 h-3.5 text-[#14F195] mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-zinc-300 text-[10px] font-bold leading-snug">{benefit}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Token Selector */}
+              <span className="text-zinc-400 text-[10px] font-black italic uppercase tracking-wider block mb-2">Pay with</span>
               <div className="flex gap-2 mb-3">
                 {TOKEN_OPTIONS.map((tok) => {
                   const isActive = selectedToken === tok.id;
@@ -276,7 +309,7 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
                 })}
               </div>
 
-              <div className="flex items-center justify-between mt-3">
+              <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-white font-[900] text-lg italic">{displayPrice()}</span>
@@ -284,23 +317,24 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
                   </div>
                   {isSeekerVerified && (
                     <span className="text-[9px] font-black uppercase tracking-wider text-[#14F195] bg-[#14F195]/10 px-2 py-0.5 rounded-full">
-                      Seeker Price
+                      50% Seeker Discount
                     </span>
                   )}
-                  <span className="block text-zinc-500 text-[10px] font-bold mt-1">One-time purchase</span>
                 </div>
 
                 {connected ? (
                   <button
                     onClick={handlePurchasePass}
-                    disabled={purchasing || !prices || !tokenAmount}
+                    disabled={purchasing || (!failedTxSignature && (!prices || !tokenAmount))}
                     className={`px-5 py-2.5 rounded-full font-[900] italic uppercase text-sm tracking-tight transition-all active:scale-[0.97] ${
                       purchasing
                         ? 'bg-zinc-700 text-zinc-400 cursor-wait'
-                        : 'bg-gradient-to-r from-[#9945FF] to-[#14F195] text-white hover:shadow-lg hover:shadow-[#9945FF]/30'
+                        : failedTxSignature
+                          ? 'bg-gradient-to-r from-[#FF8C00] to-[#FFD700] text-black hover:shadow-lg hover:shadow-[#FF8C00]/30'
+                          : 'bg-gradient-to-r from-[#9945FF] to-[#14F195] text-white hover:shadow-lg hover:shadow-[#9945FF]/30'
                     }`}
                   >
-                    {purchasing ? 'Processing...' : 'Buy Pass'}
+                    {purchasing ? 'Processing...' : failedTxSignature ? 'Retry Activation' : 'Get Pass'}
                   </button>
                 ) : (
                   <span className="text-zinc-500 text-xs font-bold italic">Connect wallet to buy</span>

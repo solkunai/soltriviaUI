@@ -26,7 +26,7 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
           Privacy Policy
         </h1>
         <p className="text-[#14F195] font-black uppercase tracking-widest text-[10px] italic mb-16 border-l-2 border-[#14F195] pl-4">
-          SOL Trivia Last Updated: February 17, 2026
+          SOL Trivia Last Updated: February 22, 2026
         </p>
 
         <div className="space-y-16">
@@ -89,6 +89,18 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
               </div>
 
               <div className="space-y-4">
+                <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">1v1 Duels Data</h3>
+                <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
+                  <li>Duel creation and join transaction signatures, verified on-chain before play begins.</li>
+                  <li>Duel session data: scores, correct answers, time taken per question, and completion timestamps for both players.</li>
+                  <li>Opponent wallet address, entry fee amount, and duel outcome (winner determination).</li>
+                  <li>Share codes and share links generated for private duel invitations.</li>
+                  <li>Real-time score updates broadcast via Supabase Realtime during active duels (visible to both participants).</li>
+                  <li>On-chain resolution transaction signatures when the smart contract pays out the winner.</li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
                 <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest border-b border-[#14F195]/20 pb-2">Seeker Verification Data</h3>
                 <ul className="list-disc list-inside text-white font-medium text-xs md:text-sm leading-relaxed opacity-80 space-y-2 marker:text-[#14F195]">
                   <li>Seeker Genesis Token verification status and verification date.</li>
@@ -145,6 +157,7 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
                 <li>Calculate scores, streaks, and track quest/achievement progress</li>
                 <li>Enforce entry limits (5 per round, 20 per 24 hours) to ensure fair play</li>
                 <li>Randomize questions and track previously seen questions to provide fresh content</li>
+                <li>Match players in 1v1 duels, broadcast live scores, and resolve outcomes on-chain</li>
                 <li>Detect and prevent cheating, fraud, and manipulation</li>
                 <li>Communicate important updates and generate aggregated analytics</li>
               </ul>
@@ -231,7 +244,7 @@ const PrivacyPolicyView: React.FC<PrivacyPolicyViewProps> = ({ onBack }) => {
             <div className="text-white font-medium text-sm md:text-base leading-relaxed opacity-90">
               If you have questions about this Privacy Policy, contact us at:<br /><br />
               <span className="text-[#14F195] font-black italic">Email: soltriviateam@gmail.com</span><br /><br />
-              Effective Date: February 17, 2026.
+              Effective Date: February 22, 2026.
             </div>
           </section>
         </div>

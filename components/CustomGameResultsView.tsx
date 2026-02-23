@@ -13,6 +13,8 @@ interface CustomGameResultsViewProps {
   };
   attemptsUsed: number;
   maxAttempts: number;
+  isPaidGame?: boolean;
+  prizePotSol?: number;
   onPlayAgain: () => void;
   onViewLeaderboard: () => void;
   onBackToHome: () => void;
@@ -22,6 +24,8 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
   results,
   attemptsUsed,
   maxAttempts,
+  isPaidGame,
+  prizePotSol,
   onPlayAgain,
   onViewLeaderboard,
   onBackToHome,
@@ -42,24 +46,38 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
   };
 
   const handleShareX = () => {
-    const text = `I scored ${results.correctCount}/${results.totalQuestions} (${results.totalPoints} XP) on "${results.gameName}" on @SolTrivia!\n\nThink you can beat me? Try it:`;
-    const url = `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
-    window.open(url, '_blank');
+    const text = isPaidGame
+      ? `${results.correctCount}/${results.totalQuestions} on "${results.gameName}" | ${results.totalPoints} XP | @soltrivia_app\n\nprize pool: ${prizePotSol?.toFixed(2) ?? '?'} SOL. real money. real trivia. real degens.\n\nthink you're built different? ape in\n\n${shareUrl}`
+      : `${results.correctCount}/${results.totalQuestions} on "${results.gameName}" | ${results.totalPoints} XP | @soltrivia_app\n\nthis game is lowkey harder than the trenches\n\n${shareUrl}`;
+    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   return (
     <div className="min-h-full flex flex-col items-center justify-center p-6 md:p-12 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none">
         <div className="scan-line opacity-10"></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#14F195]/5 rounded-full blur-[120px]"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#38BDF8]/5 rounded-full blur-[120px]"></div>
       </div>
 
       <div className="relative z-10 w-full max-w-md">
         {/* Game Name */}
-        <p className="text-[#14F195] text-[10px] font-black uppercase tracking-[0.4em] text-center mb-2">Custom Game</p>
-        <h2 className="text-2xl md:text-4xl font-[1000] italic text-white text-center uppercase tracking-tighter mb-8">
+        <p className="text-[#38BDF8] text-[10px] font-black uppercase tracking-[0.4em] text-center mb-2">
+          {isPaidGame ? 'Prize Game' : 'Custom Game'}
+        </p>
+        <h2 className="text-2xl md:text-4xl font-[1000] italic text-white text-center uppercase tracking-tighter mb-4">
           {results.gameName}
         </h2>
+
+        {/* Prize Pool Banner (paid games) */}
+        {isPaidGame && prizePotSol != null && (
+          <div className="bg-[#38BDF8]/10 border border-[#38BDF8]/20 rounded-xl p-4 mb-6 text-center">
+            <span className="text-zinc-400 text-[9px] font-black uppercase tracking-widest block mb-1">Prize Pool</span>
+            <span className="text-[#38BDF8] text-2xl font-[1000] italic">{prizePotSol.toFixed(2)} SOL</span>
+            <p className="text-zinc-400 text-[10px] font-black mt-2">
+              Visit the leaderboard after the game ends to claim your prize!
+            </p>
+          </div>
+        )}
 
         {/* Score Card */}
         <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6 md:p-8 mb-6">
@@ -67,7 +85,7 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
           {results.rank != null && (
             <div className="text-center mb-6">
               <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest block mb-1">Your Rank</span>
-              <span className="text-[#14F195] text-5xl font-[1000] italic">#{results.rank}</span>
+              <span className="text-[#38BDF8] text-5xl font-[1000] italic">#{results.rank}</span>
             </div>
           )}
 
@@ -82,7 +100,7 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
             </div>
             <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
               <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">XP Earned</span>
-              <span className="text-[#14F195] text-2xl font-[1000] italic">{results.totalPoints.toLocaleString()}</span>
+              <span className="text-[#38BDF8] text-2xl font-[1000] italic">{results.totalPoints.toLocaleString()}</span>
             </div>
             <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
               <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Time</span>
@@ -100,7 +118,7 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
           {canPlayAgain && (
             <button
               onClick={onPlayAgain}
-              className="w-full min-h-[48px] px-6 py-3 bg-[#14F195] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#00FFA3] transition-all active:scale-[0.98]"
+              className="w-full min-h-[48px] px-6 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]"
             >
               Play Again
             </button>
@@ -110,7 +128,7 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
             onClick={onViewLeaderboard}
             className="w-full min-h-[48px] px-6 py-3 bg-white/5 border border-white/10 text-white font-black uppercase text-xs tracking-wider rounded-xl hover:bg-white/10 transition-all active:scale-[0.98]"
           >
-            View Leaderboard
+            {isPaidGame ? 'View Leaderboard & Prizes' : 'View Leaderboard'}
           </button>
 
           <div className="grid grid-cols-2 gap-3">

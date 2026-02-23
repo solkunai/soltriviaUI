@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { DEFAULT_AVATAR } from '../src/utils/constants';
-import { getLeaderboard, LeaderboardEntry, fetchRoundsWithWinnersPaginated, getTotalSolWonByWallets, type RoundWithWinner } from '../src/utils/api';
+import { getLeaderboard, LeaderboardEntry, fetchRoundsWithWinnersPaginated, getTotalSolWonByWallets, fetchDuelWinsLeaderboard, fetchCustomGameLeaderboard, type RoundWithWinner, type DuelWinLeaderEntry, type CustomGameLeaderEntry } from '../src/utils/api';
 import { useWallet } from '../src/contexts/WalletContext';
 import Pagination from './Pagination';
 
 type RankPeriod = 'ALL_TIME' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
-type MainLeaderboardTab = 'LEADERBOARD' | 'ROUND_WINS';
+type MainLeaderboardTab = 'LEADERBOARD' | 'ROUND_WINS' | 'DUEL_WINS' | 'CUSTOM_GAMES';
 
 interface PlayerStats {
   rank: string;
@@ -62,6 +62,10 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
   const [roundsTotalCount, setRoundsTotalCount] = useState(0);
   const [roundsFilterDate, setRoundsFilterDate] = useState('');
   const [solWonByWallet, setSolWonByWallet] = useState<Record<string, number>>({});
+  const [duelWinsData, setDuelWinsData] = useState<DuelWinLeaderEntry[]>([]);
+  const [duelWinsLoading, setDuelWinsLoading] = useState(false);
+  const [customGameData, setCustomGameData] = useState<CustomGameLeaderEntry[]>([]);
+  const [customGameLoading, setCustomGameLoading] = useState(false);
   const { publicKey } = useWallet();
 
   // Fetch total SOL won per wallet (from round_payouts) when leaderboard data is available
@@ -151,6 +155,30 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
     return () => { mounted = false; };
   }, [mainTab, roundsPage, roundsFilterDate]);
 
+  // Fetch duel wins leaderboard
+  useEffect(() => {
+    if (mainTab !== 'DUEL_WINS') return;
+    let mounted = true;
+    setDuelWinsLoading(true);
+    fetchDuelWinsLeaderboard()
+      .then((data) => { if (mounted) setDuelWinsData(data); })
+      .catch(() => { if (mounted) setDuelWinsData([]); })
+      .finally(() => { if (mounted) setDuelWinsLoading(false); });
+    return () => { mounted = false; };
+  }, [mainTab]);
+
+  // Fetch custom game leaderboard
+  useEffect(() => {
+    if (mainTab !== 'CUSTOM_GAMES') return;
+    let mounted = true;
+    setCustomGameLoading(true);
+    fetchCustomGameLeaderboard()
+      .then((data) => { if (mounted) setCustomGameData(data); })
+      .catch(() => { if (mounted) setCustomGameData([]); })
+      .finally(() => { if (mounted) setCustomGameLoading(false); });
+    return () => { mounted = false; };
+  }, [mainTab]);
+
   // Transform API data to display format; winnings from round_payouts (total prize/paid per wallet)
   const allPlayers: PlayerStats[] = leaderboardData.map((entry) => {
     const lamports = solWonByWallet[entry.wallet_address] ?? 0;
@@ -162,7 +190,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
       avatar: entry.avatar || DEFAULT_AVATAR,
       score: Number(entry.score).toLocaleString(),
       time: `${Math.floor((entry.time_taken_ms ?? 0) / 1000)}s`,
-      gamesPlayed: '1',
+      gamesPlayed: String(entry.games_played ?? 1),
       wallet_address: entry.wallet_address,
       is_seeker_verified: entry.is_seeker_verified ?? false,
     };
@@ -188,30 +216,28 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
         </button>
       </div>
 
-      <div className="p-6 md:p-12 lg:p-20 max-w-[1400px] mx-auto w-full">
-        {/* Main tabs: Leaderboard | Round Wins */}
-        <div className="flex justify-center mb-8 px-4">
-          <div className="flex w-full max-w-sm items-center bg-black/40 p-1.5 rounded-full border border-white/10">
-            <button
-              onClick={() => setMainTab('LEADERBOARD')}
-              className={`flex-1 text-[11px] font-black uppercase tracking-[0.2em] py-3.5 rounded-full transition-all ${
-                mainTab === 'LEADERBOARD'
-                  ? 'bg-[#14F195] text-black active-tab-shadow shadow-xl shadow-[#14F195]/20'
-                  : 'text-zinc-500 hover:text-zinc-300'
-              }`}
-            >
-              LEADERBOARD
-            </button>
-            <button
-              onClick={() => setMainTab('ROUND_WINS')}
-              className={`flex-1 text-[11px] font-black uppercase tracking-[0.2em] py-3.5 rounded-full transition-all ${
-                mainTab === 'ROUND_WINS'
-                  ? 'bg-[#14F195] text-black active-tab-shadow shadow-xl shadow-[#14F195]/20'
-                  : 'text-zinc-500 hover:text-zinc-300'
-              }`}
-            >
-              ROUND WINS
-            </button>
+      <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto w-full">
+        {/* Main tabs */}
+        <div className="flex justify-center mb-6 px-2">
+          <div className="flex w-full max-w-lg items-center bg-black/40 p-1 rounded-full border border-white/10 overflow-x-auto no-scrollbar">
+            {([
+              { key: 'LEADERBOARD', label: 'XP' },
+              { key: 'ROUND_WINS', label: 'ROUNDS' },
+              { key: 'DUEL_WINS', label: 'DUELS' },
+              { key: 'CUSTOM_GAMES', label: 'CUSTOM' },
+            ] as { key: MainLeaderboardTab; label: string }[]).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setMainTab(tab.key)}
+                className={`flex-1 text-[10px] font-black uppercase tracking-[0.15em] py-3 rounded-full transition-all whitespace-nowrap px-2 ${
+                  mainTab === tab.key
+                    ? 'bg-[#14F195] text-black active-tab-shadow shadow-xl shadow-[#14F195]/20'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -352,27 +378,170 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
             )}
             <Pagination currentPage={roundsPage} totalCount={roundsTotalCount} pageSize={ROUNDS_PAGE_SIZE} onPageChange={setRoundsPage} className="pb-24" />
           </div>
+        ) : mainTab === 'DUEL_WINS' ? (
+          /* Duel Wins tab content */
+          <div className="max-w-[1000px] mx-auto">
+            <div className="mb-6">
+              <h1 className="text-3xl md:text-5xl font-[1000] italic uppercase tracking-tighter leading-[0.85]">
+                DUEL <span className="sol-gradient-text">CHAMPIONS</span>
+              </h1>
+              <div className="h-1 w-12 bg-[#14F195] mt-3 shadow-[0_0_15px_#14F195]" />
+              <p className="text-zinc-500 text-[10px] md:text-xs font-black uppercase tracking-widest italic mt-3 max-w-md">
+                Most 1v1 duel victories. Winner takes the pot.
+              </p>
+            </div>
+            {duelWinsLoading && (
+              <div className="text-center py-16">
+                <p className="text-zinc-500 font-black uppercase tracking-widest italic animate-pulse">Loading duel stats...</p>
+              </div>
+            )}
+            {!duelWinsLoading && duelWinsData.length === 0 && (
+              <div className="text-center py-16">
+                <p className="text-zinc-400 text-lg font-bold italic mb-2">No duels completed yet!</p>
+                <p className="text-zinc-600 text-sm">Challenge someone to a 1v1 duel to be the first on the board.</p>
+              </div>
+            )}
+            {!duelWinsLoading && duelWinsData.length > 0 && (
+              <div className="space-y-2 pb-24">
+                {/* Header */}
+                <div className="hidden md:flex items-center gap-3 px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest italic border-b border-white/5 pb-3">
+                  <span className="w-8 text-center">#</span>
+                  <span className="w-10">Avg</span>
+                  <span className="flex-1">Player</span>
+                  <span className="w-16 text-center">Wins</span>
+                  <span className="w-20 text-center">Win %</span>
+                  <span className="w-28 text-right">Earned</span>
+                </div>
+                {duelWinsData.map((entry, idx) => {
+                  const winPct = entry.total_duels > 0 ? Math.round((entry.win_count / entry.total_duels) * 100) : 0;
+                  const earnedSol = (entry.total_earned_lamports / 1_000_000_000).toFixed(3);
+                  const displayName = entry.username || `${entry.wallet_address.slice(0, 4)}...${entry.wallet_address.slice(-4)}`;
+                  const isTop3 = idx < 3;
+                  const rankColors = ['text-[#FFD700]', 'text-[#E2E2E2]', 'text-[#CD7F32]'];
+                  const rankColor = isTop3 ? rankColors[idx] : 'text-zinc-600';
+
+                  return (
+                    <div key={entry.wallet_address} className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/[0.04] transition-all">
+                      <span className={`w-8 text-center font-[1000] italic text-lg tabular-nums leading-none ${rankColor}`}>{idx + 1}</span>
+                      <div className="w-9 h-9 rounded-lg overflow-hidden border border-white/10 flex-shrink-0 bg-zinc-900">
+                        <img src={entry.avatar || DEFAULT_AVATAR} className="w-full h-full object-cover grayscale" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-[1000] italic text-sm uppercase text-white truncate tracking-tight flex items-center gap-1">
+                          {displayName}
+                          {entry.is_seeker_verified && <SeekerBadge className="ml-0.5" />}
+                        </p>
+                        <p className="text-zinc-500 text-[9px] font-mono">{entry.wallet_address.slice(0, 4)}...{entry.wallet_address.slice(-4)}</p>
+                      </div>
+                      <div className="w-16 text-center">
+                        <p className="text-[#14F195] font-[1000] italic text-lg leading-none">{entry.win_count}</p>
+                        <p className="text-zinc-600 text-[7px] font-black uppercase italic mt-0.5">WINS</p>
+                      </div>
+                      <div className="hidden md:block w-20 text-center">
+                        <p className="text-white font-black italic text-sm">{winPct}%</p>
+                        <p className="text-zinc-600 text-[7px] font-black uppercase italic mt-0.5">{entry.win_count}/{entry.total_duels}</p>
+                      </div>
+                      <div className="w-28 text-right">
+                        <p className="text-[#14F195] font-black italic text-sm">{earnedSol} SOL</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : mainTab === 'CUSTOM_GAMES' ? (
+          /* Custom Games tab content */
+          <div className="max-w-[1000px] mx-auto">
+            <div className="mb-6">
+              <h1 className="text-3xl md:text-5xl font-[1000] italic uppercase tracking-tighter leading-[0.85]">
+                CUSTOM <span className="sol-gradient-text">GAME KINGS</span>
+              </h1>
+              <div className="h-1 w-12 bg-[#14F195] mt-3 shadow-[0_0_15px_#14F195]" />
+              <p className="text-zinc-500 text-[10px] md:text-xs font-black uppercase tracking-widest italic mt-3 max-w-md">
+                Top performers in community-created custom trivia games.
+              </p>
+            </div>
+            {customGameLoading && (
+              <div className="text-center py-16">
+                <p className="text-zinc-500 font-black uppercase tracking-widest italic animate-pulse">Loading custom game stats...</p>
+              </div>
+            )}
+            {!customGameLoading && customGameData.length === 0 && (
+              <div className="text-center py-16">
+                <p className="text-zinc-400 text-lg font-bold italic mb-2">No custom games played yet!</p>
+                <p className="text-zinc-600 text-sm">Create or play a custom game to appear here.</p>
+              </div>
+            )}
+            {!customGameLoading && customGameData.length > 0 && (
+              <div className="space-y-2 pb-24">
+                {/* Header */}
+                <div className="hidden md:flex items-center gap-3 px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest italic border-b border-white/5 pb-3">
+                  <span className="w-8 text-center">#</span>
+                  <span className="w-10">Avg</span>
+                  <span className="flex-1">Player</span>
+                  <span className="w-20 text-center">Best</span>
+                  <span className="w-16 text-center">Games</span>
+                  <span className="w-24 text-right">Total XP</span>
+                </div>
+                {customGameData.map((entry, idx) => {
+                  const displayName = entry.username || `${entry.wallet_address.slice(0, 4)}...${entry.wallet_address.slice(-4)}`;
+                  const isTop3 = idx < 3;
+                  const rankColors = ['text-[#FFD700]', 'text-[#E2E2E2]', 'text-[#CD7F32]'];
+                  const rankColor = isTop3 ? rankColors[idx] : 'text-zinc-600';
+
+                  return (
+                    <div key={entry.wallet_address} className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/[0.04] transition-all">
+                      <span className={`w-8 text-center font-[1000] italic text-lg tabular-nums leading-none ${rankColor}`}>{idx + 1}</span>
+                      <div className="w-9 h-9 rounded-lg overflow-hidden border border-white/10 flex-shrink-0 bg-zinc-900">
+                        <img src={entry.avatar || DEFAULT_AVATAR} className="w-full h-full object-cover grayscale" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-[1000] italic text-sm uppercase text-white truncate tracking-tight flex items-center gap-1">
+                          {displayName}
+                          {entry.is_seeker_verified && <SeekerBadge className="ml-0.5" />}
+                        </p>
+                        <p className="text-zinc-500 text-[9px] font-mono">{entry.wallet_address.slice(0, 4)}...{entry.wallet_address.slice(-4)}</p>
+                      </div>
+                      <div className="w-20 text-center">
+                        <p className="text-[#14F195] font-[1000] italic text-lg leading-none">{entry.best_score.toLocaleString()}</p>
+                        <p className="text-zinc-600 text-[7px] font-black uppercase italic mt-0.5">BEST</p>
+                      </div>
+                      <div className="hidden md:block w-16 text-center">
+                        <p className="text-white font-black italic text-sm">{entry.games_played}</p>
+                        <p className="text-zinc-600 text-[7px] font-black uppercase italic mt-0.5">PLAYED</p>
+                      </div>
+                      <div className="w-24 text-right">
+                        <p className="text-white font-black italic text-sm">{entry.total_score.toLocaleString()}</p>
+                        <p className="text-zinc-600 text-[7px] font-black uppercase italic mt-0.5">TOTAL XP</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         ) : (
           <>
         {/* Title & Stats Section */}
-        <div className="flex justify-between items-start mb-16">
+        <div className="flex justify-between items-start mb-6">
           <div>
-            <h1 className="text-5xl md:text-[100px] font-[1000] italic uppercase tracking-tighter leading-[0.75] pr-6">
+            <h1 className="text-4xl md:text-6xl font-[1000] italic uppercase tracking-tighter leading-[0.85] pr-4">
               GLOBAL<br/>
               <span className="sol-gradient-text">LEGENDS</span>
             </h1>
-            <div className="w-16 h-1 bg-[#14F195] mt-4 shadow-[0_0_10px_#14F195]"></div>
+            <div className="w-12 h-1 bg-[#14F195] mt-3 shadow-[0_0_10px_#14F195]"></div>
           </div>
 
           <div className="text-right">
             <span className="text-zinc-500 text-[9px] md:text-[11px] font-black uppercase tracking-widest italic block mb-1">TOTAL PRIZE POOL</span>
             <div className="flex items-baseline justify-end gap-1">
-               <span className="text-[#14F195] text-3xl md:text-6xl font-[1000] italic tracking-tighter tabular-nums leading-none">
+               <span className="text-[#14F195] text-2xl md:text-4xl font-[1000] italic tracking-tighter tabular-nums leading-none">
                  {loading ? '...' : totalSolWon.toFixed(3)}
                </span>
-               <span className="text-[#14F195] text-sm md:text-xl font-black italic">SOL</span>
+               <span className="text-[#14F195] text-xs md:text-base font-black italic">SOL</span>
             </div>
-            <div className="mt-2 text-right">
+            <div className="mt-1 text-right">
               <span className="text-zinc-600 text-[8px] md:text-[10px] font-black uppercase tracking-widest italic">
                 {playerCount} {playerCount === 1 ? 'PLAYER' : 'PLAYERS'}
               </span>
@@ -381,7 +550,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
         </div>
 
         {/* Period Tabs — ALL_TIME = highest score across all rounds; DAILY = current 6h round */}
-        <div className="flex flex-col items-center gap-2 mb-10 px-4">
+        <div className="flex flex-col items-center gap-2 mb-6 px-4">
           {period === 'ALL_TIME' && (
             <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">Highest score ever · updates as rounds complete</p>
           )}
@@ -407,13 +576,13 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
 
         {/* Your Rank Section */}
         {publicKey && userRank && (
-          <div className="mb-16 px-4">
-            <div className="max-w-2xl mx-auto bg-gradient-to-r from-[#14F195]/10 via-[#14F195]/5 to-transparent border border-[#14F195]/20 rounded-2xl p-6 backdrop-blur-md">
+          <div className="mb-6 px-4">
+            <div className="max-w-2xl mx-auto bg-gradient-to-r from-[#14F195]/10 via-[#14F195]/5 to-transparent border border-[#14F195]/20 rounded-xl p-4 backdrop-blur-md">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-zinc-400 text-[10px] font-black uppercase tracking-widest block mb-2">YOUR RANK</span>
-                  <div className="flex items-baseline gap-3">
-                    <span className="text-[#14F195] text-5xl font-[1000] italic leading-none">#{userRank.rank}</span>
+                  <span className="text-zinc-400 text-[10px] font-black uppercase tracking-widest block mb-1">YOUR RANK</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[#14F195] text-3xl font-[1000] italic leading-none">#{userRank.rank}</span>
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
                         <span className="text-zinc-500 text-[8px] font-black uppercase">XP:</span>
@@ -422,7 +591,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                     </div>
                   </div>
                 </div>
-                <div className="w-16 h-16 rounded-full border-4 border-[#14F195] overflow-hidden bg-zinc-900">
+                <div className="w-12 h-12 rounded-full border-3 border-[#14F195] overflow-hidden bg-zinc-900">
                   <img src={avatarFor(userRank.wallet_address, userRank.avatar || DEFAULT_AVATAR)} className="w-full h-full object-cover" alt="Your avatar" />
                 </div>
               </div>
@@ -432,8 +601,8 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
 
         {/* No Rank Message for Non-Players */}
         {publicKey && !userRank && !loading && (
-          <div className="mb-16 px-4">
-            <div className="max-w-2xl mx-auto bg-zinc-900/50 border border-white/5 rounded-2xl p-6 text-center">
+          <div className="mb-6 px-4">
+            <div className="max-w-2xl mx-auto bg-zinc-900/50 border border-white/5 rounded-xl p-4 text-center">
               <p className="text-zinc-400 text-sm font-bold italic">Play a game to get your rank!</p>
             </div>
           </div>
@@ -457,7 +626,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
 
           {/* Mobile Podium (Top 3) */}
           {allPlayers.length >= 3 && (
-            <div className="md:hidden flex items-end justify-center gap-2 mb-24 px-2">
+            <div className="md:hidden flex items-end justify-center gap-2 mb-10 px-2">
               {[allPlayers[1], allPlayers[0], allPlayers[2]].filter(Boolean).map((player, idx) => {
               const isFirst = player.rank === '1';
               const rankColor = isFirst ? 'border-[#FFD700]' : player.rank === '2' ? 'border-zinc-500' : 'border-[#D97706]';
@@ -497,14 +666,14 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
 
           {/* Desktop Podium (Top 5) */}
           {allPlayers.length >= 5 && (
-            <div className="hidden md:flex items-end justify-center gap-10 lg:gap-14 mb-32">
+            <div className="hidden md:flex items-end justify-center gap-6 lg:gap-8 mb-16">
               {[allPlayers[4], allPlayers[2], allPlayers[0], allPlayers[1], allPlayers[3]].filter(Boolean).map((player, idx) => {
               const rankInt = parseInt(player.rank);
               const isCenter = rankInt === 1;
               const isInner = rankInt === 2 || rankInt === 3;
               
-              const size = isCenter ? 'w-56 h-56' : isInner ? 'w-44 h-44' : 'w-36 h-36';
-              const containerY = isCenter ? '-translate-y-14' : isInner ? '-translate-y-6' : '';
+              const size = isCenter ? 'w-40 h-40' : isInner ? 'w-32 h-32' : 'w-24 h-24';
+              const containerY = isCenter ? '-translate-y-10' : isInner ? '-translate-y-4' : '';
               
               let rankColor = 'border-white/10';
               let badgeColor = 'bg-white/10 text-white';
@@ -538,14 +707,14 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                       <div className={`${size} rounded-full border-[6px] ${rankColor} ${glowColor} overflow-hidden bg-zinc-900`}>
                         <img src={avatarFor(player.wallet_address, player.avatar)} className="w-full h-full object-cover grayscale" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                       </div>
-                      <div className={`absolute -top-4 left-1/2 -translate-x-1/2 w-10 h-10 lg:w-16 lg:h-16 rounded-full ${badgeColor} border-[4px] border-[#050505] flex items-center justify-center shadow-xl`}>
-                        <span className="font-[1000] italic text-base lg:text-3xl leading-none">{player.rank}</span>
+                      <div className={`absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-8 lg:w-10 lg:h-10 rounded-full ${badgeColor} border-[3px] border-[#050505] flex items-center justify-center shadow-xl`}>
+                        <span className="font-[1000] italic text-sm lg:text-lg leading-none">{player.rank}</span>
                       </div>
                    </div>
                    <div className="text-center">
-                     <p className="font-[1000] italic uppercase text-white text-base lg:text-2xl mb-1 tracking-tight flex items-center gap-1.5">{player.username}{player.is_seeker_verified && <SeekerBadge className="ml-0.5" />}</p>
-                     <p className="text-[#14F195] font-[1000] text-2xl lg:text-5xl italic leading-none">{player.score} <span className="text-xs text-[#14F195]/60">XP</span></p>
-                     <div className="flex items-center justify-center gap-3 mt-3">
+                     <p className="font-[1000] italic uppercase text-white text-sm lg:text-lg mb-1 tracking-tight flex items-center gap-1.5">{player.username}{player.is_seeker_verified && <SeekerBadge className="ml-0.5" />}</p>
+                     <p className="text-[#14F195] font-[1000] text-xl lg:text-3xl italic leading-none">{player.score} <span className="text-[10px] text-[#14F195]/60">XP</span></p>
+                     <div className="flex items-center justify-center gap-2 mt-2">
                         <span className="text-zinc-500 font-black italic text-[10px] uppercase">{player.winnings}</span>
                         <div className="w-1 h-1 bg-zinc-700 rounded-full"></div>
                         <span className="text-zinc-500 font-black italic text-[10px] uppercase">{player.time}</span>
@@ -560,30 +729,30 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
 
         {/* RANKINGS LIST SECTION */}
         {allPlayers.length > 0 && (
-        <div className="pb-48">
+        <div className="pb-24">
           {/* Desktop Version: Sleek Row-Based Layout */}
-          <div className="hidden md:block space-y-4">
-              <div className="flex items-center gap-4 px-10 text-xs font-black text-zinc-600 uppercase tracking-widest italic border-b border-white/5 pb-6">
-                <span className="w-12 text-center">Rank</span>
-                <span className="w-20">Avatar</span>
+          <div className="hidden md:block space-y-2">
+              <div className="flex items-center gap-3 px-6 text-[10px] font-black text-zinc-600 uppercase tracking-widest italic border-b border-white/5 pb-4">
+                <span className="w-10 text-center">Rank</span>
+                <span className="w-12">Avatar</span>
                 <span className="flex-1">Identity</span>
-                <span className="w-32 text-center">Time</span>
-                <span className="w-40 text-right">XP Earned</span>
+                <span className="w-24 text-center">Time</span>
+                <span className="w-32 text-right">XP Earned</span>
               </div>
               {allPlayers.slice(5).map((player, idx) => (
-                <div key={idx} className="flex items-center gap-8 p-6 bg-white/[0.02] border border-white/5 rounded-2xl group hover:bg-white/[0.04] transition-all duration-300">
-                    <span className="w-12 text-center font-[1000] italic text-zinc-600 group-hover:text-[#14F195] text-4xl tabular-nums transition-colors leading-none">{player.rank}</span>
-                    <div className="w-16 h-16 rounded-xl overflow-hidden border border-white/10 grayscale group-hover:grayscale-0 transition-all flex-shrink-0">
+                <div key={idx} className="flex items-center gap-4 p-3 bg-white/[0.02] border border-white/5 rounded-xl group hover:bg-white/[0.04] transition-all duration-300">
+                    <span className="w-10 text-center font-[1000] italic text-zinc-600 group-hover:text-[#14F195] text-2xl tabular-nums transition-colors leading-none">{player.rank}</span>
+                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/10 grayscale group-hover:grayscale-0 transition-all flex-shrink-0">
                         <img src={avatarFor(player.wallet_address, player.avatar)} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                     </div>
                     <div className="flex-1 truncate">
-                        <p className="font-[1000] italic text-2xl uppercase text-white truncate tracking-tight flex items-center gap-2">{player.username}{player.is_seeker_verified && <SeekerBadge />}</p>
-                        <p className="text-xs font-bold text-zinc-500 mt-1 uppercase">Sol Won: {player.winnings}</p>
+                        <p className="font-[1000] italic text-base uppercase text-white truncate tracking-tight flex items-center gap-1.5">{player.username}{player.is_seeker_verified && <SeekerBadge />}</p>
+                        <p className="text-[10px] font-bold text-zinc-500 mt-0.5 uppercase">Sol Won: {player.winnings}</p>
                     </div>
-                    <div className="w-32 text-center font-black italic text-xl text-[#14F195]">{player.time}</div>
-                    <div className="w-40 text-right">
-                        <p className="text-white font-[1000] italic text-4xl leading-none tabular-nums group-hover:text-[#14F195] transition-colors">{player.score}</p>
-                        <p className="text-zinc-600 text-[10px] font-black uppercase italic tracking-widest mt-1">XP</p>
+                    <div className="w-24 text-center font-black italic text-sm text-[#14F195]">{player.time}</div>
+                    <div className="w-32 text-right">
+                        <p className="text-white font-[1000] italic text-2xl leading-none tabular-nums group-hover:text-[#14F195] transition-colors">{player.score}</p>
+                        <p className="text-zinc-600 text-[8px] font-black uppercase italic tracking-widest mt-0.5">XP</p>
                     </div>
                 </div>
               ))}

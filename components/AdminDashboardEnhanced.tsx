@@ -1,10 +1,13 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../src/utils/supabase';
-import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import { PRIZE_POOL_WALLET, REVENUE_WALLET, SUPABASE_FUNCTIONS_URL } from '../src/utils/constants';
-import { getAuthHeaders, fetchRoundPayouts, markPayoutPaid, postWinnersOnChain, type RoundPayout } from '../src/utils/api';
-import { getSolanaRpcEndpoint } from '../src/utils/rpc';
+import { Connection, PublicKey, LAMPORTS_PER_SOL, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
+import { PRIZE_POOL_WALLET, REVENUE_WALLET, SUPABASE_FUNCTIONS_URL, OPERATOR_WALLET } from '../src/utils/constants';
+import { getAuthHeaders, getAdminHeaders, fetchRoundPayouts, markPayoutPaid, postWinnersOnChain, finalizeCustomGame, type RoundPayout } from '../src/utils/api';
+import { getSolanaRpcEndpoint, getRecentBlockhashWithRetry } from '../src/utils/rpc';
+import { useWallet } from '../src/contexts/WalletContext';
+import { WalletMultiButton } from '../src/contexts/WalletContext';
+import { buildInitializeIx, fetchGameConfig, SOLTRIVIA_PROGRAM_ID } from '../src/utils/soltriviaContract';
 import Pagination from './Pagination';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
@@ -21,7 +24,7 @@ function getAdminCreds(): { u: string; p: string } {
   };
 }
 
-type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'referrals' | 'answer_debug' | 'game_passes';
+type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'referrals' | 'answer_debug' | 'game_passes' | 'custom_games' | 'duels';
 
 interface Question {
   id?: string;
@@ -63,6 +66,14 @@ const AdminDashboardEnhanced: React.FC = () => {
     totalRevenueSol: 0,
     revenueWalletBalance: 0,
     prizePoolWalletBalance: 0,
+    totalGamePasses: 0,
+    totalCustomGames: 0,
+    totalCustomGamePlays: 0,
+    totalReferrals: 0,
+    totalQuestsCompleted: 0,
+    totalRoundsCompleted: 0,
+    totalPaidOutSol: 0,
+    uniqueWalletsWeek: 0,
   });
 
   useEffect(() => {
@@ -120,6 +131,20 @@ const AdminDashboardEnhanced: React.FC = () => {
         console.error('Error fetching wallet balances:', balanceError);
       }
 
+      // Fetch additional stats in parallel
+      const [gamePassesRes, customGamesRes, customGamePlaysRes, referralsRes, questsRes, roundsRes, payoutsRes, weeklyWalletsRes] = await Promise.all([
+        supabase.from('game_passes').select('*', { count: 'exact', head: true }),
+        supabase.from('custom_games').select('*', { count: 'exact', head: true }),
+        supabase.from('custom_game_sessions').select('*', { count: 'exact', head: true }),
+        supabase.from('player_profiles').select('referred_by', { count: 'exact', head: true }).not('referred_by', 'is', null),
+        supabase.from('quest_completions').select('*', { count: 'exact', head: true }),
+        supabase.from('daily_rounds').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
+        supabase.from('round_payouts').select('paid_lamports').not('paid_at', 'is', null),
+        supabase.from('daily_activity').select('wallet_address', { count: 'exact', head: true }).gte('activity_date', new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]),
+      ]);
+
+      const totalPaidOut = payoutsRes.data?.reduce((sum: number, p: { paid_lamports: number | null }) => sum + (p.paid_lamports ?? 0), 0) || 0;
+
       setStats({
         totalQuestions: questionsCount || 0,
         totalPlayers: playersCount || 0,
@@ -129,6 +154,14 @@ const AdminDashboardEnhanced: React.FC = () => {
         totalRevenueSol: totalRevenue / LAMPORTS_PER_SOL,
         revenueWalletBalance: revenueBalance,
         prizePoolWalletBalance: prizePoolBalance,
+        totalGamePasses: gamePassesRes.count || 0,
+        totalCustomGames: customGamesRes.count || 0,
+        totalCustomGamePlays: customGamePlaysRes.count || 0,
+        totalReferrals: referralsRes.count || 0,
+        totalQuestsCompleted: questsRes.count || 0,
+        totalRoundsCompleted: roundsRes.count || 0,
+        totalPaidOutSol: totalPaidOut / LAMPORTS_PER_SOL,
+        uniqueWalletsWeek: weeklyWalletsRes.count || 0,
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -157,6 +190,8 @@ const AdminDashboardEnhanced: React.FC = () => {
           { id: 'rounds', label: '🎮 Rounds', icon: '🎮' },
           { id: 'lives', label: '❤️ Lives', icon: '❤️' },
           { id: 'game_passes', label: '🎫 Game Passes', icon: '🎫' },
+          { id: 'custom_games', label: '🎲 Custom Games', icon: '🎲' },
+          { id: 'duels', label: '⚔️ Duels', icon: '⚔️' },
           { id: 'referrals', label: '🔗 Referrals', icon: '🔗' },
           { id: 'answer_debug', label: '🔬 Answer debug', icon: '🔬' },
         ].map((tab) => (
@@ -185,6 +220,8 @@ const AdminDashboardEnhanced: React.FC = () => {
         {activeTab === 'rounds' && <RoundsView />}
         {activeTab === 'lives' && <LivesView />}
         {activeTab === 'game_passes' && <GamePassesView />}
+        {activeTab === 'custom_games' && <CustomGamesAdminView />}
+        {activeTab === 'duels' && <DuelsAdminView />}
         {activeTab === 'referrals' && <ReferralsView />}
         {activeTab === 'answer_debug' && <AnswerDebugView functionsUrl={SUPABASE_FUNCTIONS_URL} />}
       </div>
@@ -371,6 +408,7 @@ const RoundWinnersAdminView: React.FC = () => {
   const [postingRoundId, setPostingRoundId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [totalRoundsCount, setTotalRoundsCount] = useState(0);
+  const [claimFilter, setClaimFilter] = useState<'all' | 'unclaimed' | 'claimed'>('all');
 
   const creds = getAdminCreds();
 
@@ -447,10 +485,58 @@ const RoundWinnersAdminView: React.FC = () => {
     }
   };
 
+  // Claim tracking stats
+  const unclaimedPayouts = payouts.filter(p => !p.paid_at);
+  const claimedPayouts = payouts.filter(p => !!p.paid_at);
+  const unclaimedSol = unclaimedPayouts.reduce((sum, p) => sum + p.prize_lamports, 0) / 1_000_000_000;
+  const claimedSol = claimedPayouts.reduce((sum, p) => sum + (p.paid_lamports ?? p.prize_lamports), 0) / 1_000_000_000;
+
+  // Filter payouts by claim status
+  const filteredPayouts = claimFilter === 'all' ? payouts : claimFilter === 'unclaimed' ? unclaimedPayouts : claimedPayouts;
+
   return (
     <div className="py-6">
       <h2 className="text-xl font-black text-white mb-2">Round Winners (Top 5, 100% pot)</h2>
-      <p className="text-zinc-500 text-sm mb-6">Copy wallet, mark as paid, and set prize amount paid. 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.</p>
+      <p className="text-zinc-500 text-sm mb-4">Copy wallet, mark as paid, and set prize amount paid. 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.</p>
+
+      {/* Claim Status Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="p-4 bg-white/5 border border-white/10 rounded-xl">
+          <p className="text-zinc-500 text-[10px] font-black uppercase">Total Payouts</p>
+          <p className="text-2xl font-[1000] text-white">{payouts.length}</p>
+          <p className="text-zinc-500 text-xs">{(payouts.reduce((s, p) => s + p.prize_lamports, 0) / 1_000_000_000).toFixed(4)} SOL total</p>
+        </div>
+        <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
+          <p className="text-yellow-400 text-[10px] font-black uppercase">Unclaimed</p>
+          <p className="text-2xl font-[1000] text-yellow-400">{unclaimedPayouts.length}</p>
+          <p className="text-yellow-400/60 text-xs">{unclaimedSol.toFixed(4)} SOL pending</p>
+        </div>
+        <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
+          <p className="text-[#14F195] text-[10px] font-black uppercase">Claimed</p>
+          <p className="text-2xl font-[1000] text-[#14F195]">{claimedPayouts.length}</p>
+          <p className="text-[#14F195]/60 text-xs">{claimedSol.toFixed(4)} SOL paid out</p>
+        </div>
+      </div>
+
+      {/* Filter Buttons */}
+      <div className="flex gap-2 mb-4">
+        {(['all', 'unclaimed', 'claimed'] as const).map(f => (
+          <button
+            key={f}
+            onClick={() => setClaimFilter(f)}
+            className={`px-3 py-1.5 text-xs font-black uppercase rounded border ${
+              claimFilter === f
+                ? f === 'unclaimed' ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                  : f === 'claimed' ? 'bg-[#14F195]/20 border-[#14F195]/40 text-[#14F195]'
+                  : 'bg-white/10 border-white/20 text-white'
+                : 'bg-transparent border-white/10 text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {f} ({f === 'all' ? payouts.length : f === 'unclaimed' ? unclaimedPayouts.length : claimedPayouts.length})
+          </button>
+        ))}
+      </div>
+
       {roundsWithFivePayouts.length > 0 && (
         <div className="mb-6 p-4 bg-white/5 border border-white/10 rounded-xl">
           <p className="text-zinc-400 text-xs font-black uppercase tracking-wider mb-3">Finalize on-chain (so winners can claim from vault)</p>
@@ -478,13 +564,13 @@ const RoundWinnersAdminView: React.FC = () => {
               <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Wallet</th>
               <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Score</th>
               <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Prize (SOL)</th>
-              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Paid</th>
+              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Claim Status</th>
               <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Paid amount</th>
               <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {payouts.map((p) => {
+            {filteredPayouts.map((p) => {
               const round = rounds.find((r) => r.id === p.round_id);
               const roundLabel = round ? getRoundLabel(round.date, round.round_number) : p.round_id.slice(0, 8);
               const isMarking = marking === `${p.round_id}-${p.rank}`;
@@ -505,7 +591,18 @@ const RoundWinnersAdminView: React.FC = () => {
                   </td>
                   <td className="py-2 px-2 text-[#14F195] text-sm font-bold">{p.score.toLocaleString()}</td>
                   <td className="py-2 px-2 text-white text-sm">{(p.prize_lamports / 1_000_000_000).toFixed(4)}</td>
-                  <td className="py-2 px-2">{p.paid_at ? <span className="text-[#14F195] font-bold text-xs">Yes</span> : <span className="text-zinc-500 text-xs">No</span>}</td>
+                  <td className="py-2 px-2">
+                    {p.paid_at ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#14F195]/20 text-[#14F195] text-xs font-bold rounded-full">
+                        Claimed
+                        <span className="text-[#14F195]/60 text-[10px] ml-1">{new Date(p.paid_at).toLocaleDateString()}</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded-full">
+                        Unclaimed
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2 px-2">
                     {p.paid_lamports != null ? (p.paid_lamports / 1_000_000_000).toFixed(4) + ' SOL' : '—'}
                   </td>
@@ -549,8 +646,11 @@ const RoundWinnersAdminView: React.FC = () => {
           </tbody>
         </table>
       </div>
-      {rounds.length > 0 && payouts.length === 0 && (
-        <p className="text-zinc-500 text-sm mt-4">No payouts yet. Top 5 are populated when players complete games (calculate_rankings_and_winner).</p>
+      {rounds.length > 0 && filteredPayouts.length === 0 && (
+        <p className="text-zinc-500 text-sm mt-4">
+          {claimFilter === 'all' ? 'No payouts yet. Top 5 are populated when players complete games (calculate_rankings_and_winner).'
+            : claimFilter === 'unclaimed' ? 'All payouts have been claimed!' : 'No claimed payouts yet.'}
+        </p>
       )}
       <Pagination currentPage={page} totalCount={totalRoundsCount} pageSize={ROUND_WINNERS_PAGE_SIZE} onPageChange={setPage} />
     </div>
@@ -563,8 +663,12 @@ const GamePassesView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  const [giftWallet, setGiftWallet] = useState('');
+  const [gifting, setGifting] = useState(false);
+  const [giftMsg, setGiftMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [showGiftedOnly, setShowGiftedOnly] = useState(false);
 
-  useEffect(() => {
+  const fetchPasses = () => {
     setLoading(true);
     const from = page * GAME_PASSES_PAGE_SIZE;
     const to = from + GAME_PASSES_PAGE_SIZE - 1;
@@ -578,63 +682,216 @@ const GamePassesView: React.FC = () => {
         setTotalCount(count ?? 0);
         setLoading(false);
       });
-  }, [page]);
+  };
+
+  useEffect(() => { fetchPasses(); }, [page]);
+
+  const handleGiftPass = async () => {
+    const wallet = giftWallet.trim();
+    if (!wallet || wallet.length < 32 || wallet.length > 44) {
+      setGiftMsg({ ok: false, text: 'Invalid wallet address' });
+      return;
+    }
+    try { new PublicKey(wallet); } catch { setGiftMsg({ ok: false, text: 'Invalid Solana address' }); return; }
+    setGifting(true);
+    setGiftMsg(null);
+    try {
+      // Check if wallet already has an active pass
+      const { data: existing } = await supabase.from('game_passes').select('wallet_address, is_active').eq('wallet_address', wallet).maybeSingle();
+      if (existing?.is_active) {
+        setGiftMsg({ ok: false, text: `Wallet ${wallet.slice(0, 8)}...${wallet.slice(-4)} already has an active Game Pass` });
+        setGifting(false);
+        return;
+      }
+      // Upsert game pass
+      await supabase.from('game_passes').upsert({
+        wallet_address: wallet,
+        is_active: true,
+        tx_signature: `ADMIN_GIFT_${Date.now()}`,
+        purchased_at: new Date().toISOString(),
+        gifted_by: 'admin',
+        amount_usd: 0,
+      }, { onConflict: 'wallet_address' });
+      setGiftMsg({ ok: true, text: `Game Pass gifted to ${wallet.slice(0, 8)}...${wallet.slice(-4)}` });
+      setGiftWallet('');
+      fetchPasses();
+    } catch (err: any) {
+      setGiftMsg({ ok: false, text: err.message || 'Failed to gift game pass' });
+    }
+    setGifting(false);
+  };
 
   if (loading && passes.length === 0) return <div className="py-12 text-center text-zinc-400">Loading game passes...</div>;
 
+  const filteredPasses = showGiftedOnly ? passes.filter(p => p.tx_signature?.startsWith('ADMIN_GIFT')) : passes;
+
   return (
-    <div className="py-6">
-      <h2 className="text-xl font-black text-white mb-2">Game Passes</h2>
-      <p className="text-zinc-500 text-sm mb-4">{totalCount} total game pass purchases</p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-white/10">
-              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Wallet</th>
-              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Purchased</th>
-              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Token</th>
-              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">USD</th>
-              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Active</th>
-              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Tx</th>
-            </tr>
-          </thead>
-          <tbody>
-            {passes.map((p) => (
-              <tr key={p.wallet_address} className="border-b border-white/5">
-                <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 8)}...{p.wallet_address.slice(-4)}</td>
-                <td className="py-2 px-2 text-zinc-400 text-xs">{new Date(p.purchased_at).toLocaleString()}</td>
-                <td className="py-2 px-2 text-white text-sm font-bold">{p.payment_token || 'SOL'}</td>
-                <td className="py-2 px-2 text-[#14F195] font-bold">{p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : '—'}</td>
-                <td className="py-2 px-2">{p.is_active ? <span className="text-[#14F195] font-bold text-xs">Active</span> : <span className="text-red-400 font-bold text-xs">Inactive</span>}</td>
-                <td className="py-2 px-2"><a href={`https://solscan.io/tx/${p.tx_signature}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline">{p.tx_signature.slice(0, 8)}...</a></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="py-6 space-y-8">
+      {/* Gift Game Pass Section */}
+      <div className="p-4 bg-gradient-to-r from-purple-500/10 to-transparent border border-purple-500/20 rounded-xl">
+        <h3 className="text-white font-black text-sm uppercase mb-3">Gift Game Pass (Giveaway)</h3>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[200px]">
+            <label className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Wallet Address</label>
+            <input
+              type="text"
+              value={giftWallet}
+              onChange={(e) => setGiftWallet(e.target.value)}
+              placeholder="Enter Solana wallet address"
+              className="w-full px-3 py-2 bg-black border border-white/20 rounded text-white text-sm font-mono"
+            />
+          </div>
+          <button onClick={handleGiftPass} disabled={gifting} className="px-4 py-2 bg-[#9945FF] text-white text-xs font-black uppercase rounded hover:bg-[#9945FF]/80 disabled:opacity-50">
+            {gifting ? 'Gifting...' : 'Gift Game Pass'}
+          </button>
+        </div>
+        {giftMsg && <p className={`mt-2 text-sm ${giftMsg.ok ? 'text-[#14F195]' : 'text-red-400'}`}>{giftMsg.text}</p>}
       </div>
-      {passes.length === 0 && <p className="text-zinc-500 mt-4">No game passes purchased yet.</p>}
-      <Pagination currentPage={page} totalCount={totalCount} pageSize={GAME_PASSES_PAGE_SIZE} onPageChange={setPage} />
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h2 className="text-xl font-black text-white">Game Passes</h2>
+            <p className="text-zinc-500 text-sm">{totalCount} total game pass purchases</p>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={showGiftedOnly} onChange={(e) => setShowGiftedOnly(e.target.checked)} className="accent-[#9945FF]" />
+            <span className="text-zinc-400 text-xs font-bold uppercase">Show gifted only</span>
+          </label>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-white/10">
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Wallet</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Purchased</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Token</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">USD</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Active</th>
+                <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Tx</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPasses.map((p) => (
+                <tr key={p.wallet_address} className="border-b border-white/5">
+                  <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 8)}...{p.wallet_address.slice(-4)}</td>
+                  <td className="py-2 px-2 text-zinc-400 text-xs">{new Date(p.purchased_at).toLocaleString()}</td>
+                  <td className="py-2 px-2 text-white text-sm font-bold">{p.tx_signature?.startsWith('ADMIN_GIFT') ? <span className="text-yellow-400 font-bold">GIFT</span> : p.payment_token || 'SOL'}</td>
+                  <td className="py-2 px-2 text-[#14F195] font-bold">{p.tx_signature?.startsWith('ADMIN_GIFT') ? <span className="text-yellow-400 font-bold">GIFT</span> : p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : '—'}</td>
+                  <td className="py-2 px-2">{p.is_active ? <span className="text-[#14F195] font-bold text-xs">Active</span> : <span className="text-red-400 font-bold text-xs">Inactive</span>}</td>
+                  <td className="py-2 px-2">{p.tx_signature?.startsWith('ADMIN_GIFT') ? <span className="text-yellow-400 text-xs font-bold">Admin Gift</span> : <a href={`https://solscan.io/tx/${p.tx_signature}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline">{p.tx_signature.slice(0, 8)}...</a>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {filteredPasses.length === 0 && <p className="text-zinc-500 mt-4">{showGiftedOnly ? 'No gifted passes yet.' : 'No game passes purchased yet.'}</p>}
+        <Pagination currentPage={page} totalCount={totalCount} pageSize={GAME_PASSES_PAGE_SIZE} onPageChange={setPage} />
+      </div>
     </div>
   );
 };
 
 const LivesView: React.FC = () => {
   const [lives, setLives] = useState<Array<{ wallet_address: string; lives_count: number; total_purchased: number; total_used: number }>>([]);
-  const [purchases, setPurchases] = useState<Array<{ wallet_address: string; lives_purchased: number; amount_lamports: number; created_at?: string; payment_token?: string | null; amount_usd?: number | null }>>([]);
+  const [purchases, setPurchases] = useState<Array<{ wallet_address: string; lives_purchased: number; amount_lamports: number; created_at?: string; payment_token?: string | null; amount_usd?: number | null; tx_signature?: string }>>([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
+  const [giftWallet, setGiftWallet] = useState('');
+  const [giftCount, setGiftCount] = useState(3);
+  const [gifting, setGifting] = useState(false);
+  const [giftMsg, setGiftMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [showGiftedOnly, setShowGiftedOnly] = useState(false);
+
+  const fetchData = () => {
+    setLoading(true);
     Promise.all([
       supabase.from('player_lives').select('wallet_address, lives_count, total_purchased, total_used').order('total_purchased', { ascending: false }).limit(100),
-      supabase.from('lives_purchases').select('wallet_address, lives_purchased, amount_lamports, created_at, payment_token, amount_usd').order('created_at', { ascending: false }).limit(100),
+      supabase.from('lives_purchases').select('wallet_address, lives_purchased, amount_lamports, created_at, payment_token, amount_usd, tx_signature').order('created_at', { ascending: false }).limit(100),
     ]).then(([lRes, pRes]) => {
       setLives((lRes.data as typeof lives) || []);
       setPurchases((pRes.data as typeof purchases) || []);
       setLoading(false);
     });
-  }, []);
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const handleGiftLives = async () => {
+    const wallet = giftWallet.trim();
+    if (!wallet || wallet.length < 32 || wallet.length > 44) {
+      setGiftMsg({ ok: false, text: 'Invalid wallet address' });
+      return;
+    }
+    try { new PublicKey(wallet); } catch { setGiftMsg({ ok: false, text: 'Invalid Solana address' }); return; }
+    setGifting(true);
+    setGiftMsg(null);
+    try {
+      // Upsert player_lives: increment lives_count and total_purchased
+      const { data: existing } = await supabase.from('player_lives').select('lives_count, total_purchased').eq('wallet_address', wallet).maybeSingle();
+      if (existing) {
+        await supabase.from('player_lives').update({
+          lives_count: (existing.lives_count ?? 0) + giftCount,
+          total_purchased: (existing.total_purchased ?? 0) + giftCount,
+          updated_at: new Date().toISOString(),
+        }).eq('wallet_address', wallet);
+      } else {
+        await supabase.from('player_lives').insert({
+          wallet_address: wallet,
+          lives_count: giftCount,
+          total_purchased: giftCount,
+          total_used: 0,
+        });
+      }
+      // Insert purchase record for audit
+      await supabase.from('lives_purchases').insert({
+        wallet_address: wallet,
+        lives_purchased: giftCount,
+        amount_lamports: 0,
+        tx_signature: `ADMIN_GIFT_${Date.now()}`,
+        gifted_by: 'admin',
+      });
+      setGiftMsg({ ok: true, text: `Gifted ${giftCount} lives to ${wallet.slice(0, 8)}...${wallet.slice(-4)}` });
+      setGiftWallet('');
+      fetchData();
+    } catch (err: any) {
+      setGiftMsg({ ok: false, text: err.message || 'Failed to gift lives' });
+    }
+    setGifting(false);
+  };
+
   if (loading) return <div className="py-12 text-center text-zinc-400">Loading lives...</div>;
+
+  const filteredPurchases = showGiftedOnly ? purchases.filter(p => p.tx_signature?.startsWith('ADMIN_GIFT')) : purchases;
+
   return (
     <div className="py-6 space-y-8">
+      {/* Gift Lives Section */}
+      <div className="p-4 bg-gradient-to-r from-red-500/10 to-transparent border border-red-500/20 rounded-xl">
+        <h3 className="text-white font-black text-sm uppercase mb-3">Gift Lives (Giveaway)</h3>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[200px]">
+            <label className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Wallet Address</label>
+            <input
+              type="text"
+              value={giftWallet}
+              onChange={(e) => setGiftWallet(e.target.value)}
+              placeholder="Enter Solana wallet address"
+              className="w-full px-3 py-2 bg-black border border-white/20 rounded text-white text-sm font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Lives</label>
+            <select value={giftCount} onChange={(e) => setGiftCount(Number(e.target.value))} className="px-3 py-2 bg-black border border-white/20 rounded text-white text-sm">
+              {[1, 3, 5, 10, 15, 35].map(n => <option key={n} value={n}>{n} lives</option>)}
+            </select>
+          </div>
+          <button onClick={handleGiftLives} disabled={gifting} className="px-4 py-2 bg-[#14F195] text-black text-xs font-black uppercase rounded hover:bg-[#14F195]/80 disabled:opacity-50">
+            {gifting ? 'Gifting...' : 'Gift Lives'}
+          </button>
+        </div>
+        {giftMsg && <p className={`mt-2 text-sm ${giftMsg.ok ? 'text-[#14F195]' : 'text-red-400'}`}>{giftMsg.text}</p>}
+      </div>
+
       <div>
         <h2 className="text-xl font-black text-white mb-4">Player Lives (current balance)</h2>
         <div className="overflow-x-auto">
@@ -662,7 +919,13 @@ const LivesView: React.FC = () => {
         {lives.length === 0 && <p className="text-zinc-500 mt-4">No player_lives rows yet.</p>}
       </div>
       <div>
-        <h2 className="text-xl font-black text-white mb-4">Recent Lives Purchases</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-black text-white">Recent Lives Purchases</h2>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={showGiftedOnly} onChange={(e) => setShowGiftedOnly(e.target.checked)} className="accent-[#14F195]" />
+            <span className="text-zinc-400 text-xs font-bold uppercase">Show gifted only</span>
+          </label>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -675,12 +938,12 @@ const LivesView: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {purchases.map((p, i) => (
+              {filteredPurchases.map((p, i) => (
                 <tr key={i} className="border-b border-white/5">
                   <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 8)}...{p.wallet_address.slice(-4)}</td>
                   <td className="py-2 px-2 text-[#14F195]">{p.lives_purchased ?? 0}</td>
                   <td className="py-2 px-2 text-white text-sm font-bold">{p.payment_token || 'SOL'}</td>
-                  <td className="py-2 px-2 text-[#14F195]">{p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : `${(p.amount_lamports / 1_000_000_000).toFixed(4)} SOL`}</td>
+                  <td className="py-2 px-2 text-[#14F195]">{p.tx_signature?.startsWith('ADMIN_GIFT') ? <span className="text-yellow-400 font-bold">GIFT</span> : p.amount_usd != null ? `$${Number(p.amount_usd).toFixed(2)}` : `${(p.amount_lamports / 1_000_000_000).toFixed(4)} SOL`}</td>
                   <td className="py-2 px-2 text-zinc-500 text-xs">{p.created_at ? new Date(p.created_at).toLocaleString() : '—'}</td>
                 </tr>
               ))}
@@ -738,16 +1001,43 @@ const StatsView: React.FC<{ stats: any; loading: boolean }> = ({ stats, loading 
         </div>
       </div>
 
-      {/* Other Stats */}
-      <h3 className="text-xl font-black mb-4 text-zinc-400">Platform Statistics</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <StatCard label="Total Questions" value={stats.totalQuestions} color="blue" />
+      {/* Player & Engagement */}
+      <h3 className="text-xl font-black mb-4 text-zinc-400">Players & Engagement</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard label="Total Players" value={stats.totalPlayers} color="green" />
-        <StatCard label="Total Games" value={stats.totalGames} color="purple" />
-        <StatCard label="Active Players (24h)" value={stats.activePlayers24h} color="yellow" />
-        <StatCard label="Lives Purchased" value={stats.totalLivesPurchased} color="red" />
-        <StatCard label="Total Revenue from Lives" value={`${stats.totalRevenueSol.toFixed(3)} SOL`} color="green" />
+        <StatCard label="Active (24h)" value={stats.activePlayers24h} color="yellow" />
+        <StatCard label="Unique Wallets (7d)" value={stats.uniqueWalletsWeek} color="blue" />
+        <StatCard label="Referrals Completed" value={stats.totalReferrals} color="purple" />
       </div>
+
+      {/* Games & Content */}
+      <h3 className="text-xl font-black mb-4 text-zinc-400">Games & Content</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatCard label="Total Paid Games" value={stats.totalGames} color="purple" />
+        <StatCard label="Rounds Completed" value={stats.totalRoundsCompleted} color="blue" />
+        <StatCard label="Total Questions" value={stats.totalQuestions} color="blue" />
+        <StatCard label="Quests Completed" value={stats.totalQuestsCompleted} color="yellow" />
+      </div>
+
+      {/* Custom Games & Passes */}
+      <h3 className="text-xl font-black mb-4 text-zinc-400">Custom Games & Passes</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        <StatCard label="Custom Games Created" value={stats.totalCustomGames} color="purple" />
+        <StatCard label="Custom Games Played" value={stats.totalCustomGamePlays} color="blue" />
+        <StatCard label="Game Passes Sold" value={stats.totalGamePasses} color="green" />
+      </div>
+
+      {/* Revenue */}
+      <h3 className="text-xl font-black mb-4 text-zinc-400">Revenue & Payouts</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        <StatCard label="Lives Purchased" value={stats.totalLivesPurchased} color="red" />
+        <StatCard label="Lives Revenue" value={`${stats.totalRevenueSol.toFixed(3)} SOL`} color="green" />
+        <StatCard label="Total Paid to Winners" value={`${stats.totalPaidOutSol.toFixed(4)} SOL`} color="green" />
+      </div>
+
+      {/* On-Chain Program Setup */}
+      <h3 className="text-xl font-black mb-4 text-zinc-400">On-Chain Contract</h3>
+      <InitializeMainnetCard />
     </div>
   );
 };
@@ -769,6 +1059,148 @@ const StatCard: React.FC<{ label: string; value: string | number; color: string 
     <div className={`bg-gradient-to-br ${colorClasses[color as keyof typeof colorClasses]} border p-6 rounded-xl`}>
       <p className="text-zinc-400 text-xs uppercase font-black mb-2">{label}</p>
       <p className="text-3xl font-[1000] italic">{value}</p>
+    </div>
+  );
+};
+
+// ─── Initialize Mainnet Card (one-time setup) ────────────────────────────────
+const MAINNET_RPC = (() => {
+  const helius = import.meta.env.VITE_HELIUS_API_KEY;
+  if (helius) return `https://mainnet.helius-rpc.com/?api-key=${helius}`;
+  const alchemy = import.meta.env.VITE_ALCHEMY_API_KEY;
+  if (alchemy) return `https://solana-mainnet.g.alchemy.com/v2/${alchemy}`;
+  return 'https://rpc.ankr.com/solana';
+})();
+const OPERATOR = new PublicKey(OPERATOR_WALLET);
+const REVENUE = new PublicKey(REVENUE_WALLET);
+const OWNER_WALLET = '8qHMpkPLfj4neP7MYm74Xos26jPE55bMUUBTJBQRYuBF';
+
+const InitializeMainnetCard: React.FC = () => {
+  const { publicKey, connected, sendTransaction } = useWallet();
+  const [status, setStatus] = useState<'idle' | 'checking' | 'ready' | 'sending' | 'done' | 'already' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const [sig, setSig] = useState('');
+
+  const checkConfig = async () => {
+    setStatus('checking');
+    setMessage('Checking if program is already initialized on mainnet...');
+    try {
+      const conn = new Connection(MAINNET_RPC, 'confirmed');
+      const config = await fetchGameConfig(conn, SOLTRIVIA_PROGRAM_ID);
+      if (config) {
+        setStatus('already');
+        setMessage(`Program already initialized. Owner: ${config.owner.slice(0, 8)}... Operator: ${config.operator.slice(0, 8)}...`);
+      } else {
+        setStatus('ready');
+        setMessage('Program deployed but NOT initialized. Connect wallet 8qHMpk... and click Initialize.');
+      }
+    } catch (err: any) {
+      setStatus('ready');
+      setMessage('Could not check config (may not exist yet). Ready to initialize.');
+    }
+  };
+
+  useEffect(() => { checkConfig(); }, []);
+
+  const handleInitialize = async () => {
+    if (!publicKey || !sendTransaction) {
+      setMessage('Connect your wallet first using the button above.');
+      return;
+    }
+
+    if (publicKey.toBase58() !== OWNER_WALLET) {
+      setMessage(`Wrong wallet. Expected: ${OWNER_WALLET.slice(0, 8)}... but got ${publicKey.toBase58().slice(0, 8)}... Switch wallet in Phantom.`);
+      setStatus('error');
+      return;
+    }
+
+    setStatus('sending');
+    setMessage('Building transaction... Confirm in Phantom when prompted.');
+
+    try {
+      const conn = new Connection(MAINNET_RPC, 'confirmed');
+      const ix = buildInitializeIx(publicKey, OPERATOR, REVENUE, REVENUE);
+
+      const { blockhash } = await getRecentBlockhashWithRetry(conn);
+      const msg = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(msg);
+
+      const signature = await sendTransaction(tx, conn);
+      await conn.confirmTransaction(signature, 'confirmed');
+
+      setSig(signature);
+      setStatus('done');
+      setMessage('Program initialized successfully on mainnet!');
+    } catch (err: any) {
+      setStatus('error');
+      setMessage(`Initialize failed: ${err.message || String(err)}`);
+    }
+  };
+
+  const statusColor = {
+    idle: 'border-zinc-500/30',
+    checking: 'border-yellow-500/30',
+    ready: 'border-orange-500/30',
+    sending: 'border-yellow-500/30',
+    done: 'border-green-500/30',
+    already: 'border-green-500/30',
+    error: 'border-red-500/30',
+  }[status];
+
+  return (
+    <div className={`border ${statusColor} bg-gradient-to-br from-white/5 to-transparent p-6 rounded-xl`}>
+      <h3 className="text-lg font-black mb-3">Mainnet Program Setup</h3>
+      <div className="text-xs text-zinc-400 space-y-1 mb-4">
+        <p>Program: <span className="font-mono text-zinc-300">{SOLTRIVIA_PROGRAM_ID.toBase58().slice(0, 16)}...</span></p>
+        <p>Owner: <span className="font-mono text-zinc-300">{OWNER_WALLET.slice(0, 8)}... (transfer to Ledger later)</span></p>
+        <p>Operator: <span className="font-mono text-zinc-300">{OPERATOR_WALLET.slice(0, 8)}...</span></p>
+        <p>Revenue: <span className="font-mono text-zinc-300">{REVENUE_WALLET.slice(0, 8)}...</span></p>
+        <p>Sweep: <span className="font-mono text-zinc-300">{REVENUE_WALLET.slice(0, 8)}... (same as revenue)</span></p>
+      </div>
+
+      {message && (
+        <p className={`text-sm mb-4 ${status === 'error' ? 'text-red-400' : status === 'done' || status === 'already' ? 'text-green-400' : 'text-yellow-400'}`}>
+          {message}
+        </p>
+      )}
+
+      {sig && (
+        <p className="text-xs mb-4">
+          <a href={`https://solscan.io/tx/${sig}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+            View transaction on Solscan
+          </a>
+        </p>
+      )}
+
+      {(status === 'ready' || status === 'error') && (
+        <div className="space-y-3">
+          {!connected && (
+            <div className="flex items-center gap-3">
+              <WalletMultiButton />
+              <span className="text-xs text-zinc-500">Connect your Ledger wallet</span>
+            </div>
+          )}
+          {connected && (
+            <button
+              onClick={handleInitialize}
+              className="w-full py-3 px-4 rounded-lg font-black text-sm uppercase bg-[#14F195] text-black hover:bg-[#0dd884] transition-all"
+            >
+              Initialize Program on Mainnet
+            </button>
+          )}
+        </div>
+      )}
+
+      {status === 'sending' && (
+        <div className="flex items-center gap-2 text-yellow-400 text-sm">
+          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+          Waiting for Ledger confirmation...
+        </div>
+      )}
     </div>
   );
 };
@@ -832,7 +1264,7 @@ const QuestsManagementView: React.FC = () => {
     try {
       const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-quests`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: getAdminHeaders(),
         body: JSON.stringify({ action: 'list', payload: {} }),
       });
       const json = await res.json().catch(() => ({}));
@@ -850,7 +1282,7 @@ const QuestsManagementView: React.FC = () => {
     try {
       const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-quests`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: getAdminHeaders(),
         body: JSON.stringify({ action: 'list_submissions', payload: { status: 'pending' } }),
       });
       const json = await res.json().catch(() => ({}));
@@ -882,7 +1314,7 @@ const QuestsManagementView: React.FC = () => {
   const callManage = async (action: string, payload?: Record<string, unknown>) => {
     const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-quests`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: getAdminHeaders(),
       body: JSON.stringify({ action, payload: payload ?? {} }),
     });
     const json = await res.json().catch(() => ({}));
@@ -1240,7 +1672,7 @@ const AnswerDebugView: React.FC<AnswerDebugViewProps> = ({ functionsUrl }) => {
     try {
       const res = await fetch(`${functionsUrl}/manage-questions`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: getAdminHeaders(),
         body: JSON.stringify({ action: 'list', payload: { limit: 100 } }),
       });
       const json = await res.json().catch(() => ({}));
@@ -1375,7 +1807,7 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ functionsUrl }) => {
     }
     const res = await fetch(`${functionsUrl}/manage-questions`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: getAdminHeaders(),
       body: JSON.stringify({ action, payload: payload ?? {} }),
     });
     const json = await res.json().catch(() => ({}));
@@ -1911,6 +2343,469 @@ const ReferralsView: React.FC = () => {
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+// ─── Custom Games Admin Tab ───────────────────────────────────────────────
+const CUSTOM_GAMES_PAGE_SIZE = 25;
+
+interface CustomGameRow {
+  id: string;
+  slug: string;
+  name: string;
+  creator_wallet: string;
+  question_count: number;
+  round_count: number;
+  time_limit_seconds: number;
+  total_plays: number;
+  status: string;
+  expires_at: string;
+  created_at: string;
+  creation_fee_lamports: number;
+  platform_fee_lamports: number;
+  prize_model: string | null;
+  entry_fee_lamports: number | null;
+  player_count: number | null;
+}
+
+interface CustomGameQuestion {
+  id: string;
+  question_text: string;
+  options: string[];
+  correct_index: number;
+}
+
+interface CustomGameSession {
+  id: string;
+  wallet_address: string;
+  score: number;
+  correct_count: number;
+  time_taken_ms: number;
+  status: string;
+  created_at: string;
+}
+
+const CustomGamesAdminView: React.FC = () => {
+  const [games, setGames] = useState<CustomGameRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const [expandedGameId, setExpandedGameId] = useState<string | null>(null);
+  const [detailQuestions, setDetailQuestions] = useState<CustomGameQuestion[]>([]);
+  const [detailSessions, setDetailSessions] = useState<CustomGameSession[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ gameId: string; action: string } | null>(null);
+
+  const fetchGames = async () => {
+    setLoading(true);
+    const from = page * CUSTOM_GAMES_PAGE_SIZE;
+    const to = from + CUSTOM_GAMES_PAGE_SIZE - 1;
+    const { data, count } = await supabase
+      .from('custom_games')
+      .select('id, slug, name, creator_wallet, question_count, round_count, time_limit_seconds, total_plays, status, expires_at, created_at, creation_fee_lamports, platform_fee_lamports, prize_model, entry_fee_lamports, player_count', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, to);
+    setGames((data as CustomGameRow[]) ?? []);
+    setTotalCount(count ?? 0);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchGames(); }, [page]);
+
+  const handleExpand = async (gameId: string) => {
+    if (expandedGameId === gameId) {
+      setExpandedGameId(null);
+      return;
+    }
+    setExpandedGameId(gameId);
+    setDetailLoading(true);
+    const [qRes, sRes] = await Promise.all([
+      supabase.from('custom_game_questions').select('id, question_text, options, correct_index').eq('game_id', gameId).order('sort_order'),
+      supabase.from('custom_game_sessions').select('id, wallet_address, score, correct_count, time_taken_ms, status, created_at').eq('game_id', gameId).order('score', { ascending: false }).limit(50),
+    ]);
+    setDetailQuestions((qRes.data as CustomGameQuestion[]) ?? []);
+    setDetailSessions((sRes.data as CustomGameSession[]) ?? []);
+    setDetailLoading(false);
+  };
+
+  const handleModAction = async (gameId: string, newStatus: string) => {
+    setActionLoading(gameId);
+    setConfirmAction(null);
+    const { error } = await supabase.from('custom_games').update({ status: newStatus }).eq('id', gameId);
+    setActionLoading(null);
+    if (error) {
+      alert(`Failed: ${error.message}`);
+    } else {
+      setGames(prev => prev.map(g => g.id === gameId ? { ...g, status: newStatus } : g));
+    }
+  };
+
+  const statusBadge = (status: string) => {
+    if (status === 'active') return <span className="px-2 py-0.5 bg-[#14F195]/20 text-[#14F195] text-[10px] font-bold rounded uppercase">Active</span>;
+    if (status === 'started') return <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-[10px] font-bold rounded uppercase">Started</span>;
+    if (status === 'completed') return <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded uppercase">Completed</span>;
+    if (status === 'finalized') return <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-bold rounded uppercase">Finalized</span>;
+    if (status === 'expired') return <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-[10px] font-bold rounded uppercase">Expired</span>;
+    if (status === 'banned') return <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-[10px] font-bold rounded uppercase">Banned</span>;
+    return <span className="px-2 py-0.5 bg-zinc-500/20 text-zinc-400 text-[10px] font-bold rounded uppercase">{status}</span>;
+  };
+
+  const handleFinalize = async (gameId: string) => {
+    setActionLoading(gameId);
+    try {
+      const result = await finalizeCustomGame(gameId);
+      alert(`Game finalized! ${result.winners.length} winner(s) posted on-chain. TX: ${result.signature.slice(0, 16)}...`);
+      setGames(prev => prev.map(g => g.id === gameId ? { ...g, status: 'finalized' } : g));
+    } catch (err: any) {
+      alert(`Finalize failed: ${err.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  if (loading && games.length === 0) return <div className="py-12 text-center text-zinc-400">Loading custom games...</div>;
+
+  return (
+    <div className="py-6">
+      <h2 className="text-xl font-black text-white mb-2">Custom Games</h2>
+      <p className="text-zinc-500 text-sm mb-6">{totalCount} total custom games. Click a row to expand details.</p>
+
+      {/* Confirmation modal */}
+      {confirmAction && (
+        <div className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-4">
+          <p className="text-red-300 text-sm flex-1">
+            Are you sure you want to <span className="font-bold">{confirmAction.action}</span> this game?
+          </p>
+          <button onClick={() => handleModAction(confirmAction.gameId, confirmAction.action === 'ban' ? 'banned' : confirmAction.action === 'expire' ? 'expired' : 'active')} className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded">Confirm</button>
+          <button onClick={() => setConfirmAction(null)} className="px-3 py-1 bg-white/10 text-zinc-400 text-xs font-bold rounded">Cancel</button>
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-white/10">
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Name</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Creator</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Q/R</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Plays</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Status</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Created</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Expires</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {games.map((g) => {
+              const isExpanded = expandedGameId === g.id;
+              return (
+                <React.Fragment key={g.id}>
+                  <tr className={`border-b border-white/5 hover:bg-white/5 cursor-pointer ${isExpanded ? 'bg-white/5' : ''}`} onClick={() => handleExpand(g.id)}>
+                    <td className="py-2 px-2">
+                      <div className="text-white text-sm font-bold">{g.name}</div>
+                      <div className="text-zinc-500 text-[10px] font-mono">/{g.slug}</div>
+                    </td>
+                    <td className="py-2 px-2 font-mono text-xs text-zinc-300">{g.creator_wallet.slice(0, 6)}...{g.creator_wallet.slice(-4)}</td>
+                    <td className="py-2 px-2 text-zinc-400 text-sm">{g.question_count}/{g.round_count}</td>
+                    <td className="py-2 px-2">
+                      <span className="text-[#14F195] font-bold">{g.total_plays}</span>
+                      {g.prize_model === 'player_funded' && (
+                        <span className="ml-1 px-1.5 py-0.5 bg-purple-500/20 text-purple-400 text-[8px] font-bold rounded uppercase">{(g.entry_fee_lamports ?? 0) / 1e9} SOL</span>
+                      )}
+                    </td>
+                    <td className="py-2 px-2">{statusBadge(g.status)}</td>
+                    <td className="py-2 px-2 text-zinc-500 text-xs">{new Date(g.created_at).toLocaleDateString()}</td>
+                    <td className="py-2 px-2 text-zinc-500 text-xs">{new Date(g.expires_at).toLocaleDateString()}</td>
+                    <td className="py-2 px-2" onClick={(e) => e.stopPropagation()}>
+                      {actionLoading === g.id ? (
+                        <span className="text-zinc-400 text-xs">...</span>
+                      ) : g.status === 'active' || g.status === 'started' ? (
+                        <div className="flex gap-1">
+                          <button onClick={() => setConfirmAction({ gameId: g.id, action: 'ban' })} className="px-2 py-0.5 bg-red-500/20 text-red-400 text-[10px] font-bold rounded hover:bg-red-500/30">Ban</button>
+                          <button onClick={() => setConfirmAction({ gameId: g.id, action: 'expire' })} className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-[10px] font-bold rounded hover:bg-yellow-500/30">Expire</button>
+                        </div>
+                      ) : g.status === 'completed' && g.prize_model === 'player_funded' ? (
+                        <button onClick={() => handleFinalize(g.id)} className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-bold rounded hover:bg-purple-500/30">Finalize</button>
+                      ) : g.status === 'banned' ? (
+                        <button onClick={() => setConfirmAction({ gameId: g.id, action: 'reactivate' })} className="px-2 py-0.5 bg-[#14F195]/20 text-[#14F195] text-[10px] font-bold rounded hover:bg-[#14F195]/30">Reactivate</button>
+                      ) : null}
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={8} className="p-0">
+                        <div className="bg-[#0D0D0D] border-t border-white/5 p-6">
+                          {detailLoading ? (
+                            <p className="text-zinc-400 text-sm">Loading details...</p>
+                          ) : (
+                            <div className="space-y-6">
+                              {/* Game info */}
+                              <div className="flex flex-wrap gap-4 text-xs">
+                                <div><span className="text-zinc-500">Game ID:</span> <span className="text-zinc-300 font-mono">{g.id.slice(0, 12)}...</span></div>
+                                <div><span className="text-zinc-500">Share URL:</span> <a href={`/game/${g.slug}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">soltrivia.app/game/{g.slug}</a></div>
+                                <div><span className="text-zinc-500">Time limit:</span> <span className="text-zinc-300">{g.time_limit_seconds}s per question</span></div>
+                                <div><span className="text-zinc-500">Creator:</span> <span className="text-zinc-300 font-mono">{g.creator_wallet}</span></div>
+                              </div>
+
+                              {/* Questions */}
+                              <div>
+                                <h4 className="text-white font-black text-sm uppercase mb-3">Questions ({detailQuestions.length})</h4>
+                                <div className="space-y-3">
+                                  {detailQuestions.map((q, qi) => (
+                                    <div key={q.id} className="bg-white/5 rounded-lg p-3">
+                                      <p className="text-white text-sm mb-2"><span className="text-zinc-500 mr-2">Q{qi + 1}.</span>{q.question_text}</p>
+                                      <div className="grid grid-cols-2 gap-1">
+                                        {(q.options ?? []).map((opt, oi) => (
+                                          <div key={oi} className={`text-xs px-2 py-1 rounded ${oi === q.correct_index ? 'bg-[#14F195]/20 text-[#14F195] font-bold' : 'text-zinc-400'}`}>
+                                            {OPTION_LABELS[oi]}. {opt}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Player sessions */}
+                              <div>
+                                <h4 className="text-white font-black text-sm uppercase mb-3">Player Sessions ({detailSessions.length})</h4>
+                                {detailSessions.length > 0 ? (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                      <thead>
+                                        <tr className="border-b border-white/10">
+                                          <th className="py-1 px-2 text-zinc-500 text-[10px] font-black uppercase">#</th>
+                                          <th className="py-1 px-2 text-zinc-500 text-[10px] font-black uppercase">Wallet</th>
+                                          <th className="py-1 px-2 text-zinc-500 text-[10px] font-black uppercase">Score</th>
+                                          <th className="py-1 px-2 text-zinc-500 text-[10px] font-black uppercase">Correct</th>
+                                          <th className="py-1 px-2 text-zinc-500 text-[10px] font-black uppercase">Time</th>
+                                          <th className="py-1 px-2 text-zinc-500 text-[10px] font-black uppercase">Status</th>
+                                          <th className="py-1 px-2 text-zinc-500 text-[10px] font-black uppercase">Date</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {detailSessions.map((s, si) => (
+                                          <tr key={s.id} className="border-b border-white/5">
+                                            <td className="py-1 px-2 text-zinc-500 text-xs">{si + 1}</td>
+                                            <td className="py-1 px-2 font-mono text-xs text-zinc-300">{s.wallet_address.slice(0, 6)}...{s.wallet_address.slice(-4)}</td>
+                                            <td className="py-1 px-2 text-[#14F195] font-bold text-sm">{s.score?.toLocaleString() ?? 0}</td>
+                                            <td className="py-1 px-2 text-zinc-400 text-xs">{s.correct_count ?? 0}</td>
+                                            <td className="py-1 px-2 text-zinc-400 text-xs">{s.time_taken_ms ? `${(s.time_taken_ms / 1000).toFixed(1)}s` : '—'}</td>
+                                            <td className="py-1 px-2">
+                                              {s.status === 'completed' ? <span className="text-[#14F195] text-[10px] font-bold">Done</span> : <span className="text-yellow-400 text-[10px] font-bold">{s.status}</span>}
+                                            </td>
+                                            <td className="py-1 px-2 text-zinc-500 text-xs">{new Date(s.created_at).toLocaleString()}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : (
+                                  <p className="text-zinc-500 text-sm">No sessions yet.</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {games.length === 0 && <p className="text-zinc-500 mt-4">No custom games created yet.</p>}
+      <Pagination currentPage={page} totalCount={totalCount} pageSize={CUSTOM_GAMES_PAGE_SIZE} onPageChange={setPage} />
+    </div>
+  );
+};
+
+// ─── Duels Admin View ───────────────────────────────────────────────────────
+const DUELS_PAGE_SIZE = 20;
+const DuelsAdminView: React.FC = () => {
+  const [duels, setDuels] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [stats, setStats] = useState({ total: 0, waiting: 0, playing: 0, completed: 0, resolved: 0, cancelled: 0, expired: 0, totalWagered: 0 });
+
+  useEffect(() => {
+    fetchDuelStats();
+  }, []);
+
+  useEffect(() => {
+    fetchDuels();
+  }, [page, statusFilter]);
+
+  const fetchDuelStats = async () => {
+    try {
+      const [totalRes, waitingRes, playingRes, completedRes, resolvedRes, cancelledRes, expiredRes, wageredRes] = await Promise.all([
+        supabase.from('duels').select('*', { count: 'exact', head: true }),
+        supabase.from('duels').select('*', { count: 'exact', head: true }).eq('status', 'waiting'),
+        supabase.from('duels').select('*', { count: 'exact', head: true }).eq('status', 'playing'),
+        supabase.from('duels').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
+        supabase.from('duels').select('*', { count: 'exact', head: true }).eq('status', 'resolved'),
+        supabase.from('duels').select('*', { count: 'exact', head: true }).eq('status', 'cancelled'),
+        supabase.from('duels').select('*', { count: 'exact', head: true }).eq('status', 'expired'),
+        supabase.from('duels').select('total_pot_lamports').in('status', ['completed', 'resolved']),
+      ]);
+      const totalWagered = (wageredRes.data || []).reduce((sum: number, d: any) => sum + (d.total_pot_lamports || 0), 0);
+      setStats({
+        total: totalRes.count || 0,
+        waiting: waitingRes.count || 0,
+        playing: playingRes.count || 0,
+        completed: completedRes.count || 0,
+        resolved: resolvedRes.count || 0,
+        cancelled: cancelledRes.count || 0,
+        expired: expiredRes.count || 0,
+        totalWagered,
+      });
+    } catch (err) {
+      console.error('Failed to fetch duel stats:', err);
+    }
+  };
+
+  const fetchDuels = async () => {
+    setLoading(true);
+    try {
+      let query = supabase
+        .from('duels')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(page * DUELS_PAGE_SIZE, (page + 1) * DUELS_PAGE_SIZE - 1);
+
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
+      }
+
+      const { data, count, error } = await query;
+      if (error) throw error;
+      setDuels(data || []);
+      setTotalCount(count || 0);
+    } catch (err) {
+      console.error('Failed to fetch duels:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statusColor = (status: string) => {
+    switch (status) {
+      case 'waiting': return 'text-yellow-400 bg-yellow-400/10';
+      case 'locked': return 'text-blue-400 bg-blue-400/10';
+      case 'playing': return 'text-cyan-400 bg-cyan-400/10';
+      case 'completed': return 'text-orange-400 bg-orange-400/10';
+      case 'resolved': return 'text-green-400 bg-green-400/10';
+      case 'cancelled': return 'text-zinc-400 bg-zinc-400/10';
+      case 'expired': return 'text-red-400 bg-red-400/10';
+      default: return 'text-zinc-400 bg-zinc-400/10';
+    }
+  };
+
+  const LAMPORTS_PER_SOL = 1_000_000_000;
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold mb-6">Duels Management</h2>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+          <p className="text-zinc-500 text-xs font-bold uppercase">Total Duels</p>
+          <p className="text-white text-2xl font-[1000] italic">{stats.total}</p>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+          <p className="text-zinc-500 text-xs font-bold uppercase">Active</p>
+          <p className="text-cyan-400 text-2xl font-[1000] italic">{stats.waiting + stats.playing}</p>
+          <p className="text-zinc-600 text-[10px]">{stats.waiting} waiting, {stats.playing} playing</p>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+          <p className="text-zinc-500 text-xs font-bold uppercase">Resolved</p>
+          <p className="text-green-400 text-2xl font-[1000] italic">{stats.resolved}</p>
+          <p className="text-zinc-600 text-[10px]">{stats.completed} awaiting resolve</p>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+          <p className="text-zinc-500 text-xs font-bold uppercase">Total Wagered</p>
+          <p className="text-[#14F195] text-2xl font-[1000] italic">{(stats.totalWagered / LAMPORTS_PER_SOL).toFixed(2)}</p>
+          <p className="text-zinc-600 text-[10px]">SOL (completed + resolved)</p>
+        </div>
+      </div>
+
+      {/* Status Filter */}
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {['all', 'waiting', 'playing', 'completed', 'resolved', 'cancelled', 'expired'].map((s) => (
+          <button
+            key={s}
+            onClick={() => { setStatusFilter(s); setPage(0); }}
+            className={`px-3 py-1.5 text-xs font-bold uppercase rounded-lg transition-all ${
+              statusFilter === s ? 'bg-[#14F195] text-black' : 'bg-white/5 text-zinc-400 hover:bg-white/10'
+            }`}
+          >
+            {s === 'all' ? `All (${stats.total})` : `${s} (${stats[s as keyof typeof stats] || 0})`}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <p className="text-zinc-500">Loading duels...</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-zinc-500 text-xs uppercase border-b border-white/10">
+                <th className="text-left py-3 px-2">ID</th>
+                <th className="text-left py-3 px-2">Player 1</th>
+                <th className="text-left py-3 px-2">Player 2</th>
+                <th className="text-left py-3 px-2">Fee</th>
+                <th className="text-left py-3 px-2">Pot</th>
+                <th className="text-left py-3 px-2">Status</th>
+                <th className="text-left py-3 px-2">Winner</th>
+                <th className="text-left py-3 px-2">Score</th>
+                <th className="text-left py-3 px-2">Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {duels.map((duel) => (
+                <tr key={duel.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                  <td className="py-3 px-2 font-mono text-xs text-zinc-400">{duel.duel_id}</td>
+                  <td className="py-3 px-2 font-mono text-xs">
+                    {duel.player1_wallet ? `${duel.player1_wallet.slice(0, 4)}...${duel.player1_wallet.slice(-4)}` : '—'}
+                  </td>
+                  <td className="py-3 px-2 font-mono text-xs">
+                    {duel.player2_wallet ? `${duel.player2_wallet.slice(0, 4)}...${duel.player2_wallet.slice(-4)}` : '—'}
+                  </td>
+                  <td className="py-3 px-2 text-xs tabular-nums">{(duel.entry_fee_lamports / LAMPORTS_PER_SOL).toFixed(2)}</td>
+                  <td className="py-3 px-2 text-xs tabular-nums text-[#14F195]">
+                    {duel.total_pot_lamports ? (duel.total_pot_lamports / LAMPORTS_PER_SOL).toFixed(2) : '—'}
+                  </td>
+                  <td className="py-3 px-2">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${statusColor(duel.status)}`}>
+                      {duel.status}
+                    </span>
+                  </td>
+                  <td className="py-3 px-2 font-mono text-xs">
+                    {duel.winner_wallet ? `${duel.winner_wallet.slice(0, 4)}...${duel.winner_wallet.slice(-4)}` : '—'}
+                  </td>
+                  <td className="py-3 px-2 text-xs tabular-nums">
+                    {duel.player1_score || 0} vs {duel.player2_score || 0}
+                  </td>
+                  <td className="py-3 px-2 text-xs text-zinc-500">
+                    {new Date(duel.created_at).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {duels.length === 0 && !loading && <p className="text-zinc-500 mt-4">No duels found.</p>}
+      <Pagination currentPage={page} totalCount={totalCount} pageSize={DUELS_PAGE_SIZE} onPageChange={setPage} />
     </div>
   );
 };
