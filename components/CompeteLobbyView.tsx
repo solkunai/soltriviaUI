@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useConnection } from '../src/contexts/WalletContext';
-import { fetchTierRound, type TierRoundData } from '../src/utils/soltriviaContract';
+import { fetchTierRound, contractRoundIdFromDateAndNumber, type TierRoundData } from '../src/utils/soltriviaContract';
 import { fetchRoundsWithWinnersPaginated, getCurrentRoundKey, getRoundLabel, type RoundWithWinner } from '../src/utils/api';
 import { V2_TIER_FEES, V2_TIER_LABELS, TXN_FEE_LAMPORTS, TRIVIA_PRIZE_BPS, TRIVIA_PRIZE_LABELS } from '../src/utils/constants';
 
@@ -20,10 +20,8 @@ interface CompeteLobbyViewProps {
 }
 
 function getContractRoundId(): { contractRoundId: number; roundNumber: number } {
-  const now = new Date();
-  const daysSinceEpoch = Math.floor(now.getTime() / 86400000);
-  const roundNumber = Math.floor(now.getUTCHours() / 6);
-  return { contractRoundId: daysSinceEpoch * 4 + (roundNumber & 3), roundNumber };
+  const { date, roundNumber } = getCurrentRoundKey();
+  return { contractRoundId: contractRoundIdFromDateAndNumber(date, roundNumber), roundNumber };
 }
 
 function formatCountdown(ms: number): string {
@@ -40,10 +38,11 @@ function getNextRoundMs(): number {
   const currentBlock = Math.floor(now.getUTCHours() / 6);
   const nextBlockHour = (currentBlock + 1) * 6;
   const next = new Date(now);
-  next.setUTCHours(nextBlockHour, 0, 0, 0);
   if (nextBlockHour >= 24) {
     next.setUTCDate(next.getUTCDate() + 1);
     next.setUTCHours(0, 0, 0, 0);
+  } else {
+    next.setUTCHours(nextBlockHour, 0, 0, 0);
   }
   return next.getTime() - now.getTime();
 }
