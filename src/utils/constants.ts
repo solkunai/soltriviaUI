@@ -91,7 +91,7 @@ export const V2_DUEL_FEES = [10_000_000, 50_000_000, 100_000_000, 250_000_000, 5
 export const V2_DUEL_LABELS = ['0.01 SOL', '0.05 SOL', '0.1 SOL', '0.25 SOL', '0.5 SOL', '1 SOL'] as const;
 export const DUEL_QUESTIONS_COUNT = 5;
 export const DUEL_SECONDS_PER_QUESTION = 10;
-export const DUEL_EXPIRY_MINUTES = 30;
+export const DUEL_EXPIRY_MINUTES = 60;
 
 // Prize distribution (basis points, top 5)
 export const TRIVIA_PRIZE_BPS = [5000, 2000, 1500, 1000, 500] as const;

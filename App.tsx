@@ -88,7 +88,7 @@ import DuelWaitingView from './components/DuelWaitingView';
 import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
 import CompeteLobbyView from './components/CompeteLobbyView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel, type ActiveDuel } from './src/utils/api';
 import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES } from './src/utils/constants';
 import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildExpireDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
 
@@ -1044,8 +1044,14 @@ const App: React.FC = () => {
     const signature = await sendTransaction(tx, connection);
     await connection.confirmTransaction(signature, 'confirmed');
 
-    // Register entry in Supabase
-    await joinCustomGame(gameData.game_id, publicKey.toBase58(), signature);
+    // Register entry in Supabase — if this fails, player paid on-chain but isn't registered
+    try {
+      await joinCustomGame(gameData.game_id, publicKey.toBase58(), signature);
+    } catch (regErr: any) {
+      console.error('Failed to register custom game entry in DB:', regErr);
+      alert('Your payment was confirmed on-chain but registration failed. Please try refreshing the page. If the issue persists, contact support with tx: ' + signature);
+      throw regErr;
+    }
   };
 
   const handleStartCustomGameTimer = async (gameData: CustomGameData) => {
@@ -1331,6 +1337,20 @@ const App: React.FC = () => {
     }
   };
 
+  const handleResumeDuel = (duel: ActiveDuel) => {
+    setDuelId(duel.duel_id);
+    setDbDuelId(duel.id);
+    setDuelShareCode(duel.share_code);
+    setDuelEntryFee(duel.entry_fee_lamports);
+    setDuelIsPublic(duel.is_public);
+    setDuelExpiresAt(duel.expires_at);
+    setDuelOpponent(null);
+    setDuelResults(null);
+    setDuelIsPlayer1(true);
+    window.history.pushState({}, '', `/duel/${duel.share_code}`);
+    setCurrentView(View.DUEL_WAITING);
+  };
+
   const handleCancelDuel = async () => {
     if (!connected || !publicKey || duelId == null) return;
     try {
@@ -1571,6 +1591,7 @@ const App: React.FC = () => {
             onSeekerVerified={(verified: boolean) => setIsSeekerVerified(verified)}
             onViewCustomGame={handleViewCustomGame}
             onClaimDuelPrize={handleClaimDuelPrize}
+            onClaimDuelRefund={handleClaimDuelRefund}
             onClaimCustomPrize={handleClaimCustomPrize}
           />
         );
@@ -1736,6 +1757,7 @@ const App: React.FC = () => {
             onBack={() => setCurrentView(View.HOME)}
             onClaimDuelPrize={handleClaimDuelPrize}
             onClaimDuelRefund={handleClaimDuelRefund}
+            onResumeDuel={handleResumeDuel}
           />
         );
       case View.DUEL_WAITING:

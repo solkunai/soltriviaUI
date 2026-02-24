@@ -9,7 +9,7 @@ function claimExplorerUrl(signature: string): string {
   const cluster = SOLANA_NETWORK === 'devnet' ? '?cluster=devnet' : '';
   return `${base}/tx/${signature}${cluster}`;
 }
-import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, fetchMyDuelWins, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame, type MyDuelWin, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame } from '../src/utils/api';
+import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, fetchMyDuelWins, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame, type MyDuelWin, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel } from '../src/utils/api';
 import { buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchDuel, fetchCustomGame, fetchTierRound } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
 import { isPushSupported, hasActiveSubscription, subscribeToPush, unsubscribeFromPush } from '../src/utils/notifications';
@@ -25,6 +25,7 @@ interface ProfileViewProps {
   onSeekerVerified?: (verified: boolean) => void;
   onViewCustomGame?: (slug: string) => void;
   onClaimDuelPrize?: (duelId: number) => Promise<void>;
+  onClaimDuelRefund?: (duelId: number, player1Wallet: string) => Promise<void>;
   onClaimCustomPrize?: (onChainGameId: number) => Promise<void>;
 }
 
@@ -59,7 +60,7 @@ interface PlayedCustomGame {
   completed_at: string;
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize, onClaimCustomPrize }) => {
+const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize, onClaimDuelRefund, onClaimCustomPrize }) => {
   const { t } = useTranslation();
   const { publicKey, sendTransaction, signMessage } = useWallet();
   const { connection } = useConnection();
@@ -101,6 +102,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const [claimingRefundId, setClaimingRefundId] = useState<string | null>(null);
   const [refundableCustomGames, setRefundableCustomGames] = useState<RefundableCustomGame[]>([]);
   const [claimingCGRefundId, setClaimingCGRefundId] = useState<number | null>(null);
+  const [refundableDuels, setRefundableDuels] = useState<RefundableDuel[]>([]);
+  const [claimingDuelRefundId, setClaimingDuelRefundId] = useState<number | null>(null);
 
   const displayAvatar = (currentAvatar || avatar) && profileCacheBuster
     ? (currentAvatar || avatar) + ((currentAvatar || avatar).includes('?') ? '&' : '?') + 'v=' + profileCacheBuster
@@ -348,6 +351,21 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
             } catch { /* skip */ }
           }
           setRefundableCustomGames(verifiedCG);
+        } catch { /* silently skip */ }
+
+        // Refundable duels — expired duels where user was creator and no opponent joined
+        try {
+          const duelRefunds = await fetchMyRefundableDuels(walletAddress);
+          // Verify on-chain: duel PDA must exist and not be resolved
+          const verifiedDuelRefunds: RefundableDuel[] = [];
+          for (const dr of duelRefunds) {
+            try {
+              const onChain = await fetchDuel(connection, dr.duel_id);
+              // If duel exists on-chain and winner hasn't claimed, it's refundable
+              if (onChain && !onChain.winnerClaimed) verifiedDuelRefunds.push(dr);
+            } catch { verifiedDuelRefunds.push(dr); /* if on-chain check fails, still show it */ }
+          }
+          setRefundableDuels(verifiedDuelRefunds);
         } catch { /* silently skip */ }
       } catch (error) {
         console.error('Error fetching profile data:', error);
@@ -1282,6 +1300,49 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       className="px-4 py-2 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-black font-[1000] text-xs uppercase italic rounded-lg transition-all"
                     >
                       {claimingCGRefundId === cg.on_chain_game_id ? t('profile.refunding') : t('profile.refund')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Duel Refunds – expired duels where no opponent joined */}
+        {refundableDuels.length > 0 && (
+          <div className="mb-8 md:mb-12 relative z-10">
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-[#FF3131] mb-4">Duel Refunds</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">These duels expired without an opponent. Claim your entry fee back.</p>
+            <div className="space-y-3">
+              {refundableDuels.map((rd) => (
+                <div
+                  key={rd.duel_id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 md:px-6 bg-[#0A0A0A] border border-[#FF3131]/20 rounded-xl"
+                >
+                  <div>
+                    <span className="text-[#FF3131] font-bold text-sm md:text-base">Duel #{rd.duel_id}</span>
+                    <span className="text-zinc-500 text-xs ml-2">{new Date(rd.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-white font-bold">{(rd.entry_fee_lamports / 1_000_000_000).toFixed(4)} SOL</span>
+                    <button
+                      type="button"
+                      disabled={claimingDuelRefundId === rd.duel_id}
+                      onClick={async () => {
+                        if (!onClaimDuelRefund || !publicKey) return;
+                        setClaimingDuelRefundId(rd.duel_id);
+                        try {
+                          await onClaimDuelRefund(rd.duel_id, publicKey.toBase58());
+                          setRefundableDuels(prev => prev.filter(d => d.duel_id !== rd.duel_id));
+                        } catch {
+                          /* refund failed — button re-enables */
+                        } finally {
+                          setClaimingDuelRefundId(null);
+                        }
+                      }}
+                      className="px-4 py-2 bg-[#FF3131] hover:bg-[#FF3131]/90 disabled:opacity-50 text-white font-[1000] text-xs uppercase italic rounded-lg transition-all"
+                    >
+                      {claimingDuelRefundId === rd.duel_id ? t('profile.refunding') : t('profile.refund')}
                     </button>
                   </div>
                 </div>

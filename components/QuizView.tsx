@@ -15,8 +15,8 @@ interface QuizViewProps {
 
 const BASE_POINTS = 500;
 const MAX_SPEED_BONUS = 500;
-const SPEED_BONUS_DECAY_SEC = 7; // Match per-question timer (paid mode)
-const SECONDS_PER_QUESTION = 7; // Paid mode timer
+const SPEED_BONUS_DECAY_SEC = 10; // Match per-question timer (paid mode)
+const SECONDS_PER_QUESTION = 10; // Paid mode timer
 const PRACTICE_SECONDS_PER_QUESTION = 12; // Practice mode: longer timer for reading
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const; // Display labels; indices 0–3 sent to API
 

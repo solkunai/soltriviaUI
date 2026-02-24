@@ -91,6 +91,7 @@ const DuelResultsView: React.FC<DuelResultsViewProps> = ({
       await onClaimPrize();
     } catch (err: any) {
       console.error('Claim failed:', err);
+    } finally {
       setClaiming(false);
     }
   };

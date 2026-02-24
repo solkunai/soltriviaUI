@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useConnection } from '../src/contexts/WalletContext';
-import { getOpenDuels, fetchCompletedDuels, fetchMyDuelWins, fetchMyRefundableDuels, type CompletedDuel, type MyDuelWin, type RefundableDuel } from '../src/utils/api';
+import { getOpenDuels, fetchCompletedDuels, fetchMyDuelWins, fetchMyRefundableDuels, fetchMyActiveDuel, type CompletedDuel, type MyDuelWin, type RefundableDuel, type ActiveDuel } from '../src/utils/api';
 import { fetchDuel } from '../src/utils/soltriviaContract';
 import { V2_DUEL_FEES, V2_DUEL_LABELS, TXN_FEE_LAMPORTS } from '../src/utils/constants';
 
@@ -13,6 +13,7 @@ interface DuelLobbyViewProps {
   onBack: () => void;
   onClaimDuelPrize?: (duelId: number) => Promise<void>;
   onClaimDuelRefund?: (duelId: number, player1Wallet: string) => Promise<void>;
+  onResumeDuel?: (duel: ActiveDuel) => void;
 }
 
 interface OpenDuel {
@@ -26,12 +27,13 @@ interface OpenDuel {
   expires_at: string;
 }
 
-const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDuel, onJoinDuel, onJoinByCode, onConnectWallet, onBack, onClaimDuelPrize, onClaimDuelRefund }) => {
+const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDuel, onJoinDuel, onJoinByCode, onConnectWallet, onBack, onClaimDuelPrize, onClaimDuelRefund, onResumeDuel }) => {
   const { connection } = useConnection();
   const [openDuels, setOpenDuels] = useState<OpenDuel[]>([]);
   const [recentDuels, setRecentDuels] = useState<CompletedDuel[]>([]);
   const [claimableDuels, setClaimableDuels] = useState<MyDuelWin[]>([]);
   const [refundableDuels, setRefundableDuels] = useState<RefundableDuel[]>([]);
+  const [activeDuel, setActiveDuel] = useState<ActiveDuel | null>(null);
   const [claimingDuelId, setClaimingDuelId] = useState<number | null>(null);
   const [refundingDuelId, setRefundingDuelId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,6 +41,7 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
   const [isPublic, setIsPublic] = useState(true);
   const [shareCodeInput, setShareCodeInput] = useState('');
   const [creating, setCreating] = useState(false);
+  const [copiedActive, setCopiedActive] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   const fetchDuels = async () => {
@@ -90,12 +93,21 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
     } catch { /* non-fatal */ }
   };
 
+  const fetchActive = async () => {
+    if (!walletAddress) { setActiveDuel(null); return; }
+    try {
+      const duel = await fetchMyActiveDuel(walletAddress);
+      setActiveDuel(duel);
+    } catch { setActiveDuel(null); }
+  };
+
   useEffect(() => {
     fetchDuels();
     fetchRecent();
     fetchClaimable();
     fetchRefundable();
-    pollRef.current = window.setInterval(fetchDuels, 10000);
+    fetchActive();
+    pollRef.current = window.setInterval(() => { fetchDuels(); fetchActive(); }, 10000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [walletAddress]);
 
@@ -182,6 +194,43 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
             </p>
           </div>
         </div>
+
+        {/* Your Active Duel — shows if you have a waiting duel */}
+        {activeDuel && (
+          <div className="mb-8 p-5 bg-gradient-to-br from-[#FF3131]/5 to-[#14F195]/5 border-2 border-[#FF3131]/40 rounded-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-20 h-20 bg-[#FF3131]/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2 h-2 rounded-full bg-[#14F195] animate-pulse"></div>
+              <h2 className="text-[#14F195] font-black text-xs uppercase tracking-wider">Your Active Duel</h2>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-white font-[1000] italic text-xl">{(activeDuel.entry_fee_lamports / 1_000_000_000).toFixed(2)} SOL</p>
+                <p className="text-zinc-500 text-[10px] font-bold uppercase mt-1">
+                  {activeDuel.is_public ? 'Public' : 'Private'} — Waiting for opponent — {getTimeRemaining(activeDuel.expires_at)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`https://soltrivia.app/duel/${activeDuel.share_code}`);
+                    setCopiedActive(true);
+                    setTimeout(() => setCopiedActive(false), 2000);
+                  }}
+                  className="px-3 py-2 bg-white/5 border border-white/10 text-zinc-400 hover:text-white font-black uppercase text-[10px] rounded transition-all"
+                >
+                  {copiedActive ? 'Copied!' : `Code: ${activeDuel.share_code}`}
+                </button>
+                <button
+                  onClick={() => onResumeDuel?.(activeDuel)}
+                  className="px-4 py-2 bg-[#FF3131] text-white font-[1000] italic uppercase text-[10px] rounded hover:bg-[#FF3131]/80 transition-all"
+                >
+                  Resume
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Join by Code */}
         <div className="mb-8 p-4 bg-white/5 border border-white/10 rounded-xl">

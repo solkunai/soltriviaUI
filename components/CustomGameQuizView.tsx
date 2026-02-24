@@ -143,6 +143,7 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
           session_id: sessionId,
           question_id: currentQuestion.id,
           question_index: roundQuestionOffset + currentIdx,
+          selected_index: -1,
           time_taken_ms: timeTaken,
           time_expired: true,
         });

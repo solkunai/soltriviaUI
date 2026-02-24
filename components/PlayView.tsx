@@ -94,11 +94,11 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
                       <span className="text-zinc-500 text-[10px]">#{p.rank} — {(p.prize_lamports / 1e9).toFixed(4)} SOL</span>
                     </div>
                     <button
-                      disabled={claimingId === p.round_id}
+                      disabled={claimingId === `round-${p.round_id}-${p.rank}`}
                       onClick={() => onClaimRoundPrize?.(p)}
                       className="ml-2 px-3 py-1.5 bg-[#14F195] text-black text-[10px] font-[1000] italic uppercase rounded-md disabled:opacity-50"
                     >
-                      {claimingId === p.round_id ? '...' : 'Claim'}
+                      {claimingId === `round-${p.round_id}-${p.rank}` ? '...' : 'Claim'}
                     </button>
                   </div>
                 ))}
@@ -128,11 +128,11 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
                       <span className="text-zinc-500 text-[10px]">Refund — {(re.entry_fee_lamports / 1e9).toFixed(4)} SOL</span>
                     </div>
                     <button
-                      disabled={claimingId === re.round_id}
+                      disabled={claimingId === `refund-${re.round_id}-${re.tier_index}`}
                       onClick={() => onClaimRefund?.(re)}
                       className="ml-2 px-3 py-1.5 bg-yellow-500 text-black text-[10px] font-[1000] italic uppercase rounded-md disabled:opacity-50"
                     >
-                      {claimingId === re.round_id ? '...' : 'Refund'}
+                      {claimingId === `refund-${re.round_id}-${re.tier_index}` ? '...' : 'Refund'}
                     </button>
                   </div>
                 ))}

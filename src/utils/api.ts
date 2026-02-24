@@ -90,6 +90,7 @@ export interface LeaderboardEntry {
   score: number;
   correct_count: number;
   time_taken_ms: number;
+  games_played?: number;
   is_seeker_verified?: boolean;
 }
 
@@ -500,7 +501,7 @@ export async function fetchUserQuestProgress(walletAddress: string): Promise<Use
     `)
     .eq('wallet_address', walletAddress);
   if (error) throw new Error(error.message);
-  return (data || []) as UserQuestProgress[];
+  return (data || []) as unknown as UserQuestProgress[];
 }
 
 export async function updateQuestProgress(walletAddress: string, questSlug: string, progress: number): Promise<void> {
@@ -1890,6 +1891,31 @@ export async function fetchMyRefundableDuels(walletAddress: string): Promise<Ref
   return data.filter((d: any) => d.status !== 'waiting' || d.expires_at < now);
 }
 
+/** Fetch the wallet's active waiting duel (if any). Returns null if none. */
+export interface ActiveDuel {
+  id: string;
+  duel_id: number;
+  entry_fee_lamports: number;
+  is_public: boolean;
+  share_code: string;
+  created_at: string;
+  expires_at: string;
+}
+export async function fetchMyActiveDuel(walletAddress: string): Promise<ActiveDuel | null> {
+  if (!isSupabaseConfigured || !walletAddress?.trim()) return null;
+  const { data, error } = await supabase
+    .from('duels')
+    .select('id, duel_id, entry_fee_lamports, is_public, share_code, created_at, expires_at')
+    .eq('player1_wallet', walletAddress.trim())
+    .eq('status', 'waiting')
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as ActiveDuel;
+}
+
 /** Update duel status in DB after on-chain cancel/expire. */
 export async function updateDuelStatus(duelId: number, status: 'cancelled' | 'expired'): Promise<void> {
   if (!isSupabaseConfigured) return;
@@ -2104,12 +2130,15 @@ export async function fetchRefundableEntries(walletAddress: string): Promise<Ref
 
   const roundIds = [...new Set(paidSessions.map(s => s.round_id))];
 
-  // Get rounds with status 'refund'
+  // Get rounds that may be refundable (status 'refund' or 'closed' — on-chain verification is the real gate).
+  // auto-end-rounds sets refundMode on-chain then immediately transitions status to 'closed',
+  // so we must check both. Only V2 rounds (>= 2026-02-22) can have on-chain tier PDAs.
   const { data: rounds, error: roundErr } = await supabase
     .from('daily_rounds')
     .select('id, date, round_number')
     .in('id', roundIds)
-    .eq('status', 'refund');
+    .in('status', ['refund', 'closed'])
+    .gte('date', '2026-02-22');
   if (roundErr || !rounds?.length) return [];
 
   const byId = Object.fromEntries(
