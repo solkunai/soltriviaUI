@@ -67,7 +67,7 @@
     "noCompletedRounds": "No completed rounds yet.",
     "winnersAppearHere": "Winners will appear here after each round ends.",
     "round": "ROUND",
-    "playersCount": "{{count}} players",
+    "playersCount": "{{count}} entries",
     "solPool": "{{amount}} SOL pool",
     "distributed": "Distributed: {{amount}} SOL",
     "top5Share": "100% to top 5",

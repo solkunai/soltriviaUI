@@ -67,7 +67,7 @@
     "noCompletedRounds": "完了したラウンドはまだありません。",
     "winnersAppearHere": "各ラウンド終了後に入賞者がここに表示されます。",
     "round": "ラウンド",
-    "playersCount": "{{count}} 人のプレイヤー",
+    "playersCount": "{{count}} エントリー",
     "solPool": "{{amount}} SOL プール",
     "distributed": "分配済み: {{amount}} SOL",
     "top5Share": "100%を上位5名に",

@@ -67,7 +67,7 @@
     "noCompletedRounds": "暂无已完成的轮次。",
     "winnersAppearHere": "每轮结束后，获胜者将在此显示。",
     "round": "轮次",
-    "playersCount": "{{count}} 位玩家",
+    "playersCount": "{{count}} 次参赛",
     "solPool": "{{amount}} SOL 奖池",
     "distributed": "已分配：{{amount}} SOL",
     "top5Share": "100% 分给前5名",

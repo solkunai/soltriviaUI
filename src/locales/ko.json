@@ -67,7 +67,7 @@
     "noCompletedRounds": "완료된 라운드가 아직 없습니다.",
     "winnersAppearHere": "각 라운드 종료 후 수상자가 여기에 표시됩니다.",
     "round": "라운드",
-    "playersCount": "{{count}}명의 플레이어",
+    "playersCount": "{{count}}회 참가",
     "solPool": "{{amount}} SOL 상금 풀",
     "distributed": "배분 완료: {{amount}} SOL",
     "top5Share": "상위 5명에게 100%",

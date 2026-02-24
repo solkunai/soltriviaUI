@@ -67,7 +67,7 @@
     "noCompletedRounds": "Aún no hay rondas completadas.",
     "winnersAppearHere": "Los ganadores aparecerán aquí después de que termine cada ronda.",
     "round": "RONDA",
-    "playersCount": "{{count}} jugadores",
+    "playersCount": "{{count}} entradas",
     "solPool": "Pozo de {{amount}} SOL",
     "distributed": "Distribuido: {{amount}} SOL",
     "top5Share": "100% para los 5 mejores",

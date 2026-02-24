@@ -67,7 +67,7 @@
     "noCompletedRounds": "Henüz tamamlanmış round yok.",
     "winnersAppearHere": "Her round bitiminde kazananlar burada görünecek.",
     "round": "ROUND",
-    "playersCount": "{{count}} oyuncu",
+    "playersCount": "{{count}} giriş",
     "solPool": "{{amount}} SOL havuz",
     "distributed": "Dağıtılan: {{amount}} SOL",
     "top5Share": "%100 ilk 5'e",
