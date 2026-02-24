@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PAID_TRIVIA_ENABLED, V2_TIER_FEES, V2_TIER_LABELS, TXN_FEE_LAMPORTS } from '../src/utils/constants';
 import type { ClaimablePayout, ClaimableCustomGameWin, RefundableEntry, RefundableCustomGame } from '../src/utils/api';
 
@@ -26,6 +27,7 @@ interface PlayViewProps {
 }
 
 const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntriesMax, onStartQuiz, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, onCreateCustomGame, onEnterDuels, claimableRoundPayouts, claimableCustomGames, refundableEntries, refundableCustomGames, onClaimRoundPrize, onClaimCustomPrize, onClaimRefund, onClaimCGRefund, claimingId }) => {
+  const { t } = useTranslation();
   const [selectedTier, setSelectedTier] = useState(0);
   const [claimsExpanded, setClaimsExpanded] = useState(false);
   const roundEntriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
@@ -60,7 +62,7 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
             ENTER THE<br/><span className="sol-gradient-text">ARENA</span>
           </h2>
           <p className="text-zinc-500 font-black uppercase tracking-[0.3em] text-[9px] md:text-xs italic">
-            Knowledge is the Ultimate Asset
+            {t('play.knowledgeIsAsset')}
           </p>
         </div>
 
@@ -74,7 +76,7 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-[#14F195] rounded-full animate-pulse"></div>
                 <span className="text-[#14F195] text-xs font-[1000] italic uppercase tracking-tight">
-                  {totalClaimable} Unclaimed Reward{totalClaimable > 1 ? 's' : ''}
+                  {t('play.unclaimedRewards', { count: totalClaimable })}
                 </span>
               </div>
               <svg className={`w-4 h-4 text-[#14F195] transition-transform ${claimsExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
@@ -159,7 +161,7 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
         {/* Stats Row */}
         <div className="grid grid-cols-2 gap-2.5 w-full mb-3 md:mb-4">
           <div className={`bg-[#0A0A0A] border rounded-xl p-3 md:p-4 text-center ${roundEntriesLeft > 0 ? 'border-[#14F195]/20' : 'border-white/5'}`}>
-            <span className="text-zinc-500 text-[8px] font-black uppercase block mb-1 tracking-widest italic">Round Entries</span>
+            <span className="text-zinc-500 text-[8px] font-black uppercase block mb-1 tracking-widest italic">{t('play.roundEntries')}</span>
             <span className={`font-[1000] text-lg md:text-xl italic tabular-nums leading-none ${roundEntriesLeft > 0 ? 'text-[#14F195]' : 'text-zinc-600'}`}>
               {roundEntriesLeft}<span className="text-zinc-600 text-xs">/{roundEntriesMax}</span>
             </span>
@@ -168,9 +170,9 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
             onClick={onOpenBuyLives}
             className={`border rounded-xl p-3 md:p-4 text-center transition-colors ${livesNum > 0 ? 'bg-[#0A0A0A] border-white/10 hover:border-white/20' : 'bg-[#FF3131]/5 border-[#FF3131]/20 hover:bg-[#FF3131]/10'}`}
           >
-            <span className={`text-[8px] font-black uppercase block mb-1 tracking-widest italic ${livesNum > 0 ? 'text-zinc-500' : 'text-[#FF3131]'}`}>Extra Lives</span>
+            <span className={`text-[8px] font-black uppercase block mb-1 tracking-widest italic ${livesNum > 0 ? 'text-zinc-500' : 'text-[#FF3131]'}`}>{t('play.extraLives')}</span>
             <span className={`font-[1000] text-lg md:text-xl italic tabular-nums leading-none ${livesNum > 0 ? 'text-white' : 'text-[#FF3131]'}`}>
-              {livesNum > 0 ? livesNum : 'BUY'}
+              {livesNum > 0 ? livesNum : t('play.buy')}
             </span>
           </button>
         </div>
@@ -178,7 +180,7 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
         {/* Tier Selector */}
         {PAID_TRIVIA_ENABLED && (
           <div className="w-full mb-3 md:mb-4">
-            <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic block mb-2 text-center">Select Entry Tier</span>
+            <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic block mb-2 text-center">{t('play.selectEntryTier')}</span>
             <div className="grid grid-cols-4 gap-1.5 md:gap-2">
               {V2_TIER_LABELS.map((label, i) => {
                 const active = selectedTier === i;
@@ -208,9 +210,9 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
         >
           {PAID_TRIVIA_ENABLED && <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>}
           <div className="flex flex-col items-start relative z-10">
-            <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] mb-0.5 ${PAID_TRIVIA_ENABLED ? 'text-black/50' : 'text-zinc-500'}`}>{PAID_TRIVIA_ENABLED ? `ENTRY: ${totalFee} SOL` : 'PAUSED — UPGRADING'}</span>
+            <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] mb-0.5 ${PAID_TRIVIA_ENABLED ? 'text-black/50' : 'text-zinc-500'}`}>{PAID_TRIVIA_ENABLED ? t('play.entry', { amount: totalFee }) : t('play.paused')}</span>
             <span className={`${PAID_TRIVIA_ENABLED ? 'text-black' : 'text-zinc-500'} text-xl md:text-3xl font-[1000] italic leading-none uppercase tracking-tighter`}>
-              {canPlay ? 'COMPETE FOR SOL' : 'GET EXTRA LIVES'}
+              {canPlay ? t('play.competeForSol') : t('play.getExtraLives')}
             </span>
           </div>
           <div className={`w-8 h-8 rounded-full ${PAID_TRIVIA_ENABLED ? 'bg-black/10' : 'bg-white/10'} flex items-center justify-center relative z-10`}>
@@ -231,13 +233,13 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
             <span className="text-[#14F195] text-base md:text-xl font-[1000] italic leading-none uppercase tracking-tighter">
-              {hasGamePass ? 'FREE PLAY' : practiceRunsLeft > 0 ? 'TRY FREE PLAY' : 'NO RUNS LEFT'}
+              {hasGamePass ? t('play.freePlay') : practiceRunsLeft > 0 ? t('play.tryFreePlay') : t('play.noRunsLeft')}
             </span>
           </div>
           {hasGamePass ? (
-            <span className="absolute right-5 text-[#14F195]/60 text-[9px] font-black italic uppercase tracking-wider">Unlimited</span>
+            <span className="absolute right-5 text-[#14F195]/60 text-[9px] font-black italic uppercase tracking-wider">{t('play.unlimited')}</span>
           ) : practiceRunsLeft > 0 ? (
-            <span className="absolute right-5 text-zinc-600 text-xs font-black italic">{practiceRunsLeft}/5</span>
+            <span className="absolute right-5 text-zinc-600 text-xs font-black italic">{t('play.runsLeft', { count: practiceRunsLeft })}</span>
           ) : null}
         </button>
 
@@ -252,12 +254,12 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
               <span className="text-[#FF3131] text-sm md:text-base font-[1000] italic leading-none uppercase tracking-tighter">
-                1V1 DUELS
+                {t('play.duels')}
               </span>
             </div>
             <div className="flex items-center gap-2 relative z-10">
-              <span className="bg-[#FF3131]/20 text-[#FF3131] text-[7px] font-black italic uppercase tracking-wider px-1.5 py-0.5 rounded-full">LIVE</span>
-              <span className="text-zinc-500 text-[9px] font-black italic">0.01–1 SOL</span>
+              <span className="bg-[#FF3131]/20 text-[#FF3131] text-[7px] font-black italic uppercase tracking-wider px-1.5 py-0.5 rounded-full">{t('play.live')}</span>
+              <span className="text-zinc-500 text-[9px] font-black italic">{t('play.duelPriceRange')}</span>
             </div>
           </button>
         )}
@@ -273,7 +275,7 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
               </svg>
               <span className="text-zinc-300 text-sm md:text-base font-[1000] italic leading-none uppercase tracking-tighter">
-                CREATE CUSTOM GAME
+                {t('play.createCustomGame')}
               </span>
             </div>
             <span className="text-zinc-600 text-[9px] font-black italic uppercase tracking-wider relative z-10">
@@ -284,7 +286,7 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
 
         {/* Info */}
         <p className="text-[8px] md:text-[9px] text-zinc-500 text-center font-black uppercase tracking-widest px-4 opacity-50 italic leading-relaxed">
-          2 free entries every 6h • Top 5 split prize pool
+          {t('play.infoText')}
         </p>
       </div>
     </div>

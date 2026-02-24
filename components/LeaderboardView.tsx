@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DEFAULT_AVATAR } from '../src/utils/constants';
 import { getLeaderboard, LeaderboardEntry, fetchRoundsWithWinnersPaginated, getTotalSolWonByWallets, fetchDuelWinsLeaderboard, fetchCustomGameLeaderboard, type RoundWithWinner, type DuelWinLeaderEntry, type CustomGameLeaderEntry } from '../src/utils/api';
 import { useWallet } from '../src/contexts/WalletContext';
+import { useTranslation } from 'react-i18next';
 import Pagination from './Pagination';
 
 type RankPeriod = 'ALL_TIME' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
@@ -48,6 +49,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
     }
     return avatar;
   };
+  const { t } = useTranslation();
   const [mainTab, setMainTab] = useState<MainLeaderboardTab>('LEADERBOARD');
   const [period, setPeriod] = useState<RankPeriod>('ALL_TIME'); // Default: highest score across all rounds
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
@@ -208,7 +210,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
 
       {/* Persistent Sticky Header */}
       <div className="flex items-center justify-between px-6 py-6 border-b border-white/5 bg-[#050505] sticky top-0 z-[100]">
-        <h2 className="text-2xl font-[1000] italic uppercase tracking-tighter">LEADERBOARD</h2>
+        <h2 className="text-2xl font-[1000] italic uppercase tracking-tighter">{t('leaderboard.title')}</h2>
         <button 
           onClick={onOpenGuide}
           className="w-10 h-10 rounded-full bg-[#14F195] flex items-center justify-center shadow-lg active:scale-95 transition-all"
@@ -222,10 +224,10 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
         <div className="flex justify-center mb-6 px-2">
           <div className="flex w-full max-w-lg items-center bg-black/40 p-1 rounded-full border border-white/10 overflow-x-auto no-scrollbar">
             {([
-              { key: 'LEADERBOARD', label: 'XP' },
-              { key: 'ROUND_WINS', label: 'ROUNDS' },
-              { key: 'DUEL_WINS', label: 'DUELS' },
-              { key: 'CUSTOM_GAMES', label: 'CUSTOM' },
+              { key: 'LEADERBOARD', label: t('leaderboard.tabXp') },
+              { key: 'ROUND_WINS', label: t('leaderboard.tabRounds') },
+              { key: 'DUEL_WINS', label: t('leaderboard.tabDuels') },
+              { key: 'CUSTOM_GAMES', label: t('leaderboard.tabCustom') },
             ] as { key: MainLeaderboardTab; label: string }[]).map((tab) => (
               <button
                 key={tab.key}
@@ -251,14 +253,14 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
               </h1>
               <div className="h-1 w-16 bg-[#14F195] mt-4 shadow-[0_0_15px_#14F195]" />
               <p className="text-zinc-500 text-[10px] md:text-xs font-black uppercase tracking-widest italic mt-4 max-w-md">
-                Top 5 share the pot: 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.
+                {t('leaderboard.prizeDistribution')}
               </p>
             </div>
             {/* Date Filter + Count */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-6">
               <div className="flex items-center gap-3">
                 <label className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic shrink-0">
-                  Jump to date
+                  {t('leaderboard.jumpToDate')}
                 </label>
                 <input
                   type="date"
@@ -271,23 +273,23 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                     onClick={() => { setRoundsFilterDate(''); setRoundsPage(0); }}
                     className="min-w-[44px] min-h-[44px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-zinc-400 text-xs font-black uppercase hover:bg-white/10 active:scale-95 transition-all"
                   >
-                    Clear
+                    {t('leaderboard.clear')}
                   </button>
                 )}
               </div>
               <span className="text-zinc-600 text-[10px] font-black uppercase tracking-wider italic">
-                {roundsTotalCount} round{roundsTotalCount !== 1 ? 's' : ''}
+                {t('leaderboard.roundsCount', { count: roundsTotalCount })}
               </span>
             </div>
             {roundsLoading && (
               <div className="text-center py-20">
-                <p className="text-zinc-500 font-black uppercase tracking-widest italic animate-pulse">Loading rounds...</p>
+                <p className="text-zinc-500 font-black uppercase tracking-widest italic animate-pulse">{t('leaderboard.loadingRounds')}</p>
               </div>
             )}
             {!roundsLoading && roundsWithWinners.length === 0 && (
               <div className="text-center py-20">
-                <p className="text-zinc-400 text-lg font-bold italic">No completed rounds yet.</p>
-                <p className="text-zinc-600 text-sm mt-2">Winners will appear here after each round ends.</p>
+                <p className="text-zinc-400 text-lg font-bold italic">{t('leaderboard.noCompletedRounds')}</p>
+                <p className="text-zinc-600 text-sm mt-2">{t('leaderboard.winnersAppearHere')}</p>
               </div>
             )}
             {!roundsLoading && roundsWithWinners.length > 0 && (
@@ -299,31 +301,31 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                       <div>
-                        <div className="text-[#14F195] text-[10px] md:text-xs font-black uppercase tracking-widest italic mb-1">ROUND</div>
+                        <div className="text-[#14F195] text-[10px] md:text-xs font-black uppercase tracking-widest italic mb-1">{t('leaderboard.round')}</div>
                         <div className="text-white font-[1000] italic text-base md:text-lg leading-tight">{r.round_title}</div>
                         <div className="flex items-center gap-3 mt-2 text-zinc-500 text-[10px] font-black uppercase tracking-wider">
-                          <span>{r.player_count} players</span>
+                          <span>{t('leaderboard.playersCount', { count: r.player_count })}</span>
                           <span>·</span>
-                          <span>{(r.pot_lamports / 1_000_000_000).toFixed(2)} SOL pool</span>
+                          <span>{t('leaderboard.solPool', { amount: (r.pot_lamports / 1_000_000_000).toFixed(2) })}</span>
                           {r.payouts && r.payouts.length > 0 && (
                             <>
                               <span>·</span>
-                              <span>Distributed: {(r.payouts.reduce((sum, p) => sum + (p.prize_lamports || 0), 0) / 1_000_000_000).toFixed(4)} SOL</span>
+                              <span>{t('leaderboard.distributed', { amount: (r.payouts.reduce((sum, p) => sum + (p.prize_lamports || 0), 0) / 1_000_000_000).toFixed(4) })}</span>
                             </>
                           )}
                           <span>·</span>
-                          <span>100% to top 5</span>
+                          <span>{t('leaderboard.top5Share')}</span>
                         </div>
                         {r.status === 'refund' && (
                           <div className="mt-2 text-[#FF9500] text-[10px] font-black uppercase tracking-wider italic">
-                            Round failed — players will be refunded
+                            {t('leaderboard.roundFailed')}
                           </div>
                         )}
                       </div>
                     </div>
                     {r.status === 'refund' ? (
                       <div className="py-3 px-3 rounded-lg bg-[#FF9500]/10 border border-[#FF9500]/30 text-[#FF9500] text-xs font-bold italic">
-                        Fewer than 5 players finished. Entry fees will be refunded.
+                        {t('leaderboard.fewerPlayersRefund')}
                       </div>
                     ) : r.payouts && r.payouts.length > 0 ? (
                       <div className="space-y-2">
@@ -345,7 +347,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                             <div className="text-[#14F195] text-xs font-black italic">{p.score.toLocaleString()} XP</div>
                             <div className="text-white text-xs font-bold">{(p.prize_lamports / 1_000_000_000).toFixed(4)} SOL</div>
                             {p.paid_at ? (
-                              <span className="text-[10px] font-black uppercase tracking-wider text-[#14F195] bg-[#14F195]/10 px-2 py-0.5 rounded">Paid</span>
+                              <span className="text-[10px] font-black uppercase tracking-wider text-[#14F195] bg-[#14F195]/10 px-2 py-0.5 rounded">{t('leaderboard.paid')}</span>
                             ) : null}
                           </div>
                         ))}
@@ -356,7 +358,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                           <img src={r.winner_avatar || DEFAULT_AVATAR} alt="" className="w-full h-full object-cover" />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">WINNER</div>
+                          <div className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">{t('leaderboard.winner')}</div>
                           <div className="text-white font-[1000] italic truncate">
                             {r.winner_display_name || `${r.winner_wallet.slice(0, 4)}...${r.winner_wallet.slice(-4)}`}
                           </div>
@@ -368,10 +370,10 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                       </div>
                     ) : (r.player_count ?? 0) > 0 ? (
                       <div className="text-zinc-500 text-sm font-bold italic">
-                        No winners — need 5+ finishers for prizes. This round had {r.player_count} player{r.player_count === 1 ? '' : 's'}.
+                        {t('leaderboard.noWinnersNeed5')}
                       </div>
                     ) : (
-                      <div className="text-zinc-600 text-sm font-bold italic">No finishers yet (round in progress)</div>
+                      <div className="text-zinc-600 text-sm font-bold italic">{t('leaderboard.noFinishersYet')}</div>
                     )}
                   </div>
                 ))}
@@ -388,18 +390,18 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
               </h1>
               <div className="h-1 w-12 bg-[#14F195] mt-3 shadow-[0_0_15px_#14F195]" />
               <p className="text-zinc-500 text-[10px] md:text-xs font-black uppercase tracking-widest italic mt-3 max-w-md">
-                Most 1v1 duel victories. Winner takes the pot.
+                {t('leaderboard.mostDuelVictories')}
               </p>
             </div>
             {duelWinsLoading && (
               <div className="text-center py-16">
-                <p className="text-zinc-500 font-black uppercase tracking-widest italic animate-pulse">Loading duel stats...</p>
+                <p className="text-zinc-500 font-black uppercase tracking-widest italic animate-pulse">{t('leaderboard.loadingDuelStats')}</p>
               </div>
             )}
             {!duelWinsLoading && duelWinsData.length === 0 && (
               <div className="text-center py-16">
-                <p className="text-zinc-400 text-lg font-bold italic mb-2">No duels completed yet!</p>
-                <p className="text-zinc-600 text-sm">Challenge someone to a 1v1 duel to be the first on the board.</p>
+                <p className="text-zinc-400 text-lg font-bold italic mb-2">{t('leaderboard.noDuelsCompleted')}</p>
+                <p className="text-zinc-600 text-sm">{t('leaderboard.challengeFirst')}</p>
               </div>
             )}
             {!duelWinsLoading && duelWinsData.length > 0 && (
@@ -407,11 +409,11 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                 {/* Header */}
                 <div className="hidden md:flex items-center gap-3 px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest italic border-b border-white/5 pb-3">
                   <span className="w-8 text-center">#</span>
-                  <span className="w-10">Avg</span>
-                  <span className="flex-1">Player</span>
-                  <span className="w-16 text-center">Wins</span>
-                  <span className="w-20 text-center">Win %</span>
-                  <span className="w-28 text-right">Earned</span>
+                  <span className="w-10">{t('leaderboard.avg')}</span>
+                  <span className="flex-1">{t('leaderboard.playerLabel')}</span>
+                  <span className="w-16 text-center">{t('leaderboard.wins')}</span>
+                  <span className="w-20 text-center">{t('leaderboard.winPercent')}</span>
+                  <span className="w-28 text-right">{t('leaderboard.earned')}</span>
                 </div>
                 {duelWinsData.map((entry, idx) => {
                   const winPct = entry.total_duels > 0 ? Math.round((entry.win_count / entry.total_duels) * 100) : 0;
@@ -436,7 +438,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                       </div>
                       <div className="w-16 text-center">
                         <p className="text-[#14F195] font-[1000] italic text-lg leading-none">{entry.win_count}</p>
-                        <p className="text-zinc-600 text-[7px] font-black uppercase italic mt-0.5">WINS</p>
+                        <p className="text-zinc-600 text-[7px] font-black uppercase italic mt-0.5">{t('leaderboard.wins')}</p>
                       </div>
                       <div className="hidden md:block w-20 text-center">
                         <p className="text-white font-black italic text-sm">{winPct}%</p>
@@ -460,18 +462,18 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
               </h1>
               <div className="h-1 w-12 bg-[#14F195] mt-3 shadow-[0_0_15px_#14F195]" />
               <p className="text-zinc-500 text-[10px] md:text-xs font-black uppercase tracking-widest italic mt-3 max-w-md">
-                Top performers in community-created custom trivia games.
+                {t('leaderboard.topCustomPerformers')}
               </p>
             </div>
             {customGameLoading && (
               <div className="text-center py-16">
-                <p className="text-zinc-500 font-black uppercase tracking-widest italic animate-pulse">Loading custom game stats...</p>
+                <p className="text-zinc-500 font-black uppercase tracking-widest italic animate-pulse">{t('leaderboard.loadingCustomStats')}</p>
               </div>
             )}
             {!customGameLoading && customGameData.length === 0 && (
               <div className="text-center py-16">
-                <p className="text-zinc-400 text-lg font-bold italic mb-2">No custom games played yet!</p>
-                <p className="text-zinc-600 text-sm">Create or play a custom game to appear here.</p>
+                <p className="text-zinc-400 text-lg font-bold italic mb-2">{t('leaderboard.noCustomGamesPlayed')}</p>
+                <p className="text-zinc-600 text-sm">{t('leaderboard.createOrPlay')}</p>
               </div>
             )}
             {!customGameLoading && customGameData.length > 0 && (
@@ -479,11 +481,11 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                 {/* Header */}
                 <div className="hidden md:flex items-center gap-3 px-4 text-[10px] font-black text-zinc-600 uppercase tracking-widest italic border-b border-white/5 pb-3">
                   <span className="w-8 text-center">#</span>
-                  <span className="w-10">Avg</span>
-                  <span className="flex-1">Player</span>
-                  <span className="w-20 text-center">Best</span>
-                  <span className="w-16 text-center">Games</span>
-                  <span className="w-24 text-right">Total XP</span>
+                  <span className="w-10">{t('leaderboard.avg')}</span>
+                  <span className="flex-1">{t('leaderboard.playerLabel')}</span>
+                  <span className="w-20 text-center">{t('leaderboard.best')}</span>
+                  <span className="w-16 text-center">{t('leaderboard.games')}</span>
+                  <span className="w-24 text-right">{t('leaderboard.totalXp')}</span>
                 </div>
                 {customGameData.map((entry, idx) => {
                   const displayName = entry.username || `${entry.wallet_address.slice(0, 4)}...${entry.wallet_address.slice(-4)}`;
@@ -506,7 +508,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                       </div>
                       <div className="w-20 text-center">
                         <p className="text-[#14F195] font-[1000] italic text-lg leading-none">{entry.best_score.toLocaleString()}</p>
-                        <p className="text-zinc-600 text-[7px] font-black uppercase italic mt-0.5">BEST</p>
+                        <p className="text-zinc-600 text-[7px] font-black uppercase italic mt-0.5">{t('leaderboard.best')}</p>
                       </div>
                       <div className="hidden md:block w-16 text-center">
                         <p className="text-white font-black italic text-sm">{entry.games_played}</p>
@@ -514,7 +516,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                       </div>
                       <div className="w-24 text-right">
                         <p className="text-white font-black italic text-sm">{entry.total_score.toLocaleString()}</p>
-                        <p className="text-zinc-600 text-[7px] font-black uppercase italic mt-0.5">TOTAL XP</p>
+                        <p className="text-zinc-600 text-[7px] font-black uppercase italic mt-0.5">{t('leaderboard.totalXp')}</p>
                       </div>
                     </div>
                   );
@@ -535,7 +537,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
           </div>
 
           <div className="text-right">
-            <span className="text-zinc-500 text-[9px] md:text-[11px] font-black uppercase tracking-widest italic block mb-1">TOTAL PRIZE POOL</span>
+            <span className="text-zinc-500 text-[9px] md:text-[11px] font-black uppercase tracking-widest italic block mb-1">{t('leaderboard.totalPrizePool')}</span>
             <div className="flex items-baseline justify-end gap-1">
                <span className="text-[#14F195] text-2xl md:text-4xl font-[1000] italic tracking-tighter tabular-nums leading-none">
                  {loading ? '...' : totalSolWon.toFixed(3)}
@@ -544,7 +546,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
             </div>
             <div className="mt-1 text-right">
               <span className="text-zinc-600 text-[8px] md:text-[10px] font-black uppercase tracking-widest italic">
-                {playerCount} {playerCount === 1 ? 'PLAYER' : 'PLAYERS'}
+                {t('leaderboard.playersUpper', { count: playerCount })}
               </span>
             </div>
           </div>
@@ -553,10 +555,10 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
         {/* Period Tabs — ALL_TIME = highest score across all rounds; DAILY = current 6h round */}
         <div className="flex flex-col items-center gap-2 mb-6 px-4">
           {period === 'ALL_TIME' && (
-            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">Highest score ever · updates as rounds complete</p>
+            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">{t('leaderboard.highestScoreEver')}</p>
           )}
           {period === 'DAILY' && (
-            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">Current round · updates as players earn XP</p>
+            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">{t('leaderboard.currentRound')}</p>
           )}
           <div className="flex w-full max-w-md items-center justify-between bg-black/40 p-1.5 rounded-full border border-white/10">
             {(['ALL_TIME', 'DAILY', 'WEEKLY', 'MONTHLY'] as RankPeriod[]).map((p) => (
@@ -581,12 +583,12 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
             <div className="max-w-2xl mx-auto bg-gradient-to-r from-[#14F195]/10 via-[#14F195]/5 to-transparent border border-[#14F195]/20 rounded-xl p-4 backdrop-blur-md">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-zinc-400 text-[10px] font-black uppercase tracking-widest block mb-1">YOUR RANK</span>
+                  <span className="text-zinc-400 text-[10px] font-black uppercase tracking-widest block mb-1">{t('leaderboard.yourRank')}</span>
                   <div className="flex items-baseline gap-2">
                     <span className="text-[#14F195] text-3xl font-[1000] italic leading-none">#{userRank.rank}</span>
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-zinc-500 text-[8px] font-black uppercase">XP:</span>
+                        <span className="text-zinc-500 text-[8px] font-black uppercase">{t('leaderboard.xpLabel')}</span>
                         <span className="text-[#14F195] text-sm font-black italic">{userRank.score.toLocaleString()}</span>
                       </div>
                     </div>
@@ -604,7 +606,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
         {publicKey && !userRank && !loading && (
           <div className="mb-6 px-4">
             <div className="max-w-2xl mx-auto bg-zinc-900/50 border border-white/5 rounded-xl p-4 text-center">
-              <p className="text-zinc-400 text-sm font-bold italic">Play a game to get your rank!</p>
+              <p className="text-zinc-400 text-sm font-bold italic">{t('leaderboard.playToRank')}</p>
             </div>
           </div>
         )}
@@ -614,14 +616,14 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
           {/* Empty State */}
           {loading && allPlayers.length === 0 && (
             <div className="text-center py-20">
-              <p className="text-zinc-500 text-lg font-bold italic animate-pulse">Loading leaderboard...</p>
+              <p className="text-zinc-500 text-lg font-bold italic animate-pulse">{t('leaderboard.loadingLeaderboard')}</p>
             </div>
           )}
           
           {!loading && allPlayers.length === 0 && (
             <div className="text-center py-20">
-              <p className="text-zinc-400 text-xl font-bold italic mb-4">No players yet!</p>
-              <p className="text-zinc-600 text-sm">Be the first to play and claim the top spot 🏆</p>
+              <p className="text-zinc-400 text-xl font-bold italic mb-4">{t('leaderboard.noPlayersYet')}</p>
+              <p className="text-zinc-600 text-sm">{t('leaderboard.beFirst')}</p>
             </div>
           )}
 
@@ -650,7 +652,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                      {/* Mobile top 3 extra stats */}
                      <div className="flex flex-col items-center gap-0.5 pt-1.5 opacity-90">
                         <div className="flex items-center gap-1">
-                            <span className="text-zinc-500 text-[6px] font-black italic uppercase leading-none">WON:</span>
+                            <span className="text-zinc-500 text-[6px] font-black italic uppercase leading-none">{t('leaderboard.won')}</span>
                             <span className="text-[#14F195] text-[7px] font-black italic uppercase tracking-tighter leading-none">{player.winnings}</span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -734,11 +736,11 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
           {/* Desktop Version: Sleek Row-Based Layout */}
           <div className="hidden md:block space-y-2">
               <div className="flex items-center gap-3 px-6 text-[10px] font-black text-zinc-600 uppercase tracking-widest italic border-b border-white/5 pb-4">
-                <span className="w-10 text-center">Rank</span>
-                <span className="w-12">Avatar</span>
-                <span className="flex-1">Identity</span>
-                <span className="w-24 text-center">Games</span>
-                <span className="w-32 text-right">XP Earned</span>
+                <span className="w-10 text-center">{t('leaderboard.rank')}</span>
+                <span className="w-12">{t('leaderboard.avatar')}</span>
+                <span className="flex-1">{t('leaderboard.identity')}</span>
+                <span className="w-24 text-center">{t('leaderboard.games')}</span>
+                <span className="w-32 text-right">{t('leaderboard.xpEarned')}</span>
               </div>
               {allPlayers.slice(5).map((player, idx) => (
                 <div key={idx} className="flex items-center gap-4 p-3 bg-white/[0.02] border border-white/5 rounded-xl group hover:bg-white/[0.04] transition-all duration-300">
@@ -748,7 +750,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                     </div>
                     <div className="flex-1 truncate">
                         <p className="font-[1000] italic text-base uppercase text-white truncate tracking-tight flex items-center gap-1.5">{player.username}{player.is_seeker_verified && <SeekerBadge />}</p>
-                        <p className="text-[10px] font-bold text-zinc-500 mt-0.5 uppercase">Sol Won: {player.winnings}</p>
+                        <p className="text-[10px] font-bold text-zinc-500 mt-0.5 uppercase">{t('leaderboard.solWon')} {player.winnings}</p>
                     </div>
                     <div className="w-24 text-center font-black italic text-sm text-[#14F195]">{player.gamesPlayed}</div>
                     <div className="w-32 text-right">

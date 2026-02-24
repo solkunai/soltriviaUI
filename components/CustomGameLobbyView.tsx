@@ -13,6 +13,7 @@ interface CustomGameLobbyViewProps {
   onJoinGame: (gameData: CustomGameData) => Promise<void>;
   onStartTimer: (gameData: CustomGameData) => Promise<void>;
   onClaimPrize: (onChainGameId: number) => Promise<void>;
+  onClaimRefund?: (onChainGameId: number) => Promise<void>;
   onBack: () => void;
   onConnectWallet: () => void;
 }
@@ -24,6 +25,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   onJoinGame,
   onStartTimer,
   onClaimPrize,
+  onClaimRefund,
   onBack,
   onConnectWallet,
 }) => {
@@ -34,6 +36,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   const [joining, setJoining] = useState(false);
   const [startingTimer, setStartingTimer] = useState(false);
   const [claiming, setClaiming] = useState(false);
+  const [refunding, setRefunding] = useState(false);
   const [countdown, setCountdown] = useState('');
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -188,6 +191,22 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
 
   // ── Expired ──
   if (gameData.is_expired || gameData.status === 'expired') {
+    const isPaidExpired = gameData.prize_model === 'player_funded';
+    const canClaimRefund = isPaidExpired && gameData.player_has_entered && gameData.on_chain_game_id != null && onClaimRefund;
+    const entryRefundSOL = gameData.entry_fee_lamports / 1e9;
+
+    const handleRefund = async () => {
+      if (!gameData.on_chain_game_id || !onClaimRefund) return;
+      setRefunding(true);
+      try {
+        await onClaimRefund(gameData.on_chain_game_id);
+      } catch (err: any) {
+        if (!err.message?.includes('User rejected')) alert(err.message || 'Failed to claim refund');
+      } finally {
+        setRefunding(false);
+      }
+    };
+
     return (
       <div className="min-h-full flex items-center justify-center bg-[#050505] p-6">
         <div className="text-center max-w-md">
@@ -198,10 +217,30 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           </div>
           <h2 className="text-2xl font-[1000] italic text-white uppercase mb-2">Game Expired</h2>
           <p className="text-zinc-400 text-sm mb-2">"{gameData.name}" has expired.</p>
-          <p className="text-zinc-600 text-xs mb-6">Custom games are available for 7 days after creation.</p>
-          <button onClick={onBack} className="min-h-[44px] px-8 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]">
-            Back to Home
-          </button>
+          {canClaimRefund ? (
+            <>
+              <p className="text-zinc-400 text-xs mb-6">You paid {entryRefundSOL} SOL entry. Claim your refund below.</p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleRefund}
+                  disabled={refunding}
+                  className="min-h-[48px] px-8 py-3 bg-amber-500 text-black font-[1000] italic uppercase rounded-xl hover:bg-amber-400 transition-all active:scale-[0.98] disabled:opacity-50"
+                >
+                  {refunding ? 'Claiming Refund...' : `Claim Refund (${entryRefundSOL} SOL)`}
+                </button>
+                <button onClick={onBack} className="min-h-[44px] px-8 py-3 text-zinc-500 font-black uppercase text-[10px] tracking-wider hover:text-zinc-300 transition-all">
+                  Back to Home
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-zinc-600 text-xs mb-6">Custom games are available for 7 days after creation.</p>
+              <button onClick={onBack} className="min-h-[44px] px-8 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]">
+                Back to Home
+              </button>
+            </>
+          )}
         </div>
       </div>
     );

@@ -8,12 +8,14 @@ interface DuelWaitingViewProps {
   entryFee: number;
   isPublic: boolean;
   expiresAt: string;
+  walletAddress: string;
   onDuelJoined: (opponentWallet: string, dbDuelId: string) => void;
-  onCancel: () => void;
+  onCancel: () => Promise<void>;
+  onClaimRefund: (duelId: number, player1Wallet: string) => Promise<void>;
   onBack: () => void;
 }
 
-const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, shareCode, entryFee, isPublic, expiresAt, onDuelJoined, onCancel, onBack }) => {
+const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, shareCode, entryFee, isPublic, expiresAt, walletAddress, onDuelJoined, onCancel, onClaimRefund, onBack }) => {
   const [timeLeft, setTimeLeft] = useState('');
   const [expired, setExpired] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -84,9 +86,17 @@ const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, sha
     window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     setCancelling(true);
-    onCancel();
+    try {
+      if (expired) {
+        await onClaimRefund(duelId, walletAddress);
+      } else {
+        await onCancel();
+      }
+    } finally {
+      setCancelling(false);
+    }
   };
 
   return (
@@ -142,10 +152,14 @@ const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, sha
         <div className="flex gap-3">
           <button
             onClick={handleCancel}
-            disabled={cancelling || expired}
-            className="flex-1 px-4 py-3 bg-white/5 border border-white/10 text-zinc-400 hover:text-white font-black uppercase text-xs rounded-lg disabled:opacity-50 transition-all"
+            disabled={cancelling}
+            className={`flex-1 px-4 py-3 font-black uppercase text-xs rounded-lg disabled:opacity-50 transition-all ${
+              expired
+                ? 'bg-[#14F195]/10 border border-[#14F195]/30 text-[#14F195] hover:bg-[#14F195]/20'
+                : 'bg-white/5 border border-white/10 text-zinc-400 hover:text-white'
+            }`}
           >
-            {cancelling ? 'Cancelling...' : 'Cancel Duel'}
+            {cancelling ? (expired ? 'Claiming Refund...' : 'Cancelling...') : expired ? 'Claim Refund' : 'Cancel Duel'}
           </button>
           <button
             onClick={onBack}

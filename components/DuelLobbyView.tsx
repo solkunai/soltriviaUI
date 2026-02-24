@@ -1,17 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useConnection } from '../src/contexts/WalletContext';
-import { getOpenDuels, fetchCompletedDuels, fetchMyDuelWins, type CompletedDuel, type MyDuelWin } from '../src/utils/api';
+import { getOpenDuels, fetchCompletedDuels, fetchMyDuelWins, fetchMyRefundableDuels, type CompletedDuel, type MyDuelWin, type RefundableDuel } from '../src/utils/api';
 import { fetchDuel } from '../src/utils/soltriviaContract';
 import { V2_DUEL_FEES, V2_DUEL_LABELS, TXN_FEE_LAMPORTS } from '../src/utils/constants';
 
 interface DuelLobbyViewProps {
   walletAddress: string | null;
-  onCreateDuel: (entryFee: number, isPublic: boolean) => void;
+  onCreateDuel: (entryFee: number, isPublic: boolean) => Promise<void>;
   onJoinDuel: (duelId: number, entryFee: number) => void;
   onJoinByCode: (shareCode: string) => void;
   onConnectWallet: () => void;
   onBack: () => void;
   onClaimDuelPrize?: (duelId: number) => Promise<void>;
+  onClaimDuelRefund?: (duelId: number, player1Wallet: string) => Promise<void>;
 }
 
 interface OpenDuel {
@@ -25,12 +26,14 @@ interface OpenDuel {
   expires_at: string;
 }
 
-const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDuel, onJoinDuel, onJoinByCode, onConnectWallet, onBack, onClaimDuelPrize }) => {
+const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDuel, onJoinDuel, onJoinByCode, onConnectWallet, onBack, onClaimDuelPrize, onClaimDuelRefund }) => {
   const { connection } = useConnection();
   const [openDuels, setOpenDuels] = useState<OpenDuel[]>([]);
   const [recentDuels, setRecentDuels] = useState<CompletedDuel[]>([]);
   const [claimableDuels, setClaimableDuels] = useState<MyDuelWin[]>([]);
+  const [refundableDuels, setRefundableDuels] = useState<RefundableDuel[]>([]);
   const [claimingDuelId, setClaimingDuelId] = useState<number | null>(null);
+  const [refundingDuelId, setRefundingDuelId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedFeeIdx, setSelectedFeeIdx] = useState(0);
   const [isPublic, setIsPublic] = useState(true);
@@ -70,18 +73,40 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
     } catch { /* non-fatal */ }
   };
 
+  const fetchRefundable = async () => {
+    if (!walletAddress) return;
+    try {
+      const duels = await fetchMyRefundableDuels(walletAddress);
+      // Check on-chain if duel vault still has funds (not already expired/cancelled on-chain)
+      const refundable: RefundableDuel[] = [];
+      for (const d of duels) {
+        try {
+          const onChain = await fetchDuel(connection, d.duel_id);
+          // On-chain status 0 = waiting (can be cancelled/expired), vault has funds
+          if (onChain && onChain.status === 0) refundable.push(d);
+        } catch { /* skip */ }
+      }
+      setRefundableDuels(refundable);
+    } catch { /* non-fatal */ }
+  };
+
   useEffect(() => {
     fetchDuels();
     fetchRecent();
     fetchClaimable();
+    fetchRefundable();
     pollRef.current = window.setInterval(fetchDuels, 10000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [walletAddress]);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!walletAddress) { onConnectWallet(); return; }
     setCreating(true);
-    onCreateDuel(V2_DUEL_FEES[selectedFeeIdx], isPublic);
+    try {
+      await onCreateDuel(V2_DUEL_FEES[selectedFeeIdx], isPublic);
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleJoinByCode = () => {
@@ -216,6 +241,40 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Refundable Duels */}
+        {refundableDuels.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-yellow-400 font-black text-sm uppercase tracking-wider mb-3">Expired Duels — Claim Refund</h2>
+            <div className="space-y-2">
+              {refundableDuels.map((rd) => (
+                <div key={rd.duel_id} className="flex items-center justify-between p-3 bg-yellow-400/5 border border-yellow-400/20 rounded-lg">
+                  <div className="min-w-0">
+                    <span className="text-white text-xs font-[1000] italic">{(rd.entry_fee_lamports / 1_000_000_000).toFixed(2)} SOL Duel</span>
+                    <span className="text-zinc-500 text-[10px] ml-2">
+                      {new Date(rd.created_at).toLocaleDateString()} — No opponent joined
+                    </span>
+                  </div>
+                  <button
+                    disabled={refundingDuelId === rd.duel_id}
+                    onClick={async () => {
+                      if (!onClaimDuelRefund || !walletAddress) return;
+                      setRefundingDuelId(rd.duel_id);
+                      try {
+                        await onClaimDuelRefund(rd.duel_id, walletAddress);
+                        setRefundableDuels(prev => prev.filter(d => d.duel_id !== rd.duel_id));
+                      } catch { /* re-enables button */ }
+                      finally { setRefundingDuelId(null); }
+                    }}
+                    className="px-3 py-1.5 bg-yellow-400 text-black font-[1000] text-[10px] uppercase italic rounded disabled:opacity-50 shrink-0"
+                  >
+                    {refundingDuelId === rd.duel_id ? 'Refunding...' : 'Claim Refund'}
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}

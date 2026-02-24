@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface ResultsViewProps {
   results: { score: number, points: number, time: number, rank?: number; scoreSaveFailed?: boolean };
@@ -11,6 +12,7 @@ interface ResultsViewProps {
 }
 
 const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesLeft, roundEntriesMax, onRestart, onGoHome, onBuyLives }) => {
+  const { t } = useTranslation();
   const [showShareCard, setShowShareCard] = useState(false);
   const isPerfect = results.score === 10;
   const canPlayAgain = roundEntriesLeft > 0 || (lives ?? 0) > 0;
@@ -63,8 +65,8 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
           {/* Score save failed warning */}
           {results.scoreSaveFailed && (
             <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-left">
-              <p className="text-sm font-bold uppercase tracking-wide">Score may not be saved</p>
-              <p className="text-xs mt-1 opacity-90">We couldn’t sync your score to the leaderboard. Your result is still correct here; try again later or check your connection.</p>
+              <p className="text-sm font-bold uppercase tracking-wide">{t('results.scoreSaveFailed')}</p>
+              <p className="text-xs mt-1 opacity-90">{t('results.scoreNotSynced')}</p>
             </div>
           )}
           {/* Mascot Decoration */}
@@ -81,33 +83,33 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
           </div>
 
           <div className="mb-10">
-            <span className="text-[#00FFA3] text-[10px] md:text-sm font-black tracking-[0.5em] uppercase mb-2 block italic">TRIVIA FINALIZED</span>
+            <span className="text-[#00FFA3] text-[10px] md:text-sm font-black tracking-[0.5em] uppercase mb-2 block italic">{t('results.triviaFinalized')}</span>
             <h2 className="text-5xl md:text-8xl font-[1000] italic uppercase tracking-tighter text-white leading-[0.8] mb-4">
               {results.points.toLocaleString()} <span className="text-2xl md:text-4xl block md:inline text-[#00FFA3]">XP</span>
             </h2>
             <p className="text-zinc-400 font-black uppercase tracking-[0.3em] text-[10px] md:text-xs italic">
-              {isPerfect ? "Peak Neural Optimization Achieved" : "Session Data Ingested Successfully"}
+              {isPerfect ? t('results.peakOptimization') : t('results.sessionIngested')}
             </p>
           </div>
 
           {/* Stats Grid */}
           <div className="grid grid-cols-3 gap-3 md:gap-6 mb-10">
             <div className="bg-black/40 border border-white/5 p-4 md:p-6 rounded-xl">
-              <span className="text-zinc-300 text-[8px] md:text-[10px] font-black uppercase block mb-2 tracking-widest italic">Accuracy</span>
+              <span className="text-zinc-300 text-[8px] md:text-[10px] font-black uppercase block mb-2 tracking-widest italic">{t('results.accuracy')}</span>
               <div className="flex items-baseline justify-center gap-1">
                 <span className={`text-2xl md:text-4xl font-[1000] italic leading-none ${isPerfect ? 'text-[#00FFA3]' : 'text-white'}`}>{results.score}</span>
                 <span className="text-zinc-400 text-[10px] font-black italic">/10</span>
               </div>
             </div>
             <div className="bg-black/40 border border-white/5 p-4 md:p-6 rounded-xl">
-              <span className="text-zinc-300 text-[8px] md:text-[10px] font-black uppercase block mb-2 tracking-widest italic">Elapsed</span>
+              <span className="text-zinc-300 text-[8px] md:text-[10px] font-black uppercase block mb-2 tracking-widest italic">{t('results.elapsed')}</span>
               <div className="flex items-baseline justify-center gap-1">
                 <span className="text-2xl md:text-4xl font-[1000] italic text-white leading-none tabular-nums">{results.time}</span>
-                <span className="text-zinc-400 text-[10px] font-black italic">SEC</span>
+                <span className="text-zinc-400 text-[10px] font-black italic">{t('results.sec')}</span>
               </div>
             </div>
             <div className="bg-black/40 border border-white/5 p-4 md:p-6 rounded-xl">
-              <span className="text-zinc-300 text-[8px] md:text-[10px] font-black uppercase block mb-2 tracking-widest italic">Rank</span>
+              <span className="text-zinc-300 text-[8px] md:text-[10px] font-black uppercase block mb-2 tracking-widest italic">{t('results.rank')}</span>
               <div className="flex items-baseline justify-center gap-1">
                 <span className="text-2xl md:text-4xl font-[1000] italic text-[#FFD700] leading-none tabular-nums">
                   {results.rank ? `#${results.rank}` : '—'}
@@ -124,15 +126,15 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
             <svg className="w-5 h-5 group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24">
               <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.84 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z" />
             </svg>
-            SHARE YOUR SCORE
+            {t('results.shareYourScore')}
           </button>
 
           {/* Play again / Round entries / Buy lives */}
           <div className="bg-black/60 border border-white/5 p-6 rounded-2xl mb-8 flex flex-col gap-4">
              <div className="flex items-center justify-center gap-4 mb-2 text-zinc-400 text-[9px] font-black uppercase tracking-[0.2em] italic">
-               <span>Round entries: {roundEntriesLeft} / {roundEntriesMax}</span>
+               <span>{t('results.roundEntries', { left: roundEntriesLeft, max: roundEntriesMax })}</span>
                <span>·</span>
-               <span>Extra lives: {lives === null ? '—' : lives}</span>
+               <span>{t('results.extraLives', { count: lives ?? '—' as any })}</span>
              </div>
              {canPlayAgain ? (
                <div className="flex flex-col items-center">
@@ -140,21 +142,21 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
                     onClick={onRestart}
                     className="w-full py-5 bg-[#00FFA3] text-black font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_10px_30px_rgba(0,255,163,0.2)] active:scale-95 transition-all rounded-full"
                   >
-                    PLAY AGAIN
+                    {t('results.playAgain')}
                   </button>
                </div>
              ) : (
                <div className="flex flex-col items-center">
                   <div className="flex items-center gap-3 mb-4">
                      <div className="w-1.5 h-1.5 rounded-full bg-[#FF3131] animate-ping"></div>
-                     <span className="text-[#FF3131] text-[10px] font-black uppercase tracking-[0.3em] italic">NO ROUND ENTRIES OR LIVES</span>
+                     <span className="text-[#FF3131] text-[10px] font-black uppercase tracking-[0.3em] italic">{t('results.noEntries')}</span>
                   </div>
-                  <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-6 italic">Buy extra lives or wait for the next 6h round.</p>
+                  <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-6 italic">{t('results.buyOrWait')}</p>
                   <button 
                     onClick={onBuyLives}
                     className="w-full py-5 bg-[#FF3131] text-white font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_10px_30px_rgba(255,49,49,0.3)] active:scale-95 transition-all rounded-full"
                   >
-                    GET EXTRA LIVES
+                    {t('results.getExtraLives')}
                   </button>
                </div>
              )}
@@ -163,12 +165,12 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
               onClick={onGoHome}
               className="w-full py-4 bg-white/5 border border-white/10 text-zinc-400 font-black uppercase text-xs tracking-[0.3em] italic hover:bg-white/10 active:scale-95 transition-all rounded-full"
             >
-              TERMINAL
+              {t('results.terminal')}
             </button>
           </div>
 
           <p className="text-[8px] text-zinc-700 text-center font-black uppercase tracking-[0.4em] italic">
-            Operation ID: {Math.random().toString(36).substring(7).toUpperCase()}
+            {t('results.operationId')} {Math.random().toString(36).substring(7).toUpperCase()}
           </p>
         </div>
       </div>
@@ -182,8 +184,8 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
               
               <div className="flex justify-between items-start mb-10">
                  <div>
-                    <span className="text-[#00FFA3] text-[10px] font-black uppercase tracking-[0.4em] italic block mb-1">BRAINY_NODE</span>
-                    <h3 className="text-2xl font-[1000] italic text-white uppercase tracking-tighter">SCORE_SYNC</h3>
+                    <span className="text-[#00FFA3] text-[10px] font-black uppercase tracking-[0.4em] italic block mb-1">{t('results.brainyNode')}</span>
+                    <h3 className="text-2xl font-[1000] italic text-white uppercase tracking-tighter">{t('results.scoreSync')}</h3>
                  </div>
                  <button onClick={() => setShowShareCard(false)} className="text-zinc-600 hover:text-white transition-colors">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -194,7 +196,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
 
               <div className="bg-gradient-to-br from-[#0A0A0A] to-black border border-white/10 p-8 rounded-xl text-center mb-8 relative">
                  <div className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-1/2 bg-[#00FFA3]"></div>
-                 <span className="text-zinc-500 text-[9px] font-black uppercase tracking-[0.3em] mb-4 block italic">SYNAPTIC PERFORMANCE</span>
+                 <span className="text-zinc-500 text-[9px] font-black uppercase tracking-[0.3em] mb-4 block italic">{t('results.synapticPerformance')}</span>
                  <div className="text-[100px] font-[1000] italic leading-none sol-gradient-text tracking-tighter mb-2">
                    {results.score}<span className="text-2xl text-white/40">/10</span>
                  </div>
@@ -203,11 +205,11 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
                  </div>
                  <div className="flex justify-center gap-6 pt-6 border-t border-white/5">
                     <div className="flex flex-col items-center">
-                       <span className="text-[8px] text-zinc-600 font-black uppercase tracking-widest italic">TIME</span>
+                       <span className="text-[8px] text-zinc-600 font-black uppercase tracking-widest italic">{t('results.time')}</span>
                        <span className="text-white font-black italic text-sm">{results.time}s</span>
                     </div>
                     <div className="flex flex-col items-center">
-                       <span className="text-[8px] text-zinc-600 font-black uppercase tracking-widest italic">RANK</span>
+                       <span className="text-[8px] text-zinc-600 font-black uppercase tracking-widest italic">{t('results.rank')}</span>
                        <span className="text-[#FFD700] font-black italic text-sm">
                          {results.rank ? `#${results.rank}` : '—'}
                        </span>
@@ -222,7 +224,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.84 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z" />
                 </svg>
-                BROADCAST TO X
+                {t('results.broadcastToX')}
               </button>
            </div>
         </div>

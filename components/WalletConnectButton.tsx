@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useWallet, useWalletModal } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
 
@@ -7,6 +8,7 @@ import { supabase } from '../src/utils/supabase';
  * Shows username (from .skr domain or display name) when connected.
  */
 const WalletConnectButton: React.FC = () => {
+  const { t } = useTranslation();
   const { publicKey, connected, disconnect, connecting, wallets, select } = useWallet();
   const { setVisible } = useWalletModal();
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -55,7 +57,7 @@ const WalletConnectButton: React.FC = () => {
       setVisible(true);
     } else {
       setVisible(true);
-      setConnectError('No wallet found. On Seeker, make sure Seed Vault is set up in Settings.');
+      setConnectError(t('wallet.noWalletFound'));
     }
   }, [connecting, wallets, select, setVisible]);
 
@@ -83,7 +85,7 @@ const WalletConnectButton: React.FC = () => {
             </svg>
           )}
           <span className="text-[9px] font-black uppercase tracking-wider text-black whitespace-nowrap">
-            {connecting ? 'Connecting...' : 'Connect'}
+            {connecting ? t('wallet.connecting') : t('wallet.connect')}
           </span>
         </button>
         {connectError && (
@@ -112,7 +114,7 @@ const WalletConnectButton: React.FC = () => {
       <button
         onClick={disconnect}
         className="p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 rounded-full text-red-400 hover:text-red-300 transition-all active:scale-95"
-        title="Disconnect Wallet"
+        title={t('wallet.disconnect')}
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />

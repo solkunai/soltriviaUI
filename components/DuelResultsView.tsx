@@ -17,7 +17,7 @@ interface DuelResultsViewProps {
   totalPot: number;
   duelComplete: boolean;
   isPlayer1: boolean;
-  onClaimPrize: () => void;
+  onClaimPrize: () => Promise<void>;
   onPlayAgain: () => void;
   onBackToLobby: () => void;
 }
@@ -85,9 +85,14 @@ const DuelResultsView: React.FC<DuelResultsViewProps> = ({
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [duelId, myWallet, resolved, isPlayer1]);
 
-  const handleClaim = () => {
+  const handleClaim = async () => {
     setClaiming(true);
-    onClaimPrize();
+    try {
+      await onClaimPrize();
+    } catch (err: any) {
+      console.error('Claim failed:', err);
+      setClaiming(false);
+    }
   };
 
   const handleShareX = () => {

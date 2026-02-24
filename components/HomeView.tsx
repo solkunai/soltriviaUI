@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import WalletConnectButton from './WalletConnectButton';
+import LanguageSelector from './LanguageSelector';
 import FAQModal from './FAQModal';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { getCurrentRoundKey, getRoundLabel } from '../src/utils/api';
@@ -34,6 +36,7 @@ interface HomeViewProps {
 }
 
 const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, onOpenBuyLives, onStartPractice, practiceRunsLeft, hasGamePass, isSeekerVerified, onBuyGamePass, onCreateCustomGame, onViewCustomGame, onEnterDuels }) => {
+  const { t } = useTranslation();
   const { publicKey, connected } = useWallet();
   const { connection } = useConnection();
   const [showFAQ, setShowFAQ] = useState(false);
@@ -164,11 +167,11 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
     <div className="flex flex-col h-full bg-[#050505] overflow-y-auto custom-scrollbar relative">
       {/* Sticky Top Bar */}
       <div className="sticky top-0 z-30 bg-[#050505]/90 backdrop-blur-md border-b border-white/5">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+        <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 lg:px-8 py-3 flex items-center justify-between gap-3">
           {/* Left: Lives */}
           <div className="flex items-center gap-2.5">
             <div className="flex items-center gap-1.5">
-              <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic">LIVES</span>
+              <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic">{t('topBar.lives')}</span>
               <span className="text-[#FF3131] text-xl font-[1000] italic leading-none tabular-nums" data-lives={lives === null ? 'null' : String(lives)}>
                 {lives === null ? '—' : Number(lives).toString().padStart(2, '0')}
               </span>
@@ -188,7 +191,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               onClick={onOpenGuide}
               className="hidden md:flex h-8 px-3 bg-[#14F195] hover:bg-[#14F195]/90 rounded-full items-center justify-center transition-all active:scale-95"
             >
-              <span className="text-[9px] font-black uppercase tracking-wider text-black">HOW TO PLAY</span>
+              <span className="text-[9px] font-black uppercase tracking-wider text-black">{t('topBar.howToPlay')}</span>
             </button>
             {/* Mobile: compact green ? */}
             <button
@@ -201,30 +204,31 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               onClick={() => setShowFAQ(true)}
               className="h-8 px-3 bg-white/5 hover:bg-white/10 rounded-full flex items-center justify-center transition-all active:scale-95"
             >
-              <span className="text-[9px] font-black uppercase tracking-wider text-zinc-400">FAQ</span>
+              <span className="text-[9px] font-black uppercase tracking-wider text-zinc-400">{t('topBar.faq')}</span>
             </button>
+            <LanguageSelector />
             <WalletConnectButton />
           </div>
         </div>
       </div>
 
       {/* Main Stacked Content */}
-      <div className="flex-1 px-4 pb-32 md:pb-12">
-        <div className="max-w-2xl mx-auto pt-6 md:pt-10 space-y-4">
+      <div className="flex-1 px-4 lg:px-8 pb-32 md:pb-12">
+        <div className="max-w-2xl lg:max-w-5xl mx-auto pt-6 md:pt-10 space-y-4 lg:space-y-6">
 
           {/* Hero Branding */}
           <div className="mb-2">
             <div className="flex items-end gap-1">
-              <h1 className="text-[56px] sm:text-[72px] md:text-[88px] leading-[0.85] font-[1000] italic text-white uppercase tracking-tighter">
+              <h1 className="text-[56px] sm:text-[72px] md:text-[88px] lg:text-[110px] leading-[0.85] font-[1000] italic text-white uppercase tracking-tighter">
                 SOL
               </h1>
-              <h1 className="text-[56px] sm:text-[72px] md:text-[88px] leading-[0.85] font-[1000] italic sol-gradient-text uppercase tracking-tighter">
+              <h1 className="text-[56px] sm:text-[72px] md:text-[88px] lg:text-[110px] leading-[0.85] font-[1000] italic sol-gradient-text uppercase tracking-tighter">
                 TRIVIA
               </h1>
             </div>
             <div className="h-0.5 w-12 bg-[#00FFA3] opacity-30 mt-3"></div>
             <p className="text-zinc-500 font-black uppercase tracking-[0.25em] text-[9px] mt-3 italic">
-              THE HIGH-STAKES INTELLIGENCE TRIVIA
+              {t('home.tagline')}
             </p>
           </div>
 
@@ -237,21 +241,21 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
             {PAID_TRIVIA_ENABLED && <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>}
             <div className="flex flex-col items-start relative z-10">
               <span className={`text-[8px] md:text-[9px] font-black uppercase tracking-[0.3em] mb-1 ${PAID_TRIVIA_ENABLED ? 'text-black/50' : 'text-zinc-500'}`}>
-                {PAID_TRIVIA_ENABLED ? 'WIN REAL SOL' : 'PAUSED — UPGRADING'}
+                {PAID_TRIVIA_ENABLED ? t('home.winRealSol') : t('home.paused')}
               </span>
               <span className={`${PAID_TRIVIA_ENABLED ? 'text-black' : 'text-zinc-500'} text-2xl md:text-3xl font-[1000] italic leading-none uppercase tracking-tighter`}>
-                COMPETE FOR SOL
+                {t('home.competitionCta')}
               </span>
               {!PAID_TRIVIA_ENABLED && (
-                <span className="text-yellow-400 text-[8px] font-black italic uppercase mt-1">Free play still available below</span>
+                <span className="text-yellow-400 text-[8px] font-black italic uppercase mt-1">{t('home.freePlayAvailable')}</span>
               )}
             </div>
             {PAID_TRIVIA_ENABLED && SHOW_ROUND_STATS ? (
               <div className="flex flex-col items-end relative z-10">
                 <div className="bg-black/20 backdrop-blur-sm rounded-lg px-3 py-1.5">
-                  <div className="text-[10px] font-black text-black/50 uppercase tracking-wider text-right">Pool</div>
+                  <div className="text-[10px] font-black text-black/50 uppercase tracking-wider text-right">{t('home.pool')}</div>
                   <div className="text-lg font-[1000] italic text-black tabular-nums leading-none">{prizePool.toFixed(prizePool >= 1 ? 2 : 4)}</div>
-                  <div className="text-[9px] font-bold text-black/60 text-right">{playersEntered} player{playersEntered !== 1 ? 's' : ''}</div>
+                  <div className="text-[9px] font-bold text-black/60 text-right">{playersEntered !== 1 ? t('home.players', { count: playersEntered }) : t('home.player', { count: playersEntered })}</div>
                 </div>
               </div>
             ) : (
@@ -272,13 +276,13 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest italic">NEXT ROUND IN</span>
+              <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest italic">{t('home.nextRoundIn')}</span>
               <span className="text-[#14F195] text-base font-[1000] italic tabular-nums leading-none">{nextRoundCountdown}</span>
             </div>
           </div>
 
-          {/* Two-up: Free Play + Duels */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Game Modes: 2-col mobile, 3-col desktop */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
             {/* Free Play */}
             <button
               onClick={onStartPractice}
@@ -286,15 +290,15 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               className={`p-4 md:p-5 rounded-xl text-left transition-all active:scale-[0.98] ${(hasGamePass || practiceRunsLeft > 0) ? 'bg-[#0A0A0A] border border-[#14F195]/20 hover:border-[#14F195]/40' : 'bg-[#0A0A0A] border border-zinc-800 opacity-50 cursor-not-allowed'}`}
             >
               <span className="text-[#14F195]/60 text-[8px] font-black uppercase tracking-[0.3em] block mb-1.5">
-                {hasGamePass ? 'GAME PASS' : 'FREE TO PLAY'}
+                {hasGamePass ? t('home.gamePassLabel') : t('home.freePlayLabel')}
               </span>
               <span className="text-[#14F195] text-lg md:text-xl font-[1000] italic leading-none uppercase tracking-tighter block">
-                {hasGamePass ? 'PLAY NOW' : 'FREE PLAY'}
+                {hasGamePass ? t('home.playNow') : t('home.freePlay')}
               </span>
               <div className="mt-3 flex items-center gap-1.5">
                 <div className={`w-1.5 h-1.5 rounded-full ${(hasGamePass || practiceRunsLeft > 0) ? 'bg-[#14F195]' : 'bg-zinc-600'}`}></div>
                 <span className="text-zinc-500 text-[9px] font-bold italic">
-                  {hasGamePass ? 'Unlimited' : practiceRunsLeft > 0 ? `${practiceRunsLeft}/5 LIVES` : 'No runs left'}
+                  {hasGamePass ? t('home.unlimited') : practiceRunsLeft > 0 ? t('home.livesRemaining', { count: practiceRunsLeft }) : t('home.noRunsLeft')}
                 </span>
               </div>
             </button>
@@ -305,122 +309,124 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 onClick={onEnterDuels}
                 className="p-4 md:p-5 bg-[#0A0A0A] border border-[#FF3131]/20 hover:border-[#FF3131]/40 rounded-xl text-left transition-all active:scale-[0.98]"
               >
-                <span className="text-[#FF3131]/60 text-[8px] font-black uppercase tracking-[0.3em] block mb-1.5">1V1 ARENA</span>
-                <span className="text-[#FF3131] text-lg md:text-xl font-[1000] italic leading-none uppercase tracking-tighter block">DUELS</span>
+                <span className="text-[#FF3131]/60 text-[8px] font-black uppercase tracking-[0.3em] block mb-1.5">{t('home.duelsArena')}</span>
+                <span className="text-[#FF3131] text-lg md:text-xl font-[1000] italic leading-none uppercase tracking-tighter block">{t('home.duelsTitle')}</span>
                 <div className="mt-3 flex items-center gap-1.5">
                   <div className="w-1.5 h-1.5 rounded-full bg-[#FF3131] animate-pulse"></div>
-                  <span className="text-zinc-500 text-[9px] font-bold italic">0.01–1 SOL</span>
+                  <span className="text-zinc-500 text-[9px] font-bold italic">{t('home.duelsPriceRange')}</span>
                 </div>
               </button>
             ) : (
               <div className="p-4 md:p-5 bg-[#0A0A0A] border border-zinc-800 rounded-xl opacity-40">
-                <span className="text-zinc-600 text-[8px] font-black uppercase tracking-[0.3em] block mb-1.5">1V1 ARENA</span>
-                <span className="text-zinc-500 text-lg md:text-xl font-[1000] italic leading-none uppercase tracking-tighter block">DUELS</span>
+                <span className="text-zinc-600 text-[8px] font-black uppercase tracking-[0.3em] block mb-1.5">{t('home.duelsArena')}</span>
+                <span className="text-zinc-500 text-lg md:text-xl font-[1000] italic leading-none uppercase tracking-tighter block">{t('home.duelsTitle')}</span>
                 <div className="mt-3">
-                  <span className="text-zinc-600 text-[9px] font-bold italic">Coming soon</span>
+                  <span className="text-zinc-600 text-[9px] font-bold italic">{t('home.comingSoon')}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Custom Game — spans full width on mobile (col-span-2), single col on desktop */}
+            {onCreateCustomGame && (
+              <button
+                onClick={onCreateCustomGame}
+                className="col-span-2 lg:col-span-1 p-4 md:p-5 bg-[#0A0A0A] border border-[#38BDF8]/20 hover:border-[#38BDF8]/40 rounded-xl text-left transition-all active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-3 lg:flex-col lg:items-start lg:gap-0">
+                  <div className="w-9 h-9 rounded-lg bg-[#38BDF8]/10 flex items-center justify-center lg:mb-2">
+                    <svg className="w-4 h-4 text-[#38BDF8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </div>
+                  <div>
+                    <span className="text-[#38BDF8]/60 text-[8px] font-black uppercase tracking-[0.3em] block mb-0.5">{t('home.createAndShare')}</span>
+                    <span className="text-[#38BDF8] text-base md:text-lg lg:text-xl font-[1000] italic leading-none uppercase tracking-tighter">{t('home.customGame')}</span>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#38BDF8]"></div>
+                  {hasGamePass ? (
+                    <span className="text-[#14F195] text-[9px] font-black italic uppercase">{t('home.free')}</span>
+                  ) : (
+                    <span className="text-zinc-500 text-[9px] font-black italic">{t('home.customGamePrice')}</span>
+                  )}
+                </div>
+              </button>
+            )}
+          </div>
+
+          {/* Game Pass + My Custom Games: stacked on mobile, side-by-side on desktop */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
+            {/* Game Pass Promo */}
+            {!hasGamePass && (
+              <button
+                onClick={onBuyGamePass}
+                className="w-full p-4 md:p-5 bg-[#0A0A0A] border border-[#14F195]/15 hover:border-[#14F195]/35 rounded-xl flex items-center justify-between transition-all active:scale-[0.98] group"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00FFA3] to-[#14F195] flex items-center justify-center shrink-0">
+                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span className="text-white text-xs font-[1000] italic uppercase tracking-tight block">{t('home.gamePassPromo')}</span>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-[#14F195] text-base font-[1000] italic leading-none">${isSeekerVerified ? '10' : '20'}</span>
+                        <span className="text-[#14F195] text-[7px] font-black italic uppercase">USD</span>
+                        <span className="text-zinc-600 text-[8px] font-bold italic ml-1">{t('home.oneTime')}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1 pl-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <svg className="w-3 h-3 text-[#14F195] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                      <span className="text-zinc-400 text-[9px] font-bold">{t('home.gamePassBenefit1')}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <svg className="w-3 h-3 text-[#14F195] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                      <span className="text-zinc-400 text-[9px] font-bold">{t('home.gamePassBenefit2')}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <svg className="w-3 h-3 text-[#14F195] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                      <span className="text-zinc-400 text-[9px] font-bold">{t('home.gamePassBenefit3')}</span>
+                    </div>
+                  </div>
+                  {!isSeekerVerified && (
+                    <span className="text-[#14F195] text-[8px] font-bold italic mt-2 block pl-0.5">{t('home.seekerDiscount')}</span>
+                  )}
+                </div>
+              </button>
+            )}
+
+            {/* My Played Custom Games */}
+            {myPlayedGames.length > 0 && onViewCustomGame && (
+              <div className="bg-[#0A0A0A] border border-[#38BDF8]/10 rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-white/5 flex items-center justify-between">
+                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#38BDF8]/70 italic">{t('home.myCustomGames')}</span>
+                  <span className="text-zinc-600 text-[9px] font-bold">{myPlayedGames.length}</span>
+                </div>
+                <div className="divide-y divide-white/[0.03]">
+                  {myPlayedGames.slice(0, 3).map((game) => (
+                    <button
+                      key={game.game_id}
+                      onClick={() => onViewCustomGame(game.slug)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/[0.02] transition-colors active:scale-[0.99] text-left"
+                    >
+                      <div className="flex-1 min-w-0 mr-3">
+                        <span className="text-white text-xs font-[1000] italic truncate block">{game.game_name}</span>
+                        <span className="text-zinc-500 text-[9px] font-bold">{game.best_score.toLocaleString()} pts</span>
+                      </div>
+                      <svg className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
           </div>
-
-          {/* Custom Game */}
-          {onCreateCustomGame && (
-            <button
-              onClick={onCreateCustomGame}
-              className="w-full p-4 md:p-5 bg-[#0A0A0A] border border-[#38BDF8]/20 hover:border-[#38BDF8]/40 rounded-xl flex items-center justify-between transition-all active:scale-[0.98]"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-[#38BDF8]/10 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-[#38BDF8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                  </svg>
-                </div>
-                <div className="text-left">
-                  <span className="text-[#38BDF8]/60 text-[8px] font-black uppercase tracking-[0.3em] block mb-0.5">CREATE & SHARE</span>
-                  <span className="text-[#38BDF8] text-base md:text-lg font-[1000] italic leading-none uppercase tracking-tighter">CUSTOM GAME</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {hasGamePass ? (
-                  <span className="text-[#14F195] text-[8px] font-black italic uppercase">FREE</span>
-                ) : (
-                  <span className="text-zinc-500 text-[9px] font-black italic">0.0225 SOL</span>
-                )}
-              </div>
-            </button>
-          )}
-
-          {/* Game Pass Promo */}
-          {!hasGamePass && (
-            <button
-              onClick={onBuyGamePass}
-              className="w-full p-4 md:p-5 bg-[#0A0A0A] border border-[#14F195]/15 hover:border-[#14F195]/35 rounded-xl flex items-center justify-between transition-all active:scale-[0.98] group"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00FFA3] to-[#14F195] flex items-center justify-center shrink-0">
-                    <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <span className="text-white text-xs font-[1000] italic uppercase tracking-tight block">GAME PASS</span>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-[#14F195] text-base font-[1000] italic leading-none">${isSeekerVerified ? '10' : '20'}</span>
-                      <span className="text-[#14F195] text-[7px] font-black italic uppercase">USD</span>
-                      <span className="text-zinc-600 text-[8px] font-bold italic ml-1">one-time</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-1 pl-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <svg className="w-3 h-3 text-[#14F195] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                    <span className="text-zinc-400 text-[9px] font-bold">Unlimited daily practice plays</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <svg className="w-3 h-3 text-[#14F195] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                    <span className="text-zinc-400 text-[9px] font-bold">All 7 trivia categories unlocked</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <svg className="w-3 h-3 text-[#14F195] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                    <span className="text-zinc-400 text-[9px] font-bold">Cheap custom game creation (0.0025 vs 0.0225 SOL)</span>
-                  </div>
-                </div>
-                {!isSeekerVerified && (
-                  <span className="text-[#14F195] text-[8px] font-bold italic mt-2 block pl-0.5">Seeker holders get 50% off</span>
-                )}
-              </div>
-            </button>
-          )}
-
-          {/* Round stats moved above Compete button */}
-
-          {/* My Played Custom Games */}
-          {myPlayedGames.length > 0 && onViewCustomGame && (
-            <div className="bg-[#0A0A0A] border border-[#38BDF8]/10 rounded-xl overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-white/5 flex items-center justify-between">
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#38BDF8]/70 italic">My Custom Games</span>
-                <span className="text-zinc-600 text-[9px] font-bold">{myPlayedGames.length}</span>
-              </div>
-              <div className="divide-y divide-white/[0.03]">
-                {myPlayedGames.slice(0, 3).map((game) => (
-                  <button
-                    key={game.game_id}
-                    onClick={() => onViewCustomGame(game.slug)}
-                    className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/[0.02] transition-colors active:scale-[0.99] text-left"
-                  >
-                    <div className="flex-1 min-w-0 mr-3">
-                      <span className="text-white text-xs font-[1000] italic truncate block">{game.game_name}</span>
-                      <span className="text-zinc-500 text-[9px] font-bold">{game.best_score.toLocaleString()} pts</span>
-                    </div>
-                    <svg className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Referral Welcome Banner */}
           {(() => {
@@ -430,8 +436,8 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               return (
                 <div className="px-4 py-3 bg-[#14F195]/10 border border-[#14F195]/25 rounded-xl flex items-center gap-3">
                   <div>
-                    <span className="text-[#14F195] text-xs font-[1000] italic uppercase">You were referred!</span>
-                    <p className="text-zinc-400 text-[10px] font-bold">Connect your wallet and play your first game to activate the referral.</p>
+                    <span className="text-[#14F195] text-xs font-[1000] italic uppercase">{t('home.referralWelcome')}</span>
+                    <p className="text-zinc-400 text-[10px] font-bold">{t('home.referralActivation')}</p>
                   </div>
                 </div>
               );

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface FAQModalProps {
   isOpen: boolean;
@@ -10,73 +11,29 @@ interface FAQItem {
   a: string;
 }
 
-const FAQ_ITEMS: FAQItem[] = [
-  {
-    q: 'What is SOL Trivia?',
-    a: 'SOL Trivia is a crypto-themed trivia game on the Solana blockchain. Answer questions to earn points, compete against other players, and win real SOL prizes from the prize pool each round.',
-  },
-  {
-    q: 'How do I play?',
-    a: 'Connect your Solana wallet, pay the entry fee (0.02 SOL + 0.0025 SOL platform fee), and answer 10 questions in 7 seconds each. Your score is based on accuracy and speed. Top 5 players win SOL prizes.',
-  },
-  {
-    q: 'How are prizes distributed?',
-    a: '100% of the prize pool goes to the top 5: 1st (50%), 2nd (20%), 3rd (15%), 4th (10%), 5th (5%). No platform cut from the pot. Winners claim directly on-chain from their Profile page.',
-  },
-  {
-    q: 'What are rounds?',
-    a: 'There are 4 rounds per day (every 6 hours UTC: 00:00, 06:00, 12:00, 18:00). Each round has its own prize pool and leaderboard. You can enter up to 5 times per round, 20 times per 24 hours.',
-  },
-  {
-    q: 'What is Practice Mode?',
-    a: 'Practice mode lets you play trivia for free with no wallet required. You get 5 practice runs per day (unlimited with Game Pass). Practice uses separate questions with a 12-second timer. No prizes or leaderboard ranking.',
-  },
-  {
-    q: 'What are Lives?',
-    a: 'Every wallet gets 2 free entries per round. Beyond that, you need extra lives. Buy them in 3 tiers: 3 for 0.03 SOL, 15 for 0.1 SOL, or 35 for 0.25 SOL. Purchased lives roll over indefinitely across rounds.',
-  },
-  {
-    q: 'What is the Game Pass?',
-    a: 'A one-time purchase ($20 USD, or $10 for Seeker holders) that unlocks: unlimited practice plays, all question categories, and free custom game creation. Pay with SOL, USDC, or SKR.',
-  },
-  {
-    q: 'What are Custom Games?',
-    a: 'Create your own trivia with custom questions, share a link with friends, and compete on a per-game leaderboard. Games expire after 7 days. Players get 3 attempts each. Free to join — no SOL entry fee and no prize pool. Custom games are purely for fun and bragging rights.',
-  },
-  {
-    q: 'How much does it cost to create a Custom Game?',
-    a: 'Game Pass holders pay only 0.0025 SOL (platform fee). Without Game Pass, it costs 0.0225 SOL (0.02 SOL creation fee + 0.0025 SOL platform fee).',
-  },
-  {
-    q: 'What are 1v1 Duels?',
-    a: 'Duels are real-time 1v1 trivia battles with SOL wagers. Pick an entry fee (0.01–1 SOL), create or join a duel, and go head-to-head with 5 questions in 10 seconds each. The winner takes the pot. You can challenge friends via a share link or find opponents in the public lobby.',
-  },
-  {
-    q: 'How do Duel prizes work?',
-    a: 'Both players put up the same entry fee (+ 0.0025 SOL platform fee each). The winner is determined by highest score, with time as a tiebreaker. After both finish, the smart contract is resolved on-chain and the winner can claim the prize from their Profile page.',
-  },
-  {
-    q: 'What happens if my Duel expires?',
-    a: 'If no opponent joins within 30 minutes, the duel expires and can be cancelled. The creator gets their entry fee refunded on-chain. You can also cancel a waiting duel at any time before an opponent joins.',
-  },
-  {
-    q: 'What are Seeker Perks?',
-    a: 'Solana Seeker device owners who verify their Genesis Token (SGT) get: +25% XP boost on profile stats, discounted lives, $10 Game Pass (instead of $20), .skr domain as display name, and a badge on the leaderboard.',
-  },
-  {
-    q: 'How does the Referral Program work?',
-    a: 'Share your unique referral link from your Profile page. When someone you refer connects their wallet and completes their first paid game, you earn 1,000 XP.',
-  },
-  {
-    q: 'Is my wallet safe?',
-    a: 'We never have access to your private keys or seed phrases. All transactions require your explicit wallet approval. Funds go directly to the on-chain smart contract vault or revenue wallet — never to a personal address.',
-  },
-];
-
 const FAQModal: React.FC<FAQModalProps> = ({ isOpen, onClose }) => {
+  const { t } = useTranslation();
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   if (!isOpen) return null;
+
+  const FAQ_ITEMS: FAQItem[] = [
+    { q: t('faq.q1'), a: t('faq.a1') },
+    { q: t('faq.q2'), a: t('faq.a2') },
+    { q: t('faq.q3'), a: t('faq.a3') },
+    { q: t('faq.q4'), a: t('faq.a4') },
+    { q: t('faq.q5'), a: t('faq.a5') },
+    { q: t('faq.q6'), a: t('faq.a6') },
+    { q: t('faq.q7'), a: t('faq.a7') },
+    { q: t('faq.q8'), a: t('faq.a8') },
+    { q: t('faq.q9'), a: t('faq.a9') },
+    { q: t('faq.q10'), a: t('faq.a10') },
+    { q: t('faq.q11'), a: t('faq.a11') },
+    { q: t('faq.q12'), a: t('faq.a12') },
+    { q: t('faq.q13'), a: t('faq.a13') },
+    { q: t('faq.q14'), a: t('faq.a14') },
+    { q: t('faq.q15'), a: t('faq.a15') },
+  ];
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -85,8 +42,8 @@ const FAQModal: React.FC<FAQModalProps> = ({ isOpen, onClose }) => {
         {/* Header */}
         <div className="p-5 pb-3 border-b border-white/5 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-[1000] italic uppercase tracking-tighter text-white">FAQ</h2>
-            <p className="text-zinc-500 text-[10px] font-bold italic mt-0.5">Frequently Asked Questions</p>
+            <h2 className="text-xl font-[1000] italic uppercase tracking-tighter text-white">{t('faq.title')}</h2>
+            <p className="text-zinc-500 text-[10px] font-bold italic mt-0.5">{t('faq.frequentlyAskedQuestions')}</p>
           </div>
           <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors p-1">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

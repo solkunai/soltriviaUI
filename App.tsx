@@ -88,9 +88,9 @@ import DuelWaitingView from './components/DuelWaitingView';
 import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
 import CompeteLobbyView from './components/CompeteLobbyView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel } from './src/utils/api';
 import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES } from './src/utils/constants';
-import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
+import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildExpireDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
 import { useKeepAlive } from './src/hooks/useKeepAlive';
@@ -1057,22 +1057,30 @@ const App: React.FC = () => {
   };
 
   const handleClaimCustomPrize = async (onChainGameId: number) => {
-    if (!connected || !publicKey) {
-      setShowWalletRequired(true);
-      return;
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    setClaimingId(`custom-${onChainGameId}`);
+    try {
+      const { blockhash } = await connection.getLatestBlockhash();
+      const ix = buildClaimCustomPrizeIx(publicKey, onChainGameId);
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      setClaimableCustomGames(prev => prev.filter(cg => cg.on_chain_game_id !== onChainGameId));
+    } catch (err: any) {
+      console.error('Failed to claim custom game prize:', err);
+      if (err.message?.includes('already been claimed') || err.message?.includes('AlreadyClaimed')) {
+        setClaimableCustomGames(prev => prev.filter(cg => cg.on_chain_game_id !== onChainGameId));
+      } else if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to claim prize. Please try again.');
+      }
+    } finally {
+      setClaimingId(null);
     }
-    const { blockhash } = await connection.getLatestBlockhash();
-    const ix = buildClaimCustomPrizeIx(publicKey, onChainGameId);
-    const messageV0 = new TransactionMessage({
-      payerKey: publicKey,
-      recentBlockhash: blockhash,
-      instructions: [ix],
-    }).compileToV0Message();
-    const tx = new VersionedTransaction(messageV0);
-    const signature = await sendTransaction(tx, connection);
-    await connection.confirmTransaction(signature, 'confirmed');
-    // Remove from claimable list
-    setClaimableCustomGames(prev => prev.filter(cg => cg.on_chain_game_id !== onChainGameId));
   };
 
   const handleClaimRoundPrizeFromPlay = async (payout: ClaimablePayout) => {
@@ -1153,6 +1161,34 @@ const App: React.FC = () => {
         setRefundableCustomGames(prev => prev.filter(g => g.on_chain_game_id !== cg.on_chain_game_id));
       } else if (!err.message?.includes('User rejected')) {
         alert(err.message || 'Failed to claim custom game refund. Please try again.');
+      }
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  // Wrapper for lobby view: claims custom game refund by on-chain ID only
+  const handleClaimCGRefundById = async (onChainGameId: number) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    setClaimingId(`cgref-${onChainGameId}`);
+    try {
+      const { blockhash } = await connection.getLatestBlockhash();
+      const ix = buildClaimCustomRefundIx(publicKey, onChainGameId);
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      setRefundableCustomGames(prev => prev.filter(g => g.on_chain_game_id !== onChainGameId));
+    } catch (err: any) {
+      console.error('Failed to claim custom game refund:', err);
+      if (err.message?.includes('already been claimed') || err.message?.includes('AlreadyClaimed')) {
+        setRefundableCustomGames(prev => prev.filter(g => g.on_chain_game_id !== onChainGameId));
+      } else if (!err.message?.includes('User rejected')) {
+        throw err;
       }
     } finally {
       setClaimingId(null);
@@ -1308,6 +1344,8 @@ const App: React.FC = () => {
       const tx = new VersionedTransaction(messageV0);
       const signature = await sendTransaction(tx, connection);
       await connection.confirmTransaction(signature, 'confirmed');
+      // Update DB status
+      await updateDuelStatus(duelId, 'cancelled').catch(() => {});
       setDuelId(null);
       setDbDuelId(null);
       setDuelShareCode(null);
@@ -1317,6 +1355,30 @@ const App: React.FC = () => {
       if (!err.message?.includes('User rejected')) {
         alert(err.message || 'Failed to cancel duel.');
       }
+    }
+  };
+
+  const handleClaimDuelRefund = async (refundDuelId: number, player1Wallet: string) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    try {
+      const { blockhash } = await connection.getLatestBlockhash();
+      const ix = buildExpireDuelIx(publicKey, refundDuelId, new PublicKey(player1Wallet));
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      // Update DB status
+      await updateDuelStatus(refundDuelId, 'expired').catch(() => {});
+    } catch (err: any) {
+      console.error('Failed to claim duel refund:', err);
+      if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to claim refund. Please try again.');
+      }
+      throw err; // Re-throw so caller can handle
     }
   };
 
@@ -1623,6 +1685,7 @@ const App: React.FC = () => {
             onJoinGame={handleJoinCustomGame}
             onStartTimer={handleStartCustomGameTimer}
             onClaimPrize={handleClaimCustomPrize}
+            onClaimRefund={handleClaimCGRefundById}
             onBack={() => setCurrentView(View.HOME)}
             onConnectWallet={() => setShowWalletRequired(true)}
           />
@@ -1672,6 +1735,7 @@ const App: React.FC = () => {
             onConnectWallet={() => setShowWalletRequired(true)}
             onBack={() => setCurrentView(View.HOME)}
             onClaimDuelPrize={handleClaimDuelPrize}
+            onClaimDuelRefund={handleClaimDuelRefund}
           />
         );
       case View.DUEL_WAITING:
@@ -1683,8 +1747,10 @@ const App: React.FC = () => {
             entryFee={duelEntryFee}
             isPublic={duelIsPublic}
             expiresAt={duelExpiresAt}
+            walletAddress={publicKey!.toBase58()}
             onDuelJoined={handleDuelJoined}
             onCancel={handleCancelDuel}
+            onClaimRefund={handleClaimDuelRefund}
             onBack={() => setCurrentView(View.DUEL_LOBBY)}
           />
         ) : null;

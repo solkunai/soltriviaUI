@@ -13,6 +13,7 @@ import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram
 import { buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchDuel, fetchCustomGame, fetchTierRound } from '../src/utils/soltriviaContract';
 import AvatarUpload from './AvatarUpload';
 import { isPushSupported, hasActiveSubscription, subscribeToPush, unsubscribeFromPush } from '../src/utils/notifications';
+import { useTranslation } from 'react-i18next';
 
 interface ProfileViewProps {
   username: string;
@@ -59,6 +60,7 @@ interface PlayedCustomGame {
 }
 
 const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize, onClaimCustomPrize }) => {
+  const { t } = useTranslation();
   const { publicKey, sendTransaction, signMessage } = useWallet();
   const { connection } = useConnection();
   const [stats, setStats] = useState<PlayerStats | null>(null);
@@ -426,7 +428,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const handleVerifySeeker = async () => {
     if (!publicKey) return;
     if (!signMessage) {
-      setSeekerError('Your wallet does not support message signing. Please use Phantom, Solflare, or Backpack.');
+      setSeekerError(t('profile.noSigningSupport'));
       return;
     }
     setSeekerVerifying(true);
@@ -453,13 +455,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
       });
       onSeekerVerified?.(result.is_seeker_verified);
       if (!result.is_seeker_verified) {
-        setSeekerError('No Seeker Genesis Token found in this wallet.');
+        setSeekerError(t('profile.noSeekerToken'));
       }
     } catch (err: any) {
       if (err.message?.includes('User rejected') || err.message?.includes('rejected')) {
-        setSeekerError('Signature request was cancelled.');
+        setSeekerError(t('profile.signatureRejected'));
       } else {
-        setSeekerError(err.message || 'Verification failed');
+        setSeekerError(err.message || t('profile.verificationFailed'));
       }
     } finally {
       setSeekerVerifying(false);
@@ -671,7 +673,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
     <div className="min-h-full bg-[#050505] overflow-x-hidden safe-top relative flex flex-col">
       {/* Sticky Profile Header */}
       <div className="flex items-center justify-between px-6 py-3 md:py-4 border-b border-white/5 bg-[#050505] sticky top-0 z-[60]">
-        <h2 className="text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter text-white">PROFILE</h2>
+        <h2 className="text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter text-white">{t('profile.title')}</h2>
         <div className="flex items-center gap-2.5">
           {/* Compact Notification Toggle */}
           {isPushSupported() && (
@@ -688,7 +690,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
               <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider italic whitespace-nowrap">
-                {notificationsEnabled ? 'ON' : 'OFF'}
+                {notificationsEnabled ? t('profile.notificationsOn') : t('profile.notificationsOff')}
               </span>
             </button>
           )}
@@ -705,7 +707,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         {/* XP at top */}
         <div className="mb-4 md:mb-6 flex justify-center md:justify-start">
           <div className="inline-flex items-baseline gap-2 px-5 py-3 md:px-6 md:py-3 bg-[#0A0A0A] border border-[#14F195]/20 rounded-xl shadow-[0_0_20px_rgba(20,241,149,0.08)]">
-            <span className="text-zinc-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] italic">TOTAL XP</span>
+            <span className="text-zinc-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] italic">{t('profile.totalXp')}</span>
             <span className="text-[#14F195] text-2xl md:text-3xl font-[1000] italic tabular-nums leading-none">
               {loading ? '—' : (stats?.total_points ?? 0).toLocaleString()}
             </span>
@@ -724,13 +726,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 onClick={() => setShowAvatarUpload(true)}
                 className="absolute -bottom-2 -right-2 bg-[#14F195] hover:bg-[#14F195]/90 border border-[#14F195] text-black font-[1000] text-[10px] px-3 py-1.5 italic rounded-lg shadow-xl transition-all active:scale-95"
               >
-                Upload
+                {t('profile.upload')}
               </button>
           </div>
 
           <div className="flex-1 flex flex-col items-center md:items-start text-center md:text-left">
               <div className="mb-3 md:mb-5">
-                <span className="text-[#14F195] text-[8px] md:text-[10px] font-black uppercase tracking-[0.5em] italic block mb-1 md:mb-2 opacity-70">PROTOCOL OPERATIVE</span>
+                <span className="text-[#14F195] text-[8px] md:text-[10px] font-black uppercase tracking-[0.5em] italic block mb-1 md:mb-2 opacity-70">{t('profile.protocolOperative')}</span>
                 <h1 className="text-3xl md:text-5xl font-[1000] italic uppercase tracking-tighter text-white leading-none mb-2 md:mb-3">{currentUsername}</h1>
                 <div className="h-0.5 w-10 md:h-1 md:w-14 bg-[#14F195] mx-auto md:mx-0 shadow-[0_0_10px_#14F195]"></div>
               </div>
@@ -739,7 +741,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 onClick={onEdit}
                 className="px-6 md:px-8 py-2.5 md:py-3 bg-white/[0.03] border border-white/10 hover:bg-[#14F195] hover:text-black text-white font-[1000] uppercase text-[10px] md:text-xs tracking-widest italic rounded-full transition-all active:scale-95 hover:scale-105"
               >
-                Edit Profile
+                {t('profile.editProfile')}
               </button>
           </div>
         </div>
@@ -748,17 +750,17 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3 mb-5 md:mb-8 relative z-10">
           {loading ? (
             <>
-              <ProfileStatCard label="TOTAL WON" value="—" unit="SOL" highlight />
-              <ProfileStatCard label="TRIVIAS" value="—" />
-              <ProfileStatCard label="STREAK" value="—" suffix="🔥" />
-              <ProfileStatCard label="POINTS" value="—" />
+              <ProfileStatCard label={t('profile.totalWon')} value="—" unit="SOL" highlight />
+              <ProfileStatCard label={t('profile.trivias')} value="—" />
+              <ProfileStatCard label={t('profile.streak')} value="—" suffix="🔥" />
+              <ProfileStatCard label={t('profile.points')} value="—" />
             </>
           ) : (
             <>
-              <ProfileStatCard label="TOTAL WON" value={stats?.total_sol_won.toFixed(2) || "0.00"} unit="SOL" highlight />
-              <ProfileStatCard label="TRIVIAS" value={stats?.total_games_played.toString() || "0"} />
-              <ProfileStatCard label="STREAK" value={stats?.current_streak.toString() || "0"} suffix="🔥" />
-              <ProfileStatCard label="POINTS" value={stats?.total_points.toLocaleString() || "0"} />
+              <ProfileStatCard label={t('profile.totalWon')} value={stats?.total_sol_won.toFixed(2) || "0.00"} unit="SOL" highlight />
+              <ProfileStatCard label={t('profile.trivias')} value={stats?.total_games_played.toString() || "0"} />
+              <ProfileStatCard label={t('profile.streak')} value={stats?.current_streak.toString() || "0"} suffix="🔥" />
+              <ProfileStatCard label={t('profile.points')} value={stats?.total_points.toLocaleString() || "0"} />
             </>
           )}
         </div>
@@ -767,9 +769,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         <div className="mb-5 md:mb-8 relative z-10">
           <div className="bg-[#0A0A0A] border border-[#9945FF]/20 rounded-xl md:rounded-2xl overflow-hidden shadow-lg">
             <div className="px-5 py-3 md:px-6 md:py-4 border-b border-white/5 bg-gradient-to-r from-[#9945FF]/10 to-transparent">
-              <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">Seeker Perks</h2>
+              <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">{t('profile.seekerPerks')}</h2>
               <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-wider mt-0.5">
-                Exclusive benefits for Solana Seeker device owners
+                {t('profile.exclusiveSeeker')}
               </p>
             </div>
             <div className="p-4 md:p-6">
@@ -783,10 +785,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       </svg>
                     </span>
                     <div>
-                      <span className="text-[#14F195] font-[1000] text-lg italic">VERIFIED SEEKER</span>
+                      <span className="text-[#14F195] font-[1000] text-lg italic">{t('profile.verifiedSeeker')}</span>
                       {seekerProfile.seeker_verified_at && (
                         <span className="text-zinc-600 text-[9px] font-bold block">
-                          Since {new Date(seekerProfile.seeker_verified_at).toLocaleDateString()}
+                          {t('profile.since', { date: new Date(seekerProfile.seeker_verified_at).toLocaleDateString() })}
                         </span>
                       )}
                     </div>
@@ -794,7 +796,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                   <div className="grid grid-cols-3 gap-3">
                     <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center">
                       <span className="text-[#14F195] text-xl font-[1000] italic block">+25%</span>
-                      <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic">XP Boost</span>
+                      <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic">{t('profile.xpBoost')}</span>
                     </div>
                     <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center">
                       <span className="text-[#14F195] text-sm font-[1000] italic block">Discount</span>
@@ -802,14 +804,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                     </div>
                     <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center">
                       <span className="text-[#14F195] text-xl font-[1000] italic block">Badge</span>
-                      <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic">Leaderboard</span>
+                      <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest italic">{t('profile.badgeLeaderboard')}</span>
                     </div>
                   </div>
                   {seekerProfile.skr_domain && (
                     <div className="flex items-center justify-between bg-black/30 border border-white/5 rounded-xl p-4">
                       <div>
                         <span className="text-white font-bold text-sm">{seekerProfile.skr_domain}</span>
-                        <span className="text-zinc-500 text-[9px] font-bold block">Use as display name</span>
+                        <span className="text-zinc-500 text-[9px] font-bold block">{t('profile.useAsDisplayName')}</span>
                       </div>
                       <button
                         onClick={handleToggleSkr}
@@ -827,7 +829,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
               ) : (
                 <div className="text-center py-4">
                   <p className="text-zinc-400 text-sm mb-4">
-                    Own a Solana Seeker? Verify your Genesis Token to unlock exclusive perks.
+                    {t('profile.ownSeekerQuestion')}
                   </p>
                   {seekerError && (
                     <p className="text-red-400 text-xs mb-4">{seekerError}</p>
@@ -837,7 +839,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                     disabled={seekerVerifying}
                     className="px-8 py-3 bg-gradient-to-r from-[#9945FF] to-[#14F195] text-white font-[1000] text-sm uppercase italic tracking-wider rounded-xl transition-all active:scale-95 disabled:opacity-50"
                   >
-                    {seekerVerifying ? 'Verifying...' : 'Verify Seeker'}
+                    {seekerVerifying ? t('profile.verifying') : t('profile.verifySeeker')}
                   </button>
                 </div>
               )}
@@ -851,14 +853,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           <div className="mb-5 md:mb-8 relative z-10">
             <div className="bg-[#0A0A0A] border border-[#14F195]/20 rounded-xl md:rounded-2xl overflow-hidden shadow-lg">
               <div className="px-5 py-3 md:px-6 md:py-4 border-b border-white/5 bg-gradient-to-r from-[#14F195]/5 to-transparent">
-                <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">Refer & Earn</h2>
-                <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-wider mt-0.5">Share your link. Earn 1,000 XP per referral.</p>
+                <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">{t('profile.referAndEarn')}</h2>
+                <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-wider mt-0.5">{t('profile.referralReward')}</p>
               </div>
 
               <div className="p-4 md:p-6 space-y-4">
                 {/* Referral Link */}
                 <div>
-                  <label className="text-zinc-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] italic block mb-2">Your Referral Link</label>
+                  <label className="text-zinc-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] italic block mb-2">{t('profile.yourReferralLink')}</label>
                   <div className="flex items-center gap-2">
                     <div className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white/80 text-sm md:text-base font-mono truncate">
                       {referralStats.referral_url}
@@ -871,7 +873,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       }}
                       className="px-4 md:px-6 py-3 bg-[#14F195] hover:bg-[#14F195]/90 text-black font-[1000] text-xs uppercase italic rounded-xl transition-all active:scale-95 whitespace-nowrap"
                     >
-                      {referralCopied ? 'Copied!' : 'Copy'}
+                      {referralCopied ? t('profile.copied') : t('profile.copy')}
                     </button>
                   </div>
                 </div>
@@ -880,15 +882,15 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 <div className="grid grid-cols-3 gap-2 md:gap-3">
                   <div className="bg-black/30 border border-white/5 rounded-lg p-3 md:p-4 text-center">
                     <span className="text-[#14F195] text-xl md:text-2xl font-[1000] italic block">{referralStats.completed_referrals}</span>
-                    <span className="text-zinc-500 text-[8px] md:text-[9px] font-black uppercase tracking-widest italic">Completed</span>
+                    <span className="text-zinc-500 text-[8px] md:text-[9px] font-black uppercase tracking-widest italic">{t('profile.completed')}</span>
                   </div>
                   <div className="bg-black/30 border border-white/5 rounded-lg p-3 md:p-4 text-center">
                     <span className="text-yellow-400 text-xl md:text-2xl font-[1000] italic block">{referralStats.pending_referrals}</span>
-                    <span className="text-zinc-500 text-[8px] md:text-[9px] font-black uppercase tracking-widest italic">Pending</span>
+                    <span className="text-zinc-500 text-[8px] md:text-[9px] font-black uppercase tracking-widest italic">{t('profile.pending')}</span>
                   </div>
                   <div className="bg-black/30 border border-white/5 rounded-lg p-3 md:p-4 text-center">
                     <span className="text-white text-xl md:text-2xl font-[1000] italic block">{referralStats.referral_points.toLocaleString()}</span>
-                    <span className="text-zinc-500 text-[8px] md:text-[9px] font-black uppercase tracking-widest italic">XP Earned</span>
+                    <span className="text-zinc-500 text-[8px] md:text-[9px] font-black uppercase tracking-widest italic">{t('profile.xpEarned')}</span>
                   </div>
                 </div>
 
@@ -900,14 +902,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                   }}
                   className="w-full py-3 md:py-4 bg-white/[0.03] border border-white/10 hover:bg-white/[0.06] rounded-xl text-white font-[1000] text-xs md:text-sm uppercase italic tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                 >
-                  <span>Share on</span>
+                  <span>{t('profile.shareOn')}</span>
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
                 </button>
 
                 {/* Recent Referrals */}
                 {referralStats.recent_referrals.length > 0 && (
                   <div>
-                    <label className="text-zinc-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] italic block mb-3">Recent Referrals</label>
+                    <label className="text-zinc-500 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] italic block mb-3">{t('profile.recentReferrals')}</label>
                     <div className="space-y-2">
                       {referralStats.recent_referrals.map((ref, i) => (
                         <div key={i} className="flex items-center justify-between py-2 px-4 bg-black/20 border border-white/5 rounded-lg">
@@ -930,9 +932,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           <div className="mb-5 md:mb-8 relative z-10">
             <div className="bg-[#0A0A0A] border border-[#38BDF8]/20 rounded-xl md:rounded-2xl overflow-hidden shadow-lg">
               <div className="px-5 py-3 md:px-6 md:py-4 border-b border-white/5 bg-gradient-to-r from-[#38BDF8]/10 to-transparent">
-                <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">Custom Games</h2>
+                <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">{t('profile.customGames')}</h2>
                 <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-wider mt-0.5">
-                  Games you created & played
+                  {t('profile.createdAndPlayed')}
                 </p>
               </div>
 
@@ -946,7 +948,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
-                  Created ({createdGames.length})
+                  {t('profile.createdTab', { count: createdGames.length })}
                 </button>
                 <button
                   onClick={() => setCustomGameTab('played')}
@@ -956,17 +958,17 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
-                  Played ({playedGames.length})
+                  {t('profile.playedTab', { count: playedGames.length })}
                 </button>
               </div>
 
               <div className="p-4 md:p-6">
                 {customGamesLoading ? (
-                  <div className="py-8 text-center text-zinc-500 text-sm font-black uppercase tracking-widest italic">Loading...</div>
+                  <div className="py-8 text-center text-zinc-500 text-sm font-black uppercase tracking-widest italic">{t('profile.loading')}</div>
                 ) : customGameTab === 'created' ? (
                   /* Created Games */
                   createdGames.length === 0 ? (
-                    <div className="py-8 text-center text-zinc-500 text-sm italic">No games created yet.</div>
+                    <div className="py-8 text-center text-zinc-500 text-sm italic">{t('profile.noGamesCreated')}</div>
                   ) : (
                     <div className="space-y-3">
                       {createdGames.slice(createdGamesPage * CUSTOM_GAMES_PER_PAGE, (createdGamesPage + 1) * CUSTOM_GAMES_PER_PAGE).map((game) => {
@@ -983,14 +985,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="text-white font-[1000] text-sm italic truncate">{game.name}</span>
                                 {isExpired ? (
-                                  <span className="text-red-400 text-[8px] font-black italic uppercase px-1.5 py-0.5 bg-red-400/10 rounded">Expired</span>
+                                  <span className="text-red-400 text-[8px] font-black italic uppercase px-1.5 py-0.5 bg-red-400/10 rounded">{t('profile.expired')}</span>
                                 ) : (
-                                  <span className="text-[#14F195] text-[8px] font-black italic uppercase px-1.5 py-0.5 bg-[#14F195]/10 rounded">{daysLeft}d left</span>
+                                  <span className="text-[#14F195] text-[8px] font-black italic uppercase px-1.5 py-0.5 bg-[#14F195]/10 rounded">{t('profile.daysLeft', { count: daysLeft })}</span>
                                 )}
                               </div>
                               <div className="flex items-center gap-3 text-zinc-500 text-[10px] font-bold">
                                 <span>{game.question_count} Q</span>
-                                <span>{game.total_plays} plays</span>
+                                <span>{game.total_plays} {t('profile.plays')}</span>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -1002,14 +1004,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                                 }}
                                 className="px-3 py-1.5 bg-white/5 border border-white/10 text-white text-[10px] font-[1000] italic uppercase rounded-lg hover:bg-white/10 transition-all active:scale-95"
                               >
-                                {linkCopiedSlug === game.slug ? 'Copied!' : 'Share'}
+                                {linkCopiedSlug === game.slug ? t('profile.copied') : t('profile.share')}
                               </button>
                               {!isExpired && onViewCustomGame && (
                                 <button
                                   onClick={() => onViewCustomGame(game.slug)}
                                   className="px-3 py-1.5 bg-[#38BDF8]/20 text-[#38BDF8] text-[10px] font-[1000] italic uppercase rounded-lg hover:bg-[#38BDF8]/30 transition-all active:scale-95"
                                 >
-                                  View
+                                  {t('profile.view')}
                                 </button>
                               )}
                             </div>
@@ -1018,9 +1020,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       })}
                       {createdGames.length > CUSTOM_GAMES_PER_PAGE && (
                         <div className="flex items-center justify-between mt-2">
-                          <button onClick={() => setCreatedGamesPage(p => Math.max(0, p - 1))} disabled={createdGamesPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Prev</button>
+                          <button onClick={() => setCreatedGamesPage(p => Math.max(0, p - 1))} disabled={createdGamesPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">{t('profile.prev')}</button>
                           <span className="text-zinc-500 text-[10px] font-bold italic">{createdGamesPage + 1} / {Math.ceil(createdGames.length / CUSTOM_GAMES_PER_PAGE)}</span>
-                          <button onClick={() => setCreatedGamesPage(p => Math.min(Math.ceil(createdGames.length / CUSTOM_GAMES_PER_PAGE) - 1, p + 1))} disabled={createdGamesPage >= Math.ceil(createdGames.length / CUSTOM_GAMES_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Next</button>
+                          <button onClick={() => setCreatedGamesPage(p => Math.min(Math.ceil(createdGames.length / CUSTOM_GAMES_PER_PAGE) - 1, p + 1))} disabled={createdGamesPage >= Math.ceil(createdGames.length / CUSTOM_GAMES_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">{t('profile.next')}</button>
                         </div>
                       )}
                     </div>
@@ -1028,7 +1030,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 ) : (
                   /* Played Games */
                   playedGames.length === 0 ? (
-                    <div className="py-8 text-center text-zinc-500 text-sm italic">No custom games played yet.</div>
+                    <div className="py-8 text-center text-zinc-500 text-sm italic">{t('profile.noCustomGamesPlayed')}</div>
                   ) : (
                     <div className="space-y-3">
                       {playedGames.slice(playedGamesPage * CUSTOM_GAMES_PER_PAGE, (playedGamesPage + 1) * CUSTOM_GAMES_PER_PAGE).map((game) => (
@@ -1049,16 +1051,16 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                               onClick={() => onViewCustomGame(game.slug)}
                               className="px-3 py-1.5 bg-[#14F195]/20 text-[#14F195] text-[10px] font-[1000] italic uppercase rounded-lg hover:bg-[#14F195]/30 transition-all active:scale-95"
                             >
-                              Play Again
+                              {t('profile.playAgain')}
                             </button>
                           )}
                         </div>
                       ))}
                       {playedGames.length > CUSTOM_GAMES_PER_PAGE && (
                         <div className="flex items-center justify-between mt-2">
-                          <button onClick={() => setPlayedGamesPage(p => Math.max(0, p - 1))} disabled={playedGamesPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Prev</button>
+                          <button onClick={() => setPlayedGamesPage(p => Math.max(0, p - 1))} disabled={playedGamesPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">{t('profile.prev')}</button>
                           <span className="text-zinc-500 text-[10px] font-bold italic">{playedGamesPage + 1} / {Math.ceil(playedGames.length / CUSTOM_GAMES_PER_PAGE)}</span>
-                          <button onClick={() => setPlayedGamesPage(p => Math.min(Math.ceil(playedGames.length / CUSTOM_GAMES_PER_PAGE) - 1, p + 1))} disabled={playedGamesPage >= Math.ceil(playedGames.length / CUSTOM_GAMES_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Next</button>
+                          <button onClick={() => setPlayedGamesPage(p => Math.min(Math.ceil(playedGames.length / CUSTOM_GAMES_PER_PAGE) - 1, p + 1))} disabled={playedGamesPage >= Math.ceil(playedGames.length / CUSTOM_GAMES_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">{t('profile.next')}</button>
                         </div>
                       )}
                     </div>
@@ -1073,7 +1075,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         {lastClaimTx && (
           <div className="mb-6 p-4 bg-[#14F195]/10 border border-[#14F195]/30 rounded-xl">
             <p className="text-[#14F195] font-bold text-sm mb-2">
-              {lastClaimTx.solAmount} SOL sent to your wallet. You can verify on-chain:
+              {t('profile.solClaimed', { amount: lastClaimTx.solAmount })}
             </p>
             <a
               href={claimExplorerUrl(lastClaimTx.signature)}
@@ -1081,7 +1083,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
               rel="noopener noreferrer"
               className="text-white/90 underline text-sm hover:text-[#14F195]"
             >
-              View transaction on Solana Explorer →
+              {t('profile.viewTransaction')} →
             </a>
             <button
               type="button"
@@ -1089,7 +1091,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
               className="ml-3 text-zinc-500 text-xs hover:text-white"
               aria-label="Dismiss"
             >
-              Dismiss
+              {t('profile.dismiss')}
             </button>
           </div>
         )}
@@ -1097,8 +1099,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         {/* Round wins – claim on-chain (winners acknowledged when round ends). First claimer can trigger post-winners if round not yet finalized (optional alongside complete-session). */}
         {claimablePayouts.length > 0 && (
           <div className="mb-8 md:mb-12 relative z-10">
-            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">Round wins</h2>
-            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">Winners are set when the round ends. Claim your prize below.</p>
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">{t('profile.roundWins')}</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">{t('profile.winnersWhenRoundEnds')}</p>
             <div className="space-y-3">
               {claimablePayouts.slice(claimablePage * WINS_PER_PAGE, (claimablePage + 1) * WINS_PER_PAGE).map((p) => (
                 <div
@@ -1118,7 +1120,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       onClick={() => handleClaimPrize(p)}
                       className="px-4 py-2 bg-[#14F195] hover:bg-[#14F195]/90 disabled:opacity-50 text-black font-[1000] text-xs uppercase italic rounded-lg transition-all"
                     >
-                      {claimingRoundId === p.round_id ? 'Claiming…' : 'Claim'}
+                      {claimingRoundId === p.round_id ? t('profile.claiming') : t('profile.claim')}
                     </button>
                   </div>
                 </div>
@@ -1126,9 +1128,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
             </div>
             {claimablePayouts.length > WINS_PER_PAGE && (
               <div className="flex items-center justify-between mt-3">
-                <button onClick={() => setClaimablePage(p => Math.max(0, p - 1))} disabled={claimablePage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Prev</button>
+                <button onClick={() => setClaimablePage(p => Math.max(0, p - 1))} disabled={claimablePage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">{t('profile.prev')}</button>
                 <span className="text-zinc-500 text-[10px] font-bold italic">{claimablePage + 1} / {Math.ceil(claimablePayouts.length / WINS_PER_PAGE)}</span>
-                <button onClick={() => setClaimablePage(p => Math.min(Math.ceil(claimablePayouts.length / WINS_PER_PAGE) - 1, p + 1))} disabled={claimablePage >= Math.ceil(claimablePayouts.length / WINS_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Next</button>
+                <button onClick={() => setClaimablePage(p => Math.min(Math.ceil(claimablePayouts.length / WINS_PER_PAGE) - 1, p + 1))} disabled={claimablePage >= Math.ceil(claimablePayouts.length / WINS_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">{t('profile.next')}</button>
               </div>
             )}
           </div>
@@ -1137,8 +1139,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         {/* Duel wins – unclaimed prizes */}
         {claimableDuels.length > 0 && (
           <div className="mb-8 md:mb-12 relative z-10">
-            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">Duel Prizes</h2>
-            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">You won these duels. Claim your SOL.</p>
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">{t('profile.duelPrizes')}</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">{t('profile.wonDuelsClaim')}</p>
             <div className="space-y-3">
               {claimableDuels.map((dw) => {
                 const houseCut = Math.floor(dw.total_pot_lamports * 0.1);
@@ -1150,7 +1152,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                     className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 md:px-6 bg-[#0A0A0A] border border-white/10 rounded-xl"
                   >
                     <div>
-                      <span className="text-[#FF3131] font-bold text-sm md:text-base">Duel vs {oppName}</span>
+                      <span className="text-[#FF3131] font-bold text-sm md:text-base">{t('profile.duelVs', { name: oppName })}</span>
                       <span className="text-zinc-500 text-xs ml-2">{dw.player1_score}–{dw.player2_score}</span>
                     </div>
                     <div className="flex items-center gap-4">
@@ -1172,7 +1174,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                         }}
                         className="px-4 py-2 bg-[#14F195] hover:bg-[#14F195]/90 disabled:opacity-50 text-black font-[1000] text-xs uppercase italic rounded-lg transition-all"
                       >
-                        {claimingDuelId === dw.duel_id ? 'Claiming...' : 'Claim'}
+                        {claimingDuelId === dw.duel_id ? t('profile.claiming') : t('profile.claim')}
                       </button>
                     </div>
                   </div>
@@ -1185,8 +1187,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         {/* Custom Game Prizes – unclaimed wins from finalized paid custom games */}
         {claimableCustomGames.length > 0 && (
           <div className="mb-8 md:mb-12 relative z-10">
-            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">Custom Game Prizes</h2>
-            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">You won these custom games. Claim your SOL.</p>
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">{t('profile.customGamePrizes')}</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">{t('profile.wonCustomClaim')}</p>
             <div className="space-y-3">
               {claimableCustomGames.map((cg) => (
                 <div
@@ -1216,7 +1218,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       }}
                       className="px-4 py-2 bg-[#14F195] hover:bg-[#14F195]/90 disabled:opacity-50 text-black font-[1000] text-xs uppercase italic rounded-lg transition-all"
                     >
-                      {claimingCustomGameId === cg.on_chain_game_id ? 'Claiming...' : 'Claim'}
+                      {claimingCustomGameId === cg.on_chain_game_id ? t('profile.claiming') : t('profile.claim')}
                     </button>
                   </div>
                 </div>
@@ -1228,8 +1230,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         {/* Refundable Entries – rounds with <5 finishers */}
         {refundableEntries.length > 0 && (
           <div className="mb-8 md:mb-12 relative z-10">
-            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-yellow-400 mb-4">Refundable Entries</h2>
-            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">These rounds had fewer than 5 players. Claim your entry fee back.</p>
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-yellow-400 mb-4">{t('profile.refundableEntries')}</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">{t('profile.fewerPlayersRefund')}</p>
             <div className="space-y-3">
               {refundableEntries.map((re) => (
                 <div
@@ -1248,7 +1250,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       onClick={() => handleClaimRefund(re)}
                       className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-black font-[1000] text-xs uppercase italic rounded-lg transition-all"
                     >
-                      {claimingRefundId === re.round_id ? 'Refunding...' : 'Refund'}
+                      {claimingRefundId === re.round_id ? t('profile.refunding') : t('profile.refund')}
                     </button>
                   </div>
                 </div>
@@ -1260,8 +1262,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         {/* Custom Game Refunds – expired games */}
         {refundableCustomGames.length > 0 && (
           <div className="mb-8 md:mb-12 relative z-10">
-            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-orange-400 mb-4">Custom Game Refunds</h2>
-            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">These games expired without enough players. Claim your entry fee back.</p>
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-orange-400 mb-4">{t('profile.customGameRefunds')}</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">{t('profile.gameExpiredRefund')}</p>
             <div className="space-y-3">
               {refundableCustomGames.map((cg) => (
                 <div
@@ -1279,7 +1281,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       onClick={() => handleClaimCGRefund(cg)}
                       className="px-4 py-2 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-black font-[1000] text-xs uppercase italic rounded-lg transition-all"
                     >
-                      {claimingCGRefundId === cg.on_chain_game_id ? 'Refunding...' : 'Refund'}
+                      {claimingCGRefundId === cg.on_chain_game_id ? t('profile.refunding') : t('profile.refund')}
                     </button>
                   </div>
                 </div>
@@ -1291,8 +1293,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         {/* Already claimed – show so user does not try to claim again */}
         {claimedPayouts.length > 0 && (
           <div className="mb-8 md:mb-12 relative z-10">
-            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">Claimed</h2>
-            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">Prizes you have already claimed.</p>
+            <h2 className="text-lg md:text-2xl font-[1000] italic uppercase tracking-tighter text-white mb-4">{t('profile.claimed')}</h2>
+            <p className="text-zinc-500 text-xs font-black uppercase tracking-wider mb-4">{t('profile.prizesAlreadyClaimed')}</p>
             <div className="space-y-3">
               {claimedPayouts.slice(claimedPage * WINS_PER_PAGE, (claimedPage + 1) * WINS_PER_PAGE).map((p) => (
                 <div
@@ -1306,7 +1308,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                   <div className="flex items-center gap-4">
                     <span className="text-zinc-500 font-bold">{(p.prize_lamports / 1_000_000_000).toFixed(4)} SOL</span>
                     <span className="px-4 py-2 bg-[#14F195]/20 text-[#14F195] font-[1000] text-xs uppercase italic rounded-lg border border-[#14F195]/40">
-                      Claimed
+                      {t('profile.claimed')}
                     </span>
                   </div>
                 </div>
@@ -1314,9 +1316,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
             </div>
             {claimedPayouts.length > WINS_PER_PAGE && (
               <div className="flex items-center justify-between mt-3">
-                <button onClick={() => setClaimedPage(p => Math.max(0, p - 1))} disabled={claimedPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Prev</button>
+                <button onClick={() => setClaimedPage(p => Math.max(0, p - 1))} disabled={claimedPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">{t('profile.prev')}</button>
                 <span className="text-zinc-500 text-[10px] font-bold italic">{claimedPage + 1} / {Math.ceil(claimedPayouts.length / WINS_PER_PAGE)}</span>
-                <button onClick={() => setClaimedPage(p => Math.min(Math.ceil(claimedPayouts.length / WINS_PER_PAGE) - 1, p + 1))} disabled={claimedPage >= Math.ceil(claimedPayouts.length / WINS_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Next</button>
+                <button onClick={() => setClaimedPage(p => Math.min(Math.ceil(claimedPayouts.length / WINS_PER_PAGE) - 1, p + 1))} disabled={claimedPage >= Math.ceil(claimedPayouts.length / WINS_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">{t('profile.next')}</button>
               </div>
             )}
           </div>
@@ -1325,28 +1327,28 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         {/* Trivia History Table */}
         <div className="bg-[#0A0A0A] border border-white/5 relative z-10 shadow-lg rounded-xl md:rounded-2xl overflow-hidden">
           <div className="px-5 py-3 md:px-6 md:py-4 border-b border-white/5 bg-[#0D0D0D]">
-              <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">Trivia History</h2>
+              <h2 className="text-base md:text-lg font-[1000] italic uppercase tracking-tighter text-white">{t('profile.triviaHistory')}</h2>
           </div>
           <div className="overflow-x-auto no-scrollbar">
             {loading ? (
-              <div className="px-6 py-12 text-center text-zinc-500 text-sm font-black uppercase tracking-widest italic">Loading history…</div>
+              <div className="px-6 py-12 text-center text-zinc-500 text-sm font-black uppercase tracking-widest italic">{t('profile.loadingHistory')}</div>
             ) : (
             <table className="w-full min-w-[500px] md:min-w-[700px]">
                 <thead className="bg-black/40 text-[8px] md:text-xs font-black text-zinc-500 uppercase tracking-[0.4em]">
                   <tr>
-                     <th className="px-6 py-4 md:px-6 md:py-4 text-left">Arena</th>
-                     <th className="px-6 py-4 md:px-6 md:py-4 text-left">Date</th>
+                     <th className="px-6 py-4 md:px-6 md:py-4 text-left">{t('profile.arena')}</th>
+                     <th className="px-6 py-4 md:px-6 md:py-4 text-left">{t('profile.date')}</th>
                      <th className="px-6 py-4 md:px-6 md:py-4 text-center">Rank</th>
-                     <th className="px-6 py-4 md:px-6 md:py-4 text-center">Time</th>
-                     <th className="px-6 py-4 md:px-6 md:py-4 text-center">Correct</th>
-                     <th className="px-6 py-4 md:px-6 md:py-4 text-right">Payout</th>
+                     <th className="px-6 py-4 md:px-6 md:py-4 text-center">{t('profile.time')}</th>
+                     <th className="px-6 py-4 md:px-6 md:py-4 text-center">{t('profile.correct')}</th>
+                     <th className="px-6 py-4 md:px-6 md:py-4 text-right">{t('profile.payout')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.03]">
                     {history.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-6 py-10 text-center text-zinc-500 italic">
-                          No game history yet. Play your first trivia to see stats!
+                          {t('profile.noGameHistory')}
                         </td>
                       </tr>
                     ) : (
@@ -1379,9 +1381,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           </div>
           {history.length > HISTORY_PER_PAGE && (
             <div className="flex items-center justify-between px-6 py-3 md:px-10 md:py-4 border-t border-white/5">
-              <button onClick={() => setHistoryPage(p => Math.max(0, p - 1))} disabled={historyPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Prev</button>
+              <button onClick={() => setHistoryPage(p => Math.max(0, p - 1))} disabled={historyPage === 0} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">{t('profile.prev')}</button>
               <span className="text-zinc-500 text-[10px] font-bold italic">{historyPage + 1} / {Math.ceil(history.length / HISTORY_PER_PAGE)}</span>
-              <button onClick={() => setHistoryPage(p => Math.min(Math.ceil(history.length / HISTORY_PER_PAGE) - 1, p + 1))} disabled={historyPage >= Math.ceil(history.length / HISTORY_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">Next</button>
+              <button onClick={() => setHistoryPage(p => Math.min(Math.ceil(history.length / HISTORY_PER_PAGE) - 1, p + 1))} disabled={historyPage >= Math.ceil(history.length / HISTORY_PER_PAGE) - 1} className="px-3 py-1.5 text-xs font-[1000] italic uppercase text-zinc-400 disabled:text-zinc-700 disabled:cursor-not-allowed hover:text-white transition-colors">{t('profile.next')}</button>
             </div>
           )}
         </div>

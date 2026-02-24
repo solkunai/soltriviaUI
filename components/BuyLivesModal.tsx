@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { purchaseLives } from '../src/utils/api';
@@ -27,6 +28,7 @@ const TOKEN_OPTIONS: { id: PaymentToken; label: string; color: string }[] = [
 ];
 
 const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuccess, isSeekerVerified = false }) => {
+  const { t } = useTranslation();
   const { publicKey, sendTransaction, connected } = useWallet();
   const { connection } = useConnection();
   const [purchasing, setPurchasing] = useState(false);
@@ -74,12 +76,12 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
 
   const handlePurchase = async () => {
     if (!connected || !publicKey) {
-      setError('Please connect your wallet first');
+      setError(t('buyLives.walletNotConnected'));
       return;
     }
 
     if (selectedToken !== 'SOL' && !prices) {
-      setError('Prices not loaded yet. Please wait a moment.');
+      setError(t('buyLives.pricesNotLoaded'));
       return;
     }
 
@@ -92,7 +94,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         const balance = await getSplTokenBalance(connection, publicKey, selectedToken);
         if (balance < tokenAmount!) {
           const needed = formatTokenAmount(tokenAmount!, selectedToken);
-          setError(`Insufficient ${selectedToken} balance. You need at least ${needed} ${selectedToken}.`);
+          setError(t('buyLives.insufficientTokenBalance', { token: selectedToken, needed }));
           setPurchasing(false);
           return;
         }
@@ -159,13 +161,13 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
     } catch (err: any) {
       console.error('Purchase error:', err);
 
-      let errorMessage = 'Failed to purchase lives. Please try again.';
+      let errorMessage = t('buyLives.purchaseFailed');
       if (err.message?.includes('User rejected')) {
-        errorMessage = 'Transaction was cancelled.';
+        errorMessage = t('buyLives.transactionCancelled');
       } else if (err.message?.includes('insufficient funds') || err.message?.includes('Insufficient')) {
-        errorMessage = `Insufficient balance. You need enough ${selectedToken} plus SOL for transaction fees.`;
+        errorMessage = t('buyLives.insufficientBalance', { token: selectedToken });
       } else if (err.message?.includes('blockhash') || err.message?.includes('403')) {
-        errorMessage = 'Network error. Please try again or check your connection.';
+        errorMessage = t('buyLives.networkError');
       } else if (err.message) {
         errorMessage = err.message;
       }
@@ -194,7 +196,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         <div className="p-8">
           <div className="flex justify-between items-start mb-6">
             <div>
-              <span className="text-[#FF3131] text-[10px] font-black tracking-[0.4em] uppercase mb-1 block italic">Neural Restoration</span>
+              <span className="text-[#FF3131] text-[10px] font-black tracking-[0.4em] uppercase mb-1 block italic">{t('buyLives.neuralRestoration')}</span>
               <h2 className="text-3xl font-[1000] italic uppercase tracking-tighter text-white leading-none">VITALITY <span className="text-[#FF3131]">SYNC</span></h2>
             </div>
             <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors p-2">
@@ -205,14 +207,14 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
           </div>
 
           <p className="text-zinc-300 text-[11px] font-black uppercase tracking-widest mb-5 italic text-center">
-            Unlock multi-entry access. Unused lives roll over indefinitely.
+            {t('buyLives.unlockMultiEntry')}
           </p>
 
           {/* Seeker Discount Banner */}
           {isSeekerVerified && (
             <div className="bg-[#14F195]/10 border border-[#14F195]/30 p-3 rounded-lg mb-4">
               <p className="text-[#14F195] text-[9px] font-black uppercase tracking-wider text-center italic leading-tight">
-                Seeker discount applied — exclusive pricing for SGT holders
+                {t('buyLives.seekerDiscount')}
               </p>
             </div>
           )}
@@ -242,7 +244,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
           {/* USD Price Indicator */}
           {pricesLoading && !prices && (
             <div className="text-center mb-3">
-              <span className="text-zinc-500 text-[10px] font-bold italic">Loading prices...</span>
+              <span className="text-zinc-500 text-[10px] font-bold italic">{t('buyLives.loadingPrices')}</span>
             </div>
           )}
 
@@ -252,7 +254,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
               const tp = LIVES_USD_PRICING[tierId];
               const isSelected = selectedTier === tierId;
               const tierUsd = isSeekerVerified ? tp.seeker : tp.standard;
-              const badge = tierId === 'value' ? 'POPULAR' : tierId === 'bulk' ? 'BEST VALUE' : null;
+              const badge = tierId === 'value' ? t('buyLives.popular') : tierId === 'bulk' ? t('buyLives.bestValue') : null;
               // Calculate display price for this tier
               let tierDisplayPrice = `$${tierUsd}`;
               if (prices) {
@@ -312,7 +314,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
 
           <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg mb-5">
             <p className="text-amber-400 text-[9px] font-black uppercase tracking-wider text-center italic leading-tight">
-              You get 2 round entries included each round. Extra lives are for additional plays beyond that. Entry fee (0.0225 SOL) still applies.
+              {t('buyLives.freeEntriesNote')}
             </p>
           </div>
 
@@ -327,11 +329,11 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
             disabled={purchasing || !connected || (selectedToken !== 'SOL' && !prices)}
             className="w-full py-5 bg-[#FF3131] disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_0_30px_rgba(255,49,49,0.4)] active:scale-95 transition-all rounded-sm disabled:cursor-not-allowed"
           >
-            {purchasing ? 'PROCESSING...' : `BUY ${livesCount} LIVES — ${displayPrice()}`}
+            {purchasing ? t('buyLives.processing') : t('buyLives.buyButton', { count: livesCount, price: displayPrice() })}
           </button>
 
           <p className="text-[8px] text-zinc-600 text-center font-black uppercase tracking-[0.2em] mt-4 italic">
-            Secured by Solana Protocol
+            {t('buyLives.securedBySolana')}
           </p>
         </div>
 
@@ -350,12 +352,12 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h3 className="text-3xl font-[1000] italic uppercase text-black mb-2">SUCCESS!</h3>
+            <h3 className="text-3xl font-[1000] italic uppercase text-black mb-2">{t('buyLives.successTitle')}</h3>
             <p className="text-black font-bold text-lg mb-4">
-              +{purchasedLives} Lives Purchased Successfully!
+              {t('buyLives.successMessage', { count: purchasedLives })}
             </p>
             <p className="text-black/80 font-black text-sm italic uppercase tracking-wider">
-              Time to Play!
+              {t('buyLives.timeToPlay')}
             </p>
           </div>
         </div>

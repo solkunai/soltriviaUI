@@ -1793,7 +1793,7 @@ export async function fetchCompletedDuels(limit = 20, offset = 0): Promise<{ due
   const { data, count, error } = await supabase
     .from('duels')
     .select('id, duel_id, player1_wallet, player2_wallet, player1_score, player2_score, player1_correct, player2_correct, player1_time_ms, player2_time_ms, winner_wallet, entry_fee_lamports, total_pot_lamports, status, created_at, resolved_at', { count: 'exact' })
-    .in('status', ['completed', 'resolved'])
+    .in('status', ['completed', 'resolved', 'expired'])
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
   if (error || !data?.length) return { duels: [], totalCount: count ?? 0 };
@@ -1860,6 +1860,40 @@ export async function fetchMyDuelWins(walletAddress: string): Promise<MyDuelWin[
       opponent_username: profileMap[oppWallet] ?? null,
     };
   });
+}
+
+/** Refundable duel for player1 (expired/waiting past expiry, no opponent joined). */
+export interface RefundableDuel {
+  id: string;
+  duel_id: number;
+  entry_fee_lamports: number;
+  status: string;
+  share_code: string;
+  created_at: string;
+  expires_at: string;
+}
+
+/** Fetch duels created by this wallet that are refundable (expired or waiting past expiry, no opponent). */
+export async function fetchMyRefundableDuels(walletAddress: string): Promise<RefundableDuel[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('duels')
+    .select('id, duel_id, entry_fee_lamports, status, share_code, created_at, expires_at')
+    .eq('player1_wallet', walletAddress)
+    .is('player2_wallet', null)
+    .in('status', ['waiting', 'expired', 'cancelled'])
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error || !data?.length) return [];
+  // Filter to only truly expired/cancelled (waiting with expires_at in the past)
+  const now = new Date().toISOString();
+  return data.filter((d: any) => d.status !== 'waiting' || d.expires_at < now);
+}
+
+/** Update duel status in DB after on-chain cancel/expire. */
+export async function updateDuelStatus(duelId: number, status: 'cancelled' | 'expired'): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  await supabase.from('duels').update({ status }).eq('duel_id', duelId);
 }
 
 /** Duel win count leaderboard entry. */
