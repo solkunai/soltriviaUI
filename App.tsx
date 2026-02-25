@@ -1398,17 +1398,40 @@ const App: React.FC = () => {
     }
   };
 
-  const handleResumeDuel = (duel: ActiveDuel) => {
+  const handleResumeDuel = async (duel: ActiveDuel) => {
     setDuelId(duel.duel_id);
     setDbDuelId(duel.id);
     setDuelShareCode(duel.share_code);
     setDuelEntryFee(duel.entry_fee_lamports);
     setDuelIsPublic(duel.is_public);
     setDuelExpiresAt(duel.expires_at);
-    setDuelOpponent(null);
     setDuelResults(null);
     setDuelIsPlayer1(true);
     window.history.pushState({}, '', `/duel/${duel.share_code}`);
+
+    // If duel has an opponent (status='playing'), go straight to quiz
+    if (duel.status === 'playing') {
+      try {
+        const walletAddr = publicKey?.toBase58();
+        const duelInfo = await getDuel({ duel_id: duel.duel_id, wallet_address: walletAddr });
+        if (duelInfo.status === 'playing' && duelInfo.player2) {
+          setDuelOpponent({
+            wallet: duelInfo.player2.wallet,
+            username: duelInfo.player2.username ?? null,
+            avatar: duelInfo.player2.avatar ?? null,
+          });
+          setCurrentView(View.DUEL_PLAY);
+          return;
+        }
+        // Duel was auto-resolved/expired by backend — go to lobby
+        if (duelInfo.status !== 'waiting') {
+          setCurrentView(View.DUEL_LOBBY);
+          return;
+        }
+      } catch { /* fall through to waiting view */ }
+    }
+
+    setDuelOpponent(null);
     setCurrentView(View.DUEL_WAITING);
   };
 
@@ -1522,8 +1545,27 @@ const App: React.FC = () => {
             // For now, redirect to lobby with the code pre-filled
             setCurrentView(View.DUEL_LOBBY);
           }
-        } else if (duelInfo.status === 'playing' || duelInfo.status === 'completed' || duelInfo.status === 'resolved') {
-          // Duel already started/finished
+        } else if (duelInfo.status === 'playing') {
+          // Duel in progress — if creator hasn't finished, route to quiz
+          if (duelInfo.player1.wallet === walletAddr && duelInfo.player2) {
+            setDuelOpponent({
+              wallet: duelInfo.player2.wallet,
+              username: duelInfo.player2.username ?? null,
+              avatar: duelInfo.player2.avatar ?? null,
+            });
+            setCurrentView(View.DUEL_PLAY);
+          } else if (duelInfo.player2?.wallet === walletAddr && duelInfo.player1) {
+            setDuelOpponent({
+              wallet: duelInfo.player1.wallet,
+              username: duelInfo.player1.username ?? null,
+              avatar: duelInfo.player1.avatar ?? null,
+            });
+            setCurrentView(View.DUEL_PLAY);
+          } else {
+            setCurrentView(View.DUEL_LOBBY);
+          }
+        } else if (duelInfo.status === 'completed' || duelInfo.status === 'resolved') {
+          // Duel finished
           setCurrentView(View.DUEL_LOBBY);
         }
       } catch {

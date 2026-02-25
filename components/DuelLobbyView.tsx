@@ -212,7 +212,7 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
               <div>
                 <p className="text-white font-[1000] italic text-xl">{(activeDuel.entry_fee_lamports / 1_000_000_000).toFixed(2)} SOL</p>
                 <p className="text-zinc-500 text-[10px] font-bold uppercase mt-1">
-                  {activeDuel.is_public ? 'Public' : 'Private'} — Waiting for opponent — {getTimeRemaining(activeDuel.expires_at)}
+                  {activeDuel.is_public ? 'Public' : 'Private'} — {activeDuel.status === 'playing' ? 'Opponent joined — Your turn!' : `Waiting for opponent — ${getTimeRemaining(activeDuel.expires_at)}`}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -228,9 +228,13 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
                 </button>
                 <button
                   onClick={() => onResumeDuel?.(activeDuel)}
-                  className="px-4 py-2 bg-[#FF3131] text-white font-[1000] italic uppercase text-[10px] rounded hover:bg-[#FF3131]/80 transition-all"
+                  className={`px-4 py-2 font-[1000] italic uppercase text-[10px] rounded transition-all ${
+                    activeDuel.status === 'playing'
+                      ? 'bg-[#14F195] text-black hover:bg-[#00FFA3] animate-pulse'
+                      : 'bg-[#FF3131] text-white hover:bg-[#FF3131]/80'
+                  }`}
                 >
-                  Resume
+                  {activeDuel.status === 'playing' ? 'Play Now' : 'Resume'}
                 </button>
               </div>
             </div>

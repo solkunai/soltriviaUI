@@ -1934,15 +1934,15 @@ export interface ActiveDuel {
   share_code: string;
   created_at: string;
   expires_at: string;
+  status: 'waiting' | 'playing';
 }
 export async function fetchMyActiveDuel(walletAddress: string): Promise<ActiveDuel | null> {
   if (!isSupabaseConfigured || !walletAddress?.trim()) return null;
   const { data, error } = await supabase
     .from('duels')
-    .select('id, duel_id, entry_fee_lamports, is_public, share_code, created_at, expires_at')
+    .select('id, duel_id, entry_fee_lamports, is_public, share_code, created_at, expires_at, status')
     .eq('player1_wallet', walletAddress.trim())
-    .eq('status', 'waiting')
-    .gt('expires_at', new Date().toISOString())
+    .in('status', ['waiting', 'playing'])
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
