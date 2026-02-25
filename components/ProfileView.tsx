@@ -11,6 +11,7 @@ function claimExplorerUrl(signature: string): string {
 }
 import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, fetchMyDuelWins, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame, type MyDuelWin, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel } from '../src/utils/api';
 import { buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchDuel, fetchCustomGame, fetchTierRound } from '../src/utils/soltriviaContract';
+import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import AvatarUpload from './AvatarUpload';
 import { isPushSupported, hasActiveSubscription, subscribeToPush, unsubscribeFromPush } from '../src/utils/notifications';
 import { useTranslation } from 'react-i18next';
@@ -562,7 +563,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
       }).catch(() => {}); // idempotent; non-fatal if already inited
       const tierIndex = payout.tier_index ?? 0;
       const ix = buildClaimTierPrizeIx(publicKey, payout.contract_round_id, tierIndex);
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const msg = new TransactionMessage({
         payerKey: publicKey,
         recentBlockhash: blockhash,
@@ -618,7 +619,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
     setClaimingRefundId(entry.round_id);
     try {
       const ix = buildClaimTierRefundIx(publicKey, entry.contract_round_id, entry.tier_index);
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
         recentBlockhash: blockhash,
@@ -654,7 +655,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
     setClaimingCGRefundId(cg.on_chain_game_id);
     try {
       const ix = buildClaimCustomRefundIx(publicKey, cg.on_chain_game_id);
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
         recentBlockhash: blockhash,

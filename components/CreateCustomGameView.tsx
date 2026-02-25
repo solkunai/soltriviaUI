@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { createCustomGame } from '../src/utils/api';
+import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import {
   REVENUE_WALLET,
   CUSTOM_GAME_CREATION_FEE_LAMPORTS,
@@ -211,7 +212,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
     try {
       // Build payment tx
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const instructions = [
         SystemProgram.transfer({
           fromPubkey: publicKey,

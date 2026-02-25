@@ -94,6 +94,7 @@ import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromD
 
 import { supabase } from './src/utils/supabase';
 import { useKeepAlive } from './src/hooks/useKeepAlive';
+import { getRecentBlockhashWithRetry } from './src/utils/rpc';
 
 const App: React.FC = () => {
   // Keep Render free tier service alive (pings every 2 minutes)
@@ -814,7 +815,7 @@ const App: React.FC = () => {
       }
 
       const useContractEntry = import.meta.env.VITE_USE_ENTRY_CONTRACT !== 'false';
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
 
       let instructions;
       if (useContractEntry) {
@@ -1034,7 +1035,7 @@ const App: React.FC = () => {
       setShowWalletRequired(true);
       return;
     }
-    const { blockhash } = await connection.getLatestBlockhash();
+    const { blockhash } = await getRecentBlockhashWithRetry(connection);
     const ix = buildEnterCustomGameIx(
       publicKey,
       gameData.on_chain_game_id,
@@ -1091,7 +1092,7 @@ const App: React.FC = () => {
     }
     setFunding(true);
     try {
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildFundCustomGameIx(publicKey, gameData.on_chain_game_id, depositLamports);
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -1126,7 +1127,7 @@ const App: React.FC = () => {
     if (!connected || !publicKey) { setShowWalletRequired(true); return; }
     setClaimingId(`custom-${onChainGameId}`);
     try {
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildClaimCustomPrizeIx(publicKey, onChainGameId);
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -1154,7 +1155,7 @@ const App: React.FC = () => {
     const id = `round-${payout.round_id}-${payout.rank}`;
     setClaimingId(id);
     try {
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildClaimTierPrizeIx(publicKey, payout.contract_round_id, payout.tier_index ?? 0);
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -1182,7 +1183,7 @@ const App: React.FC = () => {
     const id = `refund-${entry.round_id}-${entry.tier_index}`;
     setClaimingId(id);
     try {
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildClaimTierRefundIx(publicKey, entry.contract_round_id, entry.tier_index);
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -1210,7 +1211,7 @@ const App: React.FC = () => {
     const id = `cgref-${cg.on_chain_game_id}`;
     setClaimingId(id);
     try {
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildClaimCustomRefundIx(publicKey, cg.on_chain_game_id);
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -1238,7 +1239,7 @@ const App: React.FC = () => {
     if (!connected || !publicKey) { setShowWalletRequired(true); return; }
     setClaimingId(`cgref-${onChainGameId}`);
     try {
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildClaimCustomRefundIx(publicKey, onChainGameId);
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -1270,7 +1271,7 @@ const App: React.FC = () => {
       if (!config) throw new Error('Failed to read on-chain config');
       const nextDuelId = config.nextDuelId;
 
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildCreateDuelIx(
         publicKey,
         entryFee,
@@ -1318,7 +1319,7 @@ const App: React.FC = () => {
   const handleJoinDuel = async (onChainDuelId: number, entryFee: number) => {
     if (!connected || !publicKey) { setShowWalletRequired(true); return; }
     try {
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildJoinDuelIx(
         publicKey,
         onChainDuelId,
@@ -1414,7 +1415,7 @@ const App: React.FC = () => {
   const handleCancelDuel = async () => {
     if (!connected || !publicKey || duelId == null) return;
     try {
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildCancelDuelIx(publicKey, duelId);
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -1441,7 +1442,7 @@ const App: React.FC = () => {
   const handleClaimDuelRefund = async (refundDuelId: number, player1Wallet: string) => {
     if (!connected || !publicKey) { setShowWalletRequired(true); return; }
     try {
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildExpireDuelIx(publicKey, refundDuelId, new PublicKey(player1Wallet));
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -1478,7 +1479,7 @@ const App: React.FC = () => {
     const targetDuelId = claimDuelId ?? duelId;
     if (!connected || !publicKey || targetDuelId == null) return;
     try {
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildClaimDuelPrizeIx(publicKey, targetDuelId);
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,

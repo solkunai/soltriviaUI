@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { purchaseGamePass } from '../src/utils/api';
+import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import {
   REVENUE_WALLET,
   FREE_CATEGORIES,
@@ -116,7 +117,7 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
           }
         }
 
-        const { blockhash } = await connection.getLatestBlockhash();
+        const { blockhash } = await getRecentBlockhashWithRetry(connection);
 
         let instructions;
         if (selectedToken === 'SOL') {

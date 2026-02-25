@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { purchaseLives } from '../src/utils/api';
+import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import {
   REVENUE_WALLET,
   LIVES_TIERS,
@@ -100,7 +101,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         }
       }
 
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
 
       let instructions;
       if (selectedToken === 'SOL') {
