@@ -74,6 +74,18 @@ const AdminDashboardEnhanced: React.FC = () => {
     totalRoundsCompleted: 0,
     totalPaidOutSol: 0,
     uniqueWalletsWeek: 0,
+    // Custom game breakdown
+    customGamesFree: 0,
+    customGamesPlayerFunded: 0,
+    customGamesCreatorFunded: 0,
+    customGamesActive: 0,
+    customGamesStarted: 0,
+    customGamesFinalized: 0,
+    customGamesExpired: 0,
+    customPlayerFundedPotSol: 0,
+    customCreatorFundedPotSol: 0,
+    customPlatformFeesSol: 0,
+    customPlayerEntries: 0,
   });
 
   useEffect(() => {
@@ -145,6 +157,30 @@ const AdminDashboardEnhanced: React.FC = () => {
 
       const totalPaidOut = payoutsRes.data?.reduce((sum: number, p: { paid_lamports: number | null }) => sum + (p.paid_lamports ?? 0), 0) || 0;
 
+      // Fetch custom game breakdown by prize model
+      const [cgFreeRes, cgPlayerRes, cgCreatorRes, cgActiveRes, cgStartedRes, cgFinalizedRes, cgExpiredRes, cgAllGamesRes, cgEntriesRes] = await Promise.all([
+        supabase.from('custom_games').select('*', { count: 'exact', head: true }).eq('prize_model', 'free'),
+        supabase.from('custom_games').select('*', { count: 'exact', head: true }).eq('prize_model', 'player_funded'),
+        supabase.from('custom_games').select('*', { count: 'exact', head: true }).eq('prize_model', 'creator_funded'),
+        supabase.from('custom_games').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+        supabase.from('custom_games').select('*', { count: 'exact', head: true }).eq('status', 'started'),
+        supabase.from('custom_games').select('*', { count: 'exact', head: true }).eq('status', 'finalized'),
+        supabase.from('custom_games').select('*', { count: 'exact', head: true }).eq('status', 'expired'),
+        supabase.from('custom_games').select('prize_model, total_pot_lamports, creator_deposit_lamports, platform_fee_lamports'),
+        supabase.from('custom_game_entries').select('*', { count: 'exact', head: true }),
+      ]);
+
+      let playerFundedPot = 0;
+      let creatorFundedPot = 0;
+      let platformFees = 0;
+      if (cgAllGamesRes.data) {
+        for (const g of cgAllGamesRes.data) {
+          platformFees += Number(g.platform_fee_lamports ?? 0);
+          if (g.prize_model === 'player_funded') playerFundedPot += Number(g.total_pot_lamports ?? 0);
+          if (g.prize_model === 'creator_funded') creatorFundedPot += Number(g.creator_deposit_lamports ?? 0);
+        }
+      }
+
       setStats({
         totalQuestions: questionsCount || 0,
         totalPlayers: playersCount || 0,
@@ -162,6 +198,17 @@ const AdminDashboardEnhanced: React.FC = () => {
         totalRoundsCompleted: roundsRes.count || 0,
         totalPaidOutSol: totalPaidOut / LAMPORTS_PER_SOL,
         uniqueWalletsWeek: weeklyWalletsRes.count || 0,
+        customGamesFree: cgFreeRes.count || 0,
+        customGamesPlayerFunded: cgPlayerRes.count || 0,
+        customGamesCreatorFunded: cgCreatorRes.count || 0,
+        customGamesActive: cgActiveRes.count || 0,
+        customGamesStarted: cgStartedRes.count || 0,
+        customGamesFinalized: cgFinalizedRes.count || 0,
+        customGamesExpired: cgExpiredRes.count || 0,
+        customPlayerFundedPotSol: playerFundedPot / LAMPORTS_PER_SOL,
+        customCreatorFundedPotSol: creatorFundedPot / LAMPORTS_PER_SOL,
+        customPlatformFeesSol: platformFees / LAMPORTS_PER_SOL,
+        customPlayerEntries: cgEntriesRes.count || 0,
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -1023,8 +1070,25 @@ const StatsView: React.FC<{ stats: any; loading: boolean }> = ({ stats, loading 
 
       {/* Custom Games & Passes */}
       <h3 className="text-xl font-black mb-4 text-zinc-400">Custom Games & Passes</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <StatCard label="Total Custom Games" value={stats.totalCustomGames} color="purple" />
+        <StatCard label="Free Games" value={stats.customGamesFree} color="blue" />
+        <StatCard label="Player-Funded Games" value={stats.customGamesPlayerFunded} color="green" />
+        <StatCard label="Creator-Funded Games" value={stats.customGamesCreatorFunded} color="yellow" />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <StatCard label="Active" value={stats.customGamesActive} color="green" />
+        <StatCard label="Started (Timer)" value={stats.customGamesStarted} color="yellow" />
+        <StatCard label="Finalized" value={stats.customGamesFinalized} color="purple" />
+        <StatCard label="Expired" value={stats.customGamesExpired} color="red" />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <StatCard label="Player-Funded Pots" value={`${stats.customPlayerFundedPotSol.toFixed(4)} SOL`} color="green" />
+        <StatCard label="Creator-Funded Deposits" value={`${stats.customCreatorFundedPotSol.toFixed(4)} SOL`} color="yellow" />
+        <StatCard label="Platform Fees (Custom)" value={`${stats.customPlatformFeesSol.toFixed(4)} SOL`} color="purple" />
+        <StatCard label="Paid Player Entries" value={stats.customPlayerEntries} color="blue" />
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        <StatCard label="Custom Games Created" value={stats.totalCustomGames} color="purple" />
         <StatCard label="Custom Games Played" value={stats.totalCustomGamePlays} color="blue" />
         <StatCard label="Game Passes Sold" value={stats.totalGamePasses} color="green" />
       </div>
@@ -2369,6 +2433,12 @@ interface CustomGameRow {
   prize_model: string | null;
   entry_fee_lamports: number | null;
   player_count: number | null;
+  total_pot_lamports: number | null;
+  prize_pot_lamports: number | null;
+  creator_deposit_lamports: number | null;
+  fund_tx_signature: string | null;
+  max_players: number | null;
+  max_winners: number | null;
 }
 
 interface CustomGameQuestion {
@@ -2406,7 +2476,7 @@ const CustomGamesAdminView: React.FC = () => {
     const to = from + CUSTOM_GAMES_PAGE_SIZE - 1;
     const { data, count } = await supabase
       .from('custom_games')
-      .select('id, slug, name, creator_wallet, question_count, round_count, time_limit_seconds, total_plays, status, expires_at, created_at, creation_fee_lamports, platform_fee_lamports, prize_model, entry_fee_lamports, player_count', { count: 'exact' })
+      .select('id, slug, name, creator_wallet, question_count, round_count, time_limit_seconds, total_plays, status, expires_at, created_at, creation_fee_lamports, platform_fee_lamports, prize_model, entry_fee_lamports, player_count, total_pot_lamports, prize_pot_lamports, creator_deposit_lamports, fund_tx_signature, max_players, max_winners', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(from, to);
     setGames((data as CustomGameRow[]) ?? []);
@@ -2490,18 +2560,21 @@ const CustomGamesAdminView: React.FC = () => {
           <thead>
             <tr className="border-b border-white/10">
               <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Name</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Model</th>
               <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Creator</th>
-              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Q/R</th>
-              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Plays</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Players</th>
+              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Pot</th>
               <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Status</th>
               <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Created</th>
-              <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Expires</th>
               <th className="py-2 px-2 text-zinc-500 text-xs font-black uppercase">Actions</th>
             </tr>
           </thead>
           <tbody>
             {games.map((g) => {
               const isExpanded = expandedGameId === g.id;
+              const isPlayerFunded = g.prize_model === 'player_funded';
+              const isCreatorFunded = g.prize_model === 'creator_funded';
+              const isPaid = isPlayerFunded || isCreatorFunded;
               return (
                 <React.Fragment key={g.id}>
                   <tr className={`border-b border-white/5 hover:bg-white/5 cursor-pointer ${isExpanded ? 'bg-white/5' : ''}`} onClick={() => handleExpand(g.id)}>
@@ -2509,17 +2582,38 @@ const CustomGamesAdminView: React.FC = () => {
                       <div className="text-white text-sm font-bold">{g.name}</div>
                       <div className="text-zinc-500 text-[10px] font-mono">/{g.slug}</div>
                     </td>
-                    <td className="py-2 px-2 font-mono text-xs text-zinc-300">{g.creator_wallet.slice(0, 6)}...{g.creator_wallet.slice(-4)}</td>
-                    <td className="py-2 px-2 text-zinc-400 text-sm">{g.question_count}/{g.round_count}</td>
                     <td className="py-2 px-2">
-                      <span className="text-[#14F195] font-bold">{g.total_plays}</span>
-                      {g.prize_model === 'player_funded' && (
-                        <span className="ml-1 px-1.5 py-0.5 bg-purple-500/20 text-purple-400 text-[8px] font-bold rounded uppercase">{(g.entry_fee_lamports ?? 0) / 1e9} SOL</span>
+                      {isPlayerFunded ? (
+                        <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 text-[9px] font-bold rounded uppercase">Player</span>
+                      ) : isCreatorFunded ? (
+                        <span className="px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 text-[9px] font-bold rounded uppercase">Creator</span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 bg-zinc-500/20 text-zinc-400 text-[9px] font-bold rounded uppercase">Free</span>
+                      )}
+                    </td>
+                    <td className="py-2 px-2 font-mono text-xs text-zinc-300">{g.creator_wallet.slice(0, 6)}...{g.creator_wallet.slice(-4)}</td>
+                    <td className="py-2 px-2">
+                      <span className="text-[#14F195] font-bold text-sm">{g.player_count ?? 0}</span>
+                      {g.max_players && <span className="text-zinc-500 text-xs">/{g.max_players}</span>}
+                      <div className="text-zinc-500 text-[10px]">{g.total_plays} plays</div>
+                    </td>
+                    <td className="py-2 px-2">
+                      {isPlayerFunded ? (
+                        <div>
+                          <div className="text-purple-400 font-bold text-xs">{((g.total_pot_lamports ?? 0) / 1e9).toFixed(3)} SOL</div>
+                          <div className="text-zinc-500 text-[10px]">{((g.entry_fee_lamports ?? 0) / 1e9)} entry</div>
+                        </div>
+                      ) : isCreatorFunded ? (
+                        <div>
+                          <div className="text-yellow-400 font-bold text-xs">{((g.creator_deposit_lamports ?? 0) / 1e9).toFixed(3)} SOL</div>
+                          <div className="text-zinc-500 text-[10px]">{g.fund_tx_signature ? 'Funded' : 'Not funded'}</div>
+                        </div>
+                      ) : (
+                        <span className="text-zinc-500 text-xs">—</span>
                       )}
                     </td>
                     <td className="py-2 px-2">{statusBadge(g.status)}</td>
                     <td className="py-2 px-2 text-zinc-500 text-xs">{new Date(g.created_at).toLocaleDateString()}</td>
-                    <td className="py-2 px-2 text-zinc-500 text-xs">{new Date(g.expires_at).toLocaleDateString()}</td>
                     <td className="py-2 px-2" onClick={(e) => e.stopPropagation()}>
                       {actionLoading === g.id ? (
                         <span className="text-zinc-400 text-xs">...</span>
@@ -2528,7 +2622,7 @@ const CustomGamesAdminView: React.FC = () => {
                           <button onClick={() => setConfirmAction({ gameId: g.id, action: 'ban' })} className="px-2 py-0.5 bg-red-500/20 text-red-400 text-[10px] font-bold rounded hover:bg-red-500/30">Ban</button>
                           <button onClick={() => setConfirmAction({ gameId: g.id, action: 'expire' })} className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-[10px] font-bold rounded hover:bg-yellow-500/30">Expire</button>
                         </div>
-                      ) : g.status === 'completed' && g.prize_model === 'player_funded' ? (
+                      ) : g.status === 'completed' && isPaid ? (
                         <button onClick={() => handleFinalize(g.id)} className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-bold rounded hover:bg-purple-500/30">Finalize</button>
                       ) : g.status === 'banned' ? (
                         <button onClick={() => setConfirmAction({ gameId: g.id, action: 'reactivate' })} className="px-2 py-0.5 bg-[#14F195]/20 text-[#14F195] text-[10px] font-bold rounded hover:bg-[#14F195]/30">Reactivate</button>
@@ -2549,6 +2643,10 @@ const CustomGamesAdminView: React.FC = () => {
                                 <div><span className="text-zinc-500">Share URL:</span> <a href={`/game/${g.slug}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">soltrivia.app/game/{g.slug}</a></div>
                                 <div><span className="text-zinc-500">Time limit:</span> <span className="text-zinc-300">{g.time_limit_seconds}s per question</span></div>
                                 <div><span className="text-zinc-500">Creator:</span> <span className="text-zinc-300 font-mono">{g.creator_wallet}</span></div>
+                                {isPaid && <div><span className="text-zinc-500">Winners:</span> <span className="text-zinc-300">{g.max_winners ?? 1}</span></div>}
+                                {isPlayerFunded && <div><span className="text-zinc-500">Prize Pot:</span> <span className="text-purple-400">{((g.prize_pot_lamports ?? 0) / 1e9).toFixed(4)} SOL</span></div>}
+                                {isCreatorFunded && <div><span className="text-zinc-500">Deposit:</span> <span className="text-yellow-400">{((g.creator_deposit_lamports ?? 0) / 1e9).toFixed(4)} SOL</span></div>}
+                                {isCreatorFunded && <div><span className="text-zinc-500">Funded:</span> <span className={g.fund_tx_signature ? 'text-[#14F195]' : 'text-red-400'}>{g.fund_tx_signature ? 'Yes' : 'No'}</span></div>}
                               </div>
 
                               {/* Questions */}
