@@ -59,6 +59,7 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
   const timerRef = useRef<number | null>(null);
   const questionTimerRef = useRef<number | null>(null);
   const timeoutFiredRef = useRef(false);
+  const timeoutRetryRef = useRef(0);
 
   // Fetch questions for current round
   useEffect(() => {
@@ -159,8 +160,20 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
         }, 800);
       } catch (err) {
         console.error('Timeout submit failed:', err);
-        timeoutFiredRef.current = false;
-        setTimedOut(false);
+        timeoutRetryRef.current++;
+        if (timeoutRetryRef.current >= 3) {
+          // 3 retries failed — skip question, treat as wrong, move on
+          timeoutRetryRef.current = 0;
+          timeoutFiredRef.current = false;
+          setTimedOut(false);
+          const isLastInRound = currentIdx === questions.length - 1;
+          const isLastInGame = (roundQuestionOffset + currentIdx) === questionCount - 1;
+          handleAdvance(isLastInRound, isLastInGame, totalPoints, score);
+        } else {
+          // Retry — reset flags so the effect re-triggers
+          timeoutFiredRef.current = false;
+          setTimedOut(false);
+        }
       }
     })();
   }, [questionTimeLeft, selectedOption, timedOut, questions, currentIdx, sessionId, questionStartTime, roundQuestionOffset]);
@@ -199,6 +212,7 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
       setShowRoundInterstitial(true);
     } else {
       // Next question in same round
+      timeoutRetryRef.current = 0;
       setCurrentIdx((prev) => prev + 1);
       setSelectedOption(null);
       setIsCorrect(null);
@@ -268,7 +282,9 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
       }, 1200);
     } catch (err: any) {
       console.error('Failed to submit custom answer:', err);
-      setError('Failed to submit answer. Please try again.');
+      // Reset so player can tap again when connection recovers
+      setSelectedOption(null);
+      setIsCorrect(null);
     }
   };
 

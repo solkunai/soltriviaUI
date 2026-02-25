@@ -163,6 +163,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
 
   // When questionTimeLeft hits 0, submit time_expired and advance
   const timeoutFiredRef = useRef(false);
+  const timeoutRetryRef = useRef(0);
   useEffect(() => {
     if (questionTimeLeft !== 0 || selectedOption !== null || timedOut || questions.length === 0) return;
     if (!isPracticeMode && !sessionId) return;
@@ -204,8 +205,28 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
         }, 800);
       } catch (err) {
         console.error('Timeout submit failed:', err);
-        timeoutFiredRef.current = false;
-        setTimedOut(false);
+        timeoutRetryRef.current++;
+        if (timeoutRetryRef.current >= 3) {
+          // Gave it 3 tries, skip the question and move on
+          timeoutRetryRef.current = 0;
+          timeoutFiredRef.current = false;
+          setTimedOut(false);
+          if (currentIdx < questions.length - 1) {
+            setCurrentIdx((prev) => prev + 1);
+            setSelectedOption(null);
+            setIsCorrect(null);
+            setLastGainedPoints(null);
+            setQuestionStartTime(Date.now());
+            setQuestionTimeLeft(timePerQuestion);
+          } else {
+            if (timerRef.current) clearInterval(timerRef.current);
+            onFinish(score, totalPoints, sessionTimer);
+          }
+        } else {
+          // Retry — reset flags so the timeout effect fires again
+          timeoutFiredRef.current = false;
+          setTimedOut(false);
+        }
       }
     })();
   }, [questionTimeLeft, selectedOption, timedOut, sessionId, isPracticeMode, questions, currentIdx, questionStartTime, score, totalPoints, sessionTimer, onFinish]);
@@ -270,10 +291,9 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
 
       } catch (err) {
         console.error('❌ Failed to submit answer:', err);
-        console.error('Session ID:', sessionId);
-        console.error('Question:', currentQuestion);
-        setError('Failed to submit answer. Please try again.');
-        setLoading(false);
+        // Reset so player can tap again when connection recovers
+        setSelectedOption(null);
+        setIsCorrect(null);
         return;
       }
     }

@@ -53,6 +53,7 @@ const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAdd
   const timerRef = useRef<number | null>(null);
   const questionTimerRef = useRef<number | null>(null);
   const timeoutFiredRef = useRef(false);
+  const timeoutRetryRef = useRef(0);
   const subRef = useRef<{ unsubscribe: () => void } | null>(null);
 
   // Fetch questions
@@ -149,8 +150,36 @@ const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAdd
         }, 800);
       } catch (err) {
         console.error('Timeout submit failed:', err);
-        timeoutFiredRef.current = false;
-        setTimedOut(false);
+        timeoutRetryRef.current++;
+        if (timeoutRetryRef.current >= 3) {
+          // Gave it 3 tries, skip the question and move on
+          timeoutRetryRef.current = 0;
+          timeoutFiredRef.current = false;
+          setTimedOut(false);
+          if (currentIdx < questions.length - 1) {
+            setCurrentIdx((prev) => prev + 1);
+            setSelectedOption(null);
+            setIsCorrect(null);
+            setLastGainedPoints(null);
+            setQuestionStartTime(Date.now());
+            setQuestionTimeLeft(DUEL_SECONDS_PER_QUESTION);
+          } else {
+            // Last question, finish with current scores
+            if (timerRef.current) clearInterval(timerRef.current);
+            onFinish({
+              myScore,
+              myCorrect,
+              opponentScore,
+              opponentCorrect,
+              winner: null,
+              duelComplete: false,
+            });
+          }
+        } else {
+          // Retry — reset flags so the timeout effect fires again
+          timeoutFiredRef.current = false;
+          setTimedOut(false);
+        }
       }
     })();
   }, [questionTimeLeft, selectedOption, timedOut, questions, currentIdx, dbDuelId, walletAddress, questionStartTime]);
@@ -224,7 +253,9 @@ const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAdd
       }, 1200);
     } catch (err: any) {
       console.error('Failed to submit duel answer:', err);
-      setError('Failed to submit answer. Please try again.');
+      // Reset so player can tap again when connection recovers
+      setSelectedOption(null);
+      setIsCorrect(null);
     }
   };
 
