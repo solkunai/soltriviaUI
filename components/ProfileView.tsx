@@ -10,7 +10,7 @@ function claimExplorerUrl(signature: string): string {
   return `${base}/tx/${signature}${cluster}`;
 }
 import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, fetchMyDuelWins, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame, type MyDuelWin, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel } from '../src/utils/api';
-import { buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchDuel, fetchCustomGame, fetchTierRound } from '../src/utils/soltriviaContract';
+import { buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchDuel, fetchCustomGame, fetchTierRound, getTierVaultPda } from '../src/utils/soltriviaContract';
 import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import AvatarUpload from './AvatarUpload';
 import { isPushSupported, hasActiveSubscription, subscribeToPush, unsubscribeFromPush } from '../src/utils/notifications';
@@ -294,9 +294,19 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           setHistory([]);
         }
 
-        // Round wins eligible for on-chain claim (winners acknowledged at round end)
-        const claimable = await fetchClaimableRoundPayouts(walletAddress);
-        setClaimablePayouts(claimable);
+        // Round wins eligible for on-chain claim — verify not already claimed on-chain
+        const claimableRaw = await fetchClaimableRoundPayouts(walletAddress);
+        const claimableVerified: ClaimablePayout[] = [];
+        for (const p of claimableRaw) {
+          try {
+            const onChain = await fetchTierRound(connection, p.contract_round_id, p.tier_index);
+            // Only show if round exists on-chain AND this rank's prize isn't already claimed
+            if (onChain && p.rank >= 1 && p.rank <= 5 && !onChain.claimed[p.rank - 1]) {
+              claimableVerified.push(p);
+            }
+          } catch { /* skip — round may not exist on-chain */ }
+        }
+        setClaimablePayouts(claimableVerified);
         const claimed = await fetchClaimedRoundPayouts(walletAddress);
         setClaimedPayouts(claimed);
 
@@ -326,14 +336,19 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           setClaimableCustomGames(unclaimedCG);
         } catch { /* silently skip */ }
 
-        // Refundable entries — check on-chain refundMode
+        // Refundable entries — check on-chain refundMode AND vault has enough SOL
         try {
           const refundable = await fetchRefundableEntries(walletAddress);
           const verified: RefundableEntry[] = [];
           for (const re of refundable) {
             try {
               const onChain = await fetchTierRound(connection, re.contract_round_id, re.tier_index);
-              if (onChain && onChain.refundMode) verified.push(re);
+              if (onChain && onChain.refundMode) {
+                // Also check vault has enough SOL to pay the refund (filters out already-claimed)
+                const vaultPda = getTierVaultPda(re.contract_round_id, re.tier_index);
+                const vaultBalance = await connection.getBalance(vaultPda);
+                if (vaultBalance > onChain.entryFeeLamports) verified.push(re);
+              }
             } catch { /* skip — round may not exist on-chain */ }
           }
           setRefundableEntries(verified);
