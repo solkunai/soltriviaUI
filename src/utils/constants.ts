@@ -152,6 +152,18 @@ export const CUSTOM_GAME_WINNER_SPLIT_LABELS: Record<number, string[]> = {
 };
 export const CUSTOM_GAME_PLATFORM_CUT_BPS = 1000; // 10% of pot
 
+// ─── Creator-Funded Games ────────────────────────────────────────────────
+export const CREATOR_FUNDED_MIN_PRIZE_LAMPORTS = 50_000_000;       // 0.05 SOL
+export const CREATOR_FUNDED_MAX_PRIZE_LAMPORTS = 100_000_000_000;  // 100 SOL
+export const CREATOR_FUNDED_PRIZE_PRESETS = [
+  100_000_000,     // 0.1 SOL
+  250_000_000,     // 0.25 SOL
+  500_000_000,     // 0.5 SOL
+  1_000_000_000,   // 1 SOL
+  5_000_000_000,   // 5 SOL
+] as const;
+export const CREATOR_FUNDED_PRIZE_LABELS = ['0.1', '0.25', '0.5', '1', '5'] as const;
+
 export const APP_IDENTITY = {
   name: 'SOL Trivia',
   uri: 'https://soltrivia.app',

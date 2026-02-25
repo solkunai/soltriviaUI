@@ -498,10 +498,35 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
     } catch { /* non-fatal */ }
   };
 
-  // Check push notification subscription status on mount
+  // Check push notification subscription status on mount — and re-register with backend
+  // so THIS device's FCM endpoint is saved (fixes multi-device: laptop vs phone)
   useEffect(() => {
     if (!publicKey || !isPushSupported()) return;
-    hasActiveSubscription().then(setNotificationsEnabled).catch(() => {});
+    hasActiveSubscription().then(async (active) => {
+      setNotificationsEnabled(active);
+      // If browser already has a local subscription, re-register it with backend
+      // so the DB points to THIS device's push endpoint (not a stale one)
+      if (active) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            const { SUPABASE_FUNCTIONS_URL } = await import('../src/utils/constants');
+            const { getAuthHeaders } = await import('../src/utils/api');
+            await fetch(`${SUPABASE_FUNCTIONS_URL}/register-push`, {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                wallet_address: publicKey.toBase58(),
+                subscription: sub.toJSON(),
+              }),
+            });
+          }
+        } catch (e) {
+          console.warn('Auto re-register push failed:', e);
+        }
+      }
+    }).catch(() => {});
   }, [publicKey]);
 
   const handleToggleNotifications = async () => {
@@ -513,9 +538,17 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
         if (ok) setNotificationsEnabled(false);
       } else {
         const ok = await subscribeToPush(publicKey.toBase58());
-        if (ok) setNotificationsEnabled(true);
+        if (ok) {
+          setNotificationsEnabled(true);
+        } else {
+          // Surface failure so user knows something went wrong
+          alert('Could not enable notifications. Check browser permissions and try again.');
+        }
       }
-    } catch { /* non-fatal */ }
+    } catch (e: any) {
+      console.error('Toggle notifications error:', e);
+      alert('Notification error: ' + (e.message || 'Unknown error'));
+    }
     setNotifLoading(false);
   };
 

@@ -20,6 +20,7 @@ interface BrowsableGame {
   created_at: string;
   prize_model: string | null;
   entry_fee_lamports: number | null;
+  creator_deposit_lamports: number | null;
   player_count: number | null;
   max_players: number | null;
 }
@@ -34,6 +35,7 @@ interface InProgressGame {
   ends_at: string | null;
   prize_model: string | null;
   entry_fee_lamports: number | null;
+  creator_deposit_lamports: number | null;
   player_count: number | null;
   max_players: number | null;
   prize_pot_lamports: number | null;
@@ -49,6 +51,7 @@ interface EndedGame {
   expires_at: string;
   prize_model: string | null;
   total_pot_lamports: number | null;
+  creator_deposit_lamports: number | null;
   status: string;
   winner_wallets: string[] | null;
 }
@@ -68,7 +71,7 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
         // Joinable: status='active' only, not expired
         const { data: activeGames } = await supabase
           .from('custom_games')
-          .select('id, slug, name, creator_wallet, question_count, total_plays, expires_at, created_at, prize_model, entry_fee_lamports, player_count, max_players')
+          .select('id, slug, name, creator_wallet, question_count, total_plays, expires_at, created_at, prize_model, entry_fee_lamports, creator_deposit_lamports, player_count, max_players')
           .eq('status', 'active')
           .gt('expires_at', new Date().toISOString())
           .order('created_at', { ascending: false })
@@ -81,7 +84,7 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
         // In Progress: status='started' (timer running)
         const { data: startedGames } = await supabase
           .from('custom_games')
-          .select('id, slug, name, creator_wallet, question_count, total_plays, ends_at, prize_model, entry_fee_lamports, player_count, max_players, prize_pot_lamports')
+          .select('id, slug, name, creator_wallet, question_count, total_plays, ends_at, prize_model, entry_fee_lamports, creator_deposit_lamports, player_count, max_players, prize_pot_lamports')
           .eq('status', 'started')
           .order('started_at', { ascending: false })
           .limit(10);
@@ -93,7 +96,7 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
         // Recently Ended: completed, finalized, or expired
         const { data: endedGames } = await supabase
           .from('custom_games')
-          .select('id, slug, name, creator_wallet, question_count, total_plays, expires_at, prize_model, total_pot_lamports, status, winner_wallets')
+          .select('id, slug, name, creator_wallet, question_count, total_plays, expires_at, prize_model, total_pot_lamports, creator_deposit_lamports, status, winner_wallets')
           .in('status', ['completed', 'finalized', 'expired'])
           .order('expires_at', { ascending: false })
           .limit(15);
@@ -147,7 +150,8 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
 
             <div className="space-y-2">
               {inProgress.map((game) => {
-                const isPaid = game.prize_model === 'player_funded';
+                const isPaid = game.prize_model === 'player_funded' || game.prize_model === 'creator_funded';
+                const isCreatorFunded = game.prize_model === 'creator_funded';
                 const endsAt = game.ends_at ? new Date(game.ends_at) : null;
                 const timeLeft = endsAt ? Math.max(0, endsAt.getTime() - Date.now()) : 0;
                 const minsLeft = Math.ceil(timeLeft / 60000);
@@ -158,7 +162,9 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-white font-[1000] text-sm italic truncate">{game.name}</span>
                         {isPaid && (
-                          <span className="text-amber-400 text-[7px] font-black italic uppercase px-1.5 py-0.5 bg-amber-400/10 rounded shrink-0">Prize</span>
+                          <span className={`text-[7px] font-black italic uppercase px-1.5 py-0.5 rounded shrink-0 ${isCreatorFunded ? 'text-amber-400 bg-amber-400/10' : 'text-amber-400 bg-amber-400/10'}`}>
+                            {isCreatorFunded ? 'Creator Prize' : 'Prize'}
+                          </span>
                         )}
                         <span className="text-yellow-400 text-[7px] font-black italic uppercase px-1.5 py-0.5 bg-yellow-400/10 rounded shrink-0">{timeLabel} left</span>
                       </div>
@@ -168,6 +174,7 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
                         {isPaid && game.prize_pot_lamports ? (
                           <span className="text-amber-400">{(game.prize_pot_lamports / 1e9).toFixed(3)} SOL pot</span>
                         ) : null}
+                        {isCreatorFunded && <span className="text-green-400">Free Entry</span>}
                       </div>
                     </div>
                     <button
@@ -204,23 +211,29 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
             <div className="space-y-2">
               {joinable.map((game) => {
                 const daysLeft = Math.max(0, Math.ceil((new Date(game.expires_at).getTime() - Date.now()) / 86400000));
-                const isPaid = game.prize_model === 'player_funded';
+                const isPaid = game.prize_model === 'player_funded' || game.prize_model === 'creator_funded';
+                const isCreatorFunded = game.prize_model === 'creator_funded';
                 return (
                   <div key={game.id} className="flex items-center justify-between p-4 bg-white/[0.02] border border-white/5 rounded-lg hover:border-[#38BDF8]/20 transition-all">
                     <div className="flex-1 min-w-0 mr-4">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-white font-[1000] text-sm italic truncate">{game.name}</span>
                         {isPaid && (
-                          <span className="text-amber-400 text-[7px] font-black italic uppercase px-1.5 py-0.5 bg-amber-400/10 rounded shrink-0">Prize</span>
+                          <span className={`text-[7px] font-black italic uppercase px-1.5 py-0.5 rounded shrink-0 ${isCreatorFunded ? 'text-amber-400 bg-amber-400/10' : 'text-amber-400 bg-amber-400/10'}`}>
+                            {isCreatorFunded ? 'Creator Prize' : 'Prize'}
+                          </span>
                         )}
                         <span className="text-[#14F195] text-[7px] font-black italic uppercase px-1.5 py-0.5 bg-[#14F195]/10 rounded shrink-0">{daysLeft}d left</span>
                       </div>
                       <div className="flex items-center gap-3 text-zinc-500 text-[10px] font-bold">
                         <span>{game.question_count} Q</span>
                         <span>{game.total_plays ?? 0} plays</span>
-                        {isPaid && game.entry_fee_lamports && (
+                        {isCreatorFunded && game.creator_deposit_lamports ? (
+                          <span className="text-amber-400">{(game.creator_deposit_lamports / 1e9).toFixed(2)} SOL prize</span>
+                        ) : isPaid && game.entry_fee_lamports ? (
                           <span className="text-amber-400">{(game.entry_fee_lamports / 1e9).toFixed(3)} SOL entry</span>
-                        )}
+                        ) : null}
+                        {isCreatorFunded && <span className="text-green-400">Free Entry</span>}
                         {isPaid && game.max_players && (
                           <span>{game.player_count ?? 0}/{game.max_players} players</span>
                         )}
@@ -252,22 +265,28 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
           ) : (
             <div className="space-y-2">
               {ended.map((game) => {
-                const isPaid = game.prize_model === 'player_funded';
+                const isPaid = game.prize_model === 'player_funded' || game.prize_model === 'creator_funded';
+                const isCreatorFunded = game.prize_model === 'creator_funded';
                 const isFinalized = game.status === 'finalized';
                 const hasWinners = isFinalized && game.winner_wallets && game.winner_wallets.length > 0;
                 const statusLabel = isFinalized ? 'Finalized' : game.status === 'completed' ? 'Completed' : 'Expired';
                 const statusColor = isFinalized ? 'text-[#38BDF8] bg-[#38BDF8]/10' : game.status === 'completed' ? 'text-blue-400 bg-blue-400/10' : 'text-zinc-600 bg-white/5';
+                const potDisplay = isCreatorFunded && game.creator_deposit_lamports
+                  ? (game.creator_deposit_lamports / 1e9).toFixed(2)
+                  : isPaid && game.total_pot_lamports
+                  ? (game.total_pot_lamports / 1e9).toFixed(3)
+                  : null;
                 return (
                   <div key={game.id} className={`flex items-center justify-between p-4 bg-white/[0.01] border border-white/5 rounded-lg ${isFinalized ? 'opacity-90' : 'opacity-70'}`}>
                     <div className="flex-1 min-w-0 mr-4">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-zinc-300 font-[1000] text-sm italic truncate">{game.name}</span>
                         <span className={`text-[7px] font-black italic uppercase px-1.5 py-0.5 rounded shrink-0 ${statusColor}`}>{statusLabel}</span>
-                        {isPaid && game.total_pot_lamports ? (
+                        {potDisplay && (
                           <span className="text-amber-400/60 text-[7px] font-black italic uppercase px-1.5 py-0.5 bg-amber-400/5 rounded shrink-0">
-                            {(game.total_pot_lamports / 1e9).toFixed(3)} SOL pot
+                            {potDisplay} SOL {isCreatorFunded ? 'prize' : 'pot'}
                           </span>
-                        ) : null}
+                        )}
                       </div>
                       <div className="flex items-center gap-3 text-zinc-600 text-[10px] font-bold">
                         <span>{game.question_count} Q</span>

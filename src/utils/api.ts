@@ -1307,6 +1307,13 @@ export interface CreateCustomGameParams {
     correctIndex: 0 | 1 | 2 | 3;
   }>;
   contentDisclaimerAccepted: boolean;
+  // Prize pool fields
+  prizeModel?: 'free' | 'player_funded' | 'creator_funded';
+  entryFeeLamports?: number;
+  maxPlayers?: number;
+  gameDurationMinutes?: number;
+  maxWinners?: number;
+  creatorDepositLamports?: number;
 }
 
 export interface CreateCustomGameResponse {
@@ -1346,8 +1353,10 @@ export interface CustomGameData {
   player_best_score: number | null;
   player_attempts: number;
   // Prize pool fields (paid games)
-  prize_model: 'free' | 'player_funded';
+  prize_model: 'free' | 'player_funded' | 'creator_funded';
   on_chain_game_id: number | null;
+  creator_deposit_lamports: number;
+  fund_tx_signature: string | null;
   entry_fee_lamports: number;
   max_players: number | null;
   game_duration_minutes: number | null;
@@ -1556,6 +1565,29 @@ export async function startCustomGameTimer(gameId: string, walletAddress: string
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || 'Failed to start custom game timer');
+  }
+  return response.json();
+}
+
+export async function recordCustomGameFunding(
+  gameId: string,
+  walletAddress: string,
+  txSignature: string,
+  amountLamports: number,
+): Promise<{ success: boolean; ends_at: string }> {
+  const response = await fetch(`${FUNCTIONS_URL}/record-custom-game-funding`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      game_id: gameId,
+      wallet_address: walletAddress,
+      tx_signature: txSignature,
+      amount_lamports: amountLamports,
+    }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to record game funding');
   }
   return response.json();
 }
@@ -2073,7 +2105,7 @@ export async function fetchMyCustomGameWins(walletAddress: string): Promise<Clai
     .from('custom_games')
     .select('id, name, slug, on_chain_game_id, winner_wallets, winner_amounts, finalized_at')
     .eq('status', 'finalized')
-    .eq('prize_model', 'player_funded')
+    .in('prize_model', ['player_funded', 'creator_funded'])
     .order('finalized_at', { ascending: false })
     .limit(50);
   if (error || !data?.length) return [];

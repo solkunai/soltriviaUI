@@ -14,6 +14,7 @@ interface CustomGameLobbyViewProps {
   onStartTimer: (gameData: CustomGameData) => Promise<void>;
   onClaimPrize: (onChainGameId: number) => Promise<void>;
   onClaimRefund?: (onChainGameId: number) => Promise<void>;
+  onFundAndStart?: (gameData: CustomGameData) => void;
   onBack: () => void;
   onConnectWallet: () => void;
 }
@@ -26,6 +27,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   onStartTimer,
   onClaimPrize,
   onClaimRefund,
+  onFundAndStart,
   onBack,
   onConnectWallet,
 }) => {
@@ -110,9 +112,13 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
 
   const handleShareX = () => {
     if (!gameData) return;
-    const isPaid = gameData.prize_model === 'player_funded';
+    const isPlayerFunded = gameData.prize_model === 'player_funded';
+    const isCreatorFundedShare = gameData.prize_model === 'creator_funded';
     const fee = gameData.entry_fee_lamports / 1e9;
-    const text = isPaid
+    const creatorPrize = (gameData.creator_deposit_lamports || 0) / 1e9;
+    const text = isCreatorFundedShare
+      ? `i'm putting ${creatorPrize} SOL on the line for a trivia game\n\n"${gameData.name}" on @soltrivia_app | FREE to enter, real prizes\n\nthink you're smart enough to win?\n\n${shareUrl}`
+      : isPlayerFunded
       ? `i just built a trivia game with real SOL on the line\n\n"${gameData.name}" on @soltrivia_app | entry: ${fee} SOL\n\nput your wallet where your brain is, anon\n\n${shareUrl}`
       : `"${gameData.name}" on @soltrivia_app — free to play, harder than you think\n\nbet you can't beat my score. prove me wrong\n\n${shareUrl}`;
     window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
@@ -191,7 +197,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
 
   // ── Expired ──
   if (gameData.is_expired || gameData.status === 'expired') {
-    const isPaidExpired = gameData.prize_model === 'player_funded';
+    const isPaidExpired = gameData.prize_model === 'player_funded' && gameData.entry_fee_lamports > 0;
     const canClaimRefund = isPaidExpired && gameData.player_has_entered && gameData.on_chain_game_id != null && onClaimRefund;
     const entryRefundSOL = gameData.entry_fee_lamports / 1e9;
 
@@ -262,13 +268,18 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   }
 
   // ── Main Lobby ──
-  const isPaid = gameData.prize_model === 'player_funded';
+  const isPaid = gameData.prize_model === 'player_funded' || gameData.prize_model === 'creator_funded';
+  const isCreatorFunded = gameData.prize_model === 'creator_funded';
   const isCreator = !!(walletAddress && gameData.creator_wallet === walletAddress);
   const hasEntered = gameData.player_has_entered;
   const attemptsUsed = gameData.player_attempts ?? 0;
   const canPlay = attemptsUsed < CUSTOM_GAME_MAX_ATTEMPTS;
   const entryFeeSOL = gameData.entry_fee_lamports / 1e9;
-  const prizePotSOL = gameData.prize_pot_lamports / 1e9;
+  const creatorDepositSOL = (gameData.creator_deposit_lamports || 0) / 1e9;
+  const prizePotSOL = isCreatorFunded
+    ? (gameData.fund_tx_signature ? (gameData.prize_pot_lamports / 1e9) : (creatorDepositSOL * 0.9))
+    : gameData.prize_pot_lamports / 1e9;
+  const isFunded = isCreatorFunded && !!gameData.fund_tx_signature;
 
   // Check if current wallet is a winner
   const winnerIndex = (isPaid && gameData.winner_wallets)
@@ -316,6 +327,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
 
   // CTA logic
   const canCreatorStart = isPaid && isCreator && gameData.status === 'active' && gameData.player_count >= CUSTOM_GAME_MIN_PLAYERS;
+  const canCreatorFund = isCreatorFunded && isCreator && gameData.status === 'active' && gameData.player_count >= CUSTOM_GAME_MIN_PLAYERS && !isFunded;
   const showJoinButton = isPaid && !hasEntered && !isCreator && gameData.status === 'active';
 
   // Duration label
@@ -340,8 +352,8 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
         {/* Game Info Card */}
         <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6 md:p-8 mb-6">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[#38BDF8] text-[9px] font-black uppercase tracking-[0.4em]">
-              {isPaid ? 'Prize Game' : 'Custom Game'}
+            <p className={`text-[9px] font-black uppercase tracking-[0.4em] ${isCreatorFunded ? 'text-amber-400' : 'text-[#38BDF8]'}`}>
+              {isCreatorFunded ? 'Creator-Funded Game' : isPaid ? 'Prize Game' : 'Custom Game'}
             </p>
             {isPaid && (
               <span className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg border ${statusColors[gameData.status] || 'text-zinc-400 bg-white/5 border-white/10'}`}>
@@ -365,8 +377,8 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
               {gameData.time_limit_seconds}s per Q
             </span>
             {isPaid && (
-              <span className="px-3 py-1.5 bg-[#38BDF8]/10 border border-[#38BDF8]/20 rounded-lg text-[#38BDF8] text-[10px] font-black uppercase tracking-wider">
-                {entryFeeSOL} SOL Entry
+              <span className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${isCreatorFunded ? 'bg-amber-400/10 border border-amber-400/20 text-amber-400' : 'bg-[#38BDF8]/10 border border-[#38BDF8]/20 text-[#38BDF8]'}`}>
+                {isCreatorFunded ? 'Free Entry' : `${entryFeeSOL} SOL Entry`}
               </span>
             )}
           </div>
@@ -374,16 +386,25 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           {/* Prize Pool Info (paid games only) */}
           {isPaid && (
             <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 mb-6">
+              {isCreatorFunded && (
+                <div className={`flex items-center gap-2 mb-3 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider ${isFunded ? 'bg-green-500/10 border border-green-500/20 text-green-400' : 'bg-amber-400/10 border border-amber-400/20 text-amber-400'}`}>
+                  <span>{isFunded ? 'Prize Pool Funded' : 'Awaiting Creator Funding'}</span>
+                </div>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                 <div className="text-center">
-                  <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Entry Fee</span>
-                  <span className="text-white text-lg font-[1000] italic">{entryFeeSOL}</span>
+                  <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">
+                    {isCreatorFunded ? 'Creator Prize' : 'Entry Fee'}
+                  </span>
+                  <span className="text-white text-lg font-[1000] italic">
+                    {isCreatorFunded ? creatorDepositSOL : entryFeeSOL}
+                  </span>
                   <span className="text-zinc-500 text-[9px] block">SOL</span>
                 </div>
                 <div className="text-center">
                   <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Prize Pool</span>
                   <span className="text-[#38BDF8] text-lg font-[1000] italic">{prizePotSOL.toFixed(2)}</span>
-                  <span className="text-zinc-500 text-[9px] block">SOL</span>
+                  <span className="text-zinc-500 text-[9px] block">SOL{isCreatorFunded && !isFunded ? ' (est.)' : ''}</span>
                 </div>
                 <div className="text-center">
                   <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Players</span>
@@ -462,7 +483,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
               onClick={onConnectWallet}
               className="w-full min-h-[56px] px-6 py-4 bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#38BDF8] text-white font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:shadow-[0_10px_40px_-10px_rgba(56,189,248,0.4)] transition-all active:scale-[0.98]"
             >
-              Connect Wallet {isPaid ? 'to Join' : 'to Play'}
+              Connect Wallet {isPaid ? (isCreatorFunded ? 'to Join (Free)' : 'to Join') : 'to Play'}
             </button>
           ) : isPaid ? (
             /* ── Paid Game CTAs ── */
@@ -531,20 +552,29 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                       disabled={joining}
                       className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98] disabled:opacity-50"
                     >
-                      {joining ? 'Joining...' : `Join Game (${entryFeeSOL} SOL)`}
+                      {joining ? 'Joining...' : isCreatorFunded ? 'Join Game (0.0025 SOL)' : `Join Game (${entryFeeSOL} SOL)`}
                     </button>
                   )}
 
                   {hasEntered && !isCreator && (
                     <div className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8]/10 border border-[#38BDF8]/20 rounded-xl text-center">
                       <span className="text-[#38BDF8] font-[1000] italic uppercase text-lg">You're In!</span>
-                      <p className="text-zinc-400 text-xs font-black mt-1">Waiting for the creator to start the game.</p>
+                      <p className="text-zinc-400 text-xs font-black mt-1">
+                        {isCreatorFunded ? 'Waiting for the creator to fund & start the game.' : 'Waiting for the creator to start the game.'}
+                      </p>
                     </div>
                   )}
 
                   {isCreator && (
                     <div className="flex flex-col gap-3">
-                      {canCreatorStart ? (
+                      {canCreatorFund ? (
+                        <button
+                          onClick={() => onFundAndStart?.(gameData)}
+                          className="w-full min-h-[56px] px-6 py-4 bg-amber-500 text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-amber-400 shadow-[0_10px_40px_-10px_rgba(245,158,11,0.3)] transition-all active:scale-[0.98]"
+                        >
+                          Fund & Start Game ({creatorDepositSOL} SOL)
+                        </button>
+                      ) : canCreatorStart && !isCreatorFunded ? (
                         <button
                           onClick={handleStartTimerClick}
                           disabled={startingTimer}
@@ -563,7 +593,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                         </div>
                       )}
                       <p className="text-zinc-600 text-[10px] font-black uppercase tracking-wider text-center">
-                        You are the creator — you cannot play your own game.
+                        You are the creator — you cannot play your own {isCreatorFunded ? 'funded' : ''} game.
                       </p>
                     </div>
                   )}

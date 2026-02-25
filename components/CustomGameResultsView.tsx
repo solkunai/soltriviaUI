@@ -14,6 +14,7 @@ interface CustomGameResultsViewProps {
   attemptsUsed: number;
   maxAttempts: number;
   isPaidGame?: boolean;
+  isCreatorFunded?: boolean;
   prizePotSol?: number;
   onPlayAgain: () => void;
   onViewLeaderboard: () => void;
@@ -25,6 +26,7 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
   attemptsUsed,
   maxAttempts,
   isPaidGame,
+  isCreatorFunded,
   prizePotSol,
   onPlayAgain,
   onViewLeaderboard,
@@ -46,7 +48,9 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
   };
 
   const handleShareX = () => {
-    const text = isPaidGame
+    const text = isCreatorFunded
+      ? `${results.correctCount}/${results.totalQuestions} on "${results.gameName}" | ${results.totalPoints} XP | @soltrivia_app\n\nfree entry, ${prizePotSol?.toFixed(2) ?? '?'} SOL prize pool. creator-funded trivia.\n\nthink you can beat me?\n\n${shareUrl}`
+      : isPaidGame
       ? `${results.correctCount}/${results.totalQuestions} on "${results.gameName}" | ${results.totalPoints} XP | @soltrivia_app\n\nprize pool: ${prizePotSol?.toFixed(2) ?? '?'} SOL. real money. real trivia. real degens.\n\nthink you're built different? ape in\n\n${shareUrl}`
       : `${results.correctCount}/${results.totalQuestions} on "${results.gameName}" | ${results.totalPoints} XP | @soltrivia_app\n\nthis game is lowkey harder than the trenches\n\n${shareUrl}`;
     window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
@@ -61,8 +65,8 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
 
       <div className="relative z-10 w-full max-w-md">
         {/* Game Name */}
-        <p className="text-[#38BDF8] text-[10px] font-black uppercase tracking-[0.4em] text-center mb-2">
-          {isPaidGame ? 'Prize Game' : 'Custom Game'}
+        <p className={`text-[10px] font-black uppercase tracking-[0.4em] text-center mb-2 ${isCreatorFunded ? 'text-amber-400' : 'text-[#38BDF8]'}`}>
+          {isCreatorFunded ? 'Creator-Funded Game' : isPaidGame ? 'Prize Game' : 'Custom Game'}
         </p>
         <h2 className="text-2xl md:text-4xl font-[1000] italic text-white text-center uppercase tracking-tighter mb-4">
           {results.gameName}

@@ -25,6 +25,10 @@ import {
   CUSTOM_GAME_WINNER_SPLIT_LABELS,
   CUSTOM_GAME_PLATFORM_CUT_BPS,
   TXN_FEE_LAMPORTS,
+  CREATOR_FUNDED_MIN_PRIZE_LAMPORTS,
+  CREATOR_FUNDED_MAX_PRIZE_LAMPORTS,
+  CREATOR_FUNDED_PRIZE_PRESETS,
+  CREATOR_FUNDED_PRIZE_LABELS,
 } from '../src/utils/constants';
 
 interface CreateCustomGameViewProps {
@@ -57,12 +61,14 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   const [timeLimit, setTimeLimit] = useState<number>(15);
 
   // Prize Pool
-  const [prizeModel, setPrizeModel] = useState<'free' | 'player_funded'>('free');
+  const [prizeModel, setPrizeModel] = useState<'free' | 'player_funded' | 'creator_funded'>('free');
   const [entryFeeLamports, setEntryFeeLamports] = useState<number>(CUSTOM_GAME_ENTRY_FEE_PRESETS[1]); // 0.1 SOL default
   const [customEntryFee, setCustomEntryFee] = useState('');
   const [maxPlayers, setMaxPlayers] = useState<number>(10);
   const [gameDurationMinutes, setGameDurationMinutes] = useState<number>(1440); // 24h default
   const [maxWinners, setMaxWinners] = useState<number>(3);
+  const [creatorDepositLamports, setCreatorDepositLamports] = useState<number>(CREATOR_FUNDED_PRIZE_PRESETS[2]); // 0.5 SOL default
+  const [customCreatorDeposit, setCustomCreatorDeposit] = useState('');
 
   // Questions
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
@@ -78,9 +84,11 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   const validRounds = useMemo(() => VALID_ROUND_COUNTS[questionCount] || [1], [questionCount]);
 
   // Prize calculations
-  const isPaid = prizeModel === 'player_funded';
+  const isPaid = prizeModel === 'player_funded' || prizeModel === 'creator_funded';
+  const isCreatorFunded = prizeModel === 'creator_funded';
   const activeEntryFee = customEntryFee ? Math.round(parseFloat(customEntryFee) * 1_000_000_000) : entryFeeLamports;
-  const estimatedPot = isPaid ? activeEntryFee * maxPlayers : 0;
+  const activeCreatorDeposit = customCreatorDeposit ? Math.round(parseFloat(customCreatorDeposit) * 1_000_000_000) : creatorDepositLamports;
+  const estimatedPot = isCreatorFunded ? activeCreatorDeposit : (isPaid ? activeEntryFee * maxPlayers : 0);
   const platformCut = Math.floor(estimatedPot * CUSTOM_GAME_PLATFORM_CUT_BPS / 10000);
   const prizePot = estimatedPot - platformCut;
   const winnerSplitBps = CUSTOM_GAME_WINNER_SPLITS[maxWinners];
@@ -111,6 +119,16 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
     parseFloat(customEntryFee) <= CUSTOM_GAME_MAX_ENTRY_FEE / 1_000_000_000
   );
 
+  // Creator deposit validation
+  const handleCustomDepositChange = (val: string) => {
+    const cleaned = val.replace(/[^0-9.]/g, '');
+    setCustomCreatorDeposit(cleaned);
+  };
+  const isCustomDepositValid = !customCreatorDeposit || (
+    parseFloat(customCreatorDeposit) >= CREATOR_FUNDED_MIN_PRIZE_LAMPORTS / 1_000_000_000 &&
+    parseFloat(customCreatorDeposit) <= CREATOR_FUNDED_MAX_PRIZE_LAMPORTS / 1_000_000_000
+  );
+
   // Navigate: settings → prize
   const goToPrize = () => {
     if (!gameName.trim()) { setError('Game name is required'); return; }
@@ -128,8 +146,13 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   // Navigate: prize → questions
   const goToQuestions = () => {
     if (isPaid) {
-      if (!isCustomFeeValid) { setError('Entry fee must be between 0.01 and 10 SOL'); return; }
-      if (activeEntryFee < CUSTOM_GAME_MIN_ENTRY_FEE) { setError('Minimum entry fee is 0.01 SOL'); return; }
+      if (isCreatorFunded) {
+        if (!isCustomDepositValid) { setError('Prize deposit must be between 0.05 and 100 SOL'); return; }
+        if (activeCreatorDeposit < CREATOR_FUNDED_MIN_PRIZE_LAMPORTS) { setError('Minimum prize deposit is 0.05 SOL'); return; }
+      } else {
+        if (!isCustomFeeValid) { setError('Entry fee must be between 0.01 and 10 SOL'); return; }
+        if (activeEntryFee < CUSTOM_GAME_MIN_ENTRY_FEE) { setError('Minimum entry fee is 0.01 SOL'); return; }
+      }
       if (maxPlayers < CUSTOM_GAME_MIN_PLAYERS) { setError(`Minimum ${CUSTOM_GAME_MIN_PLAYERS} players`); return; }
     }
     setError(null);
@@ -231,12 +254,15 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
       // Add prize pool fields for paid games
       if (isPaid) {
-        params.prize_model = 'player_funded';
-        params.entry_fee_lamports = activeEntryFee;
-        params.max_players = maxPlayers;
-        params.game_duration_minutes = gameDurationMinutes;
-        params.max_winners = maxWinners;
-        params.prize_split_bps = CUSTOM_GAME_WINNER_SPLITS[maxWinners];
+        params.prizeModel = isCreatorFunded ? 'creator_funded' : 'player_funded';
+        params.maxPlayers = maxPlayers;
+        params.gameDurationMinutes = gameDurationMinutes;
+        params.maxWinners = maxWinners;
+        if (isCreatorFunded) {
+          params.creatorDepositLamports = activeCreatorDeposit;
+        } else {
+          params.entryFeeLamports = activeEntryFee;
+        }
       }
 
       const result = await createCustomGame(params);
@@ -279,7 +305,9 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
             </button>
             <button
               onClick={() => {
-                const text = isPaid
+                const text = isCreatorFunded
+                  ? `just dropped ${(activeCreatorDeposit / 1_000_000_000).toFixed(2)} SOL on a trivia game on @soltrivia_app\n\n"${gameName}" | FREE entry, real prizes\n\nthink you're smart enough to win?\n\n${shareUrl}`
+                  : isPaid
                   ? `just dropped a prize pool trivia game on @soltrivia_app\n\n"${gameName}" | entry: ${(activeEntryFee / 1_000_000_000).toFixed(2)} SOL\n\nthink you're smart enough to win? ape in\n\n${shareUrl}`
                   : `just created "${gameName}" on @soltrivia_app\n\nfree trivia game, harder than it looks\n\nprove you're not ngmi\n\n${shareUrl}`;
                 window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
@@ -429,54 +457,92 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
           <div className="space-y-6">
             <h2 className="text-2xl md:text-4xl font-[1000] italic text-white uppercase tracking-tighter">Prize Pool</h2>
 
-            {/* Free vs Paid Toggle */}
+            {/* Game Type Toggle */}
             <div>
               <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Game Type</label>
               <div className="flex gap-2">
                 <button
                   onClick={() => setPrizeModel('free')}
-                  className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!isPaid ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  className={`flex-1 min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'free' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
                 >
-                  Free Game
+                  Free
                 </button>
                 <button
                   onClick={() => setPrizeModel('player_funded')}
-                  className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${isPaid ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  className={`flex-1 min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'player_funded' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
                 >
-                  Prize Pool
+                  Player-Funded
+                </button>
+                <button
+                  onClick={() => setPrizeModel('creator_funded')}
+                  className={`flex-1 min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'creator_funded' ? 'bg-amber-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                >
+                  Creator-Funded
                 </button>
               </div>
               <p className="text-zinc-600 text-[10px] mt-1">
-                {isPaid ? 'Players pay an entry fee. Winners split the prize pool.' : 'No entry fee. Players compete for XP and bragging rights.'}
+                {prizeModel === 'free' ? 'No entry fee. Players compete for XP and bragging rights.'
+                  : prizeModel === 'player_funded' ? 'Players pay an entry fee. Winners split the prize pool.'
+                  : 'You deposit the prize pool. Players join for 0.0025 SOL. Winners claim from your deposit.'}
               </p>
             </div>
 
             {isPaid && (
               <>
-                {/* Entry Fee */}
-                <div>
-                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Entry Fee (SOL)</label>
-                  <div className="flex gap-2 flex-wrap mb-2">
-                    {CUSTOM_GAME_ENTRY_FEE_PRESETS.map((fee, i) => (
-                      <button
-                        key={fee}
-                        onClick={() => { setEntryFeeLamports(fee); setCustomEntryFee(''); }}
-                        className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customEntryFee && entryFeeLamports === fee ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
-                      >
-                        {CUSTOM_GAME_ENTRY_FEE_LABELS[i]}
-                      </button>
-                    ))}
+                {/* Entry Fee (player-funded only) */}
+                {!isCreatorFunded && (
+                  <div>
+                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Entry Fee (SOL)</label>
+                    <div className="flex gap-2 flex-wrap mb-2">
+                      {CUSTOM_GAME_ENTRY_FEE_PRESETS.map((fee, i) => (
+                        <button
+                          key={fee}
+                          onClick={() => { setEntryFeeLamports(fee); setCustomEntryFee(''); }}
+                          className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customEntryFee && entryFeeLamports === fee ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                        >
+                          {CUSTOM_GAME_ENTRY_FEE_LABELS[i]}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={customEntryFee}
+                      onChange={(e) => handleCustomFeeChange(e.target.value)}
+                      placeholder="Custom (0.01 - 10 SOL)"
+                      className={`w-full min-h-[44px] px-4 py-3 bg-white/5 border rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none transition-colors ${!isCustomFeeValid ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-[#38BDF8]/40'}`}
+                    />
+                    {!isCustomFeeValid && <p className="text-red-400 text-[10px] mt-1">Entry fee must be between 0.01 and 10 SOL</p>}
                   </div>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={customEntryFee}
-                    onChange={(e) => handleCustomFeeChange(e.target.value)}
-                    placeholder="Custom (0.01 - 10 SOL)"
-                    className={`w-full min-h-[44px] px-4 py-3 bg-white/5 border rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none transition-colors ${!isCustomFeeValid ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-[#38BDF8]/40'}`}
-                  />
-                  {!isCustomFeeValid && <p className="text-red-400 text-[10px] mt-1">Entry fee must be between 0.01 and 10 SOL</p>}
-                </div>
+                )}
+
+                {/* Prize Deposit (creator-funded only) */}
+                {isCreatorFunded && (
+                  <div>
+                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Prize Pool Deposit (SOL)</label>
+                    <div className="flex gap-2 flex-wrap mb-2">
+                      {CREATOR_FUNDED_PRIZE_PRESETS.map((amt, i) => (
+                        <button
+                          key={amt}
+                          onClick={() => { setCreatorDepositLamports(amt); setCustomCreatorDeposit(''); }}
+                          className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customCreatorDeposit && creatorDepositLamports === amt ? 'bg-amber-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                        >
+                          {CREATOR_FUNDED_PRIZE_LABELS[i]}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={customCreatorDeposit}
+                      onChange={(e) => handleCustomDepositChange(e.target.value)}
+                      placeholder="Custom (0.05 - 100 SOL)"
+                      className={`w-full min-h-[44px] px-4 py-3 bg-white/5 border rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none transition-colors ${!isCustomDepositValid ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-amber-500/40'}`}
+                    />
+                    {!isCustomDepositValid && <p className="text-red-400 text-[10px] mt-1">Prize deposit must be between 0.05 and 100 SOL</p>}
+                    <p className="text-zinc-600 text-[10px] mt-1">You deposit this amount when you start the game (after players join). Players join for free (0.0025 SOL platform fee only).</p>
+                  </div>
+                )}
 
                 {/* Max Players */}
                 <div>
@@ -540,10 +606,17 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 {/* Prize Calculator */}
                 <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 space-y-2">
                   <p className="text-zinc-400 text-[10px] font-black uppercase tracking-wider mb-3">Estimated Prize Breakdown</p>
-                  <div className="flex justify-between text-zinc-500 text-xs">
-                    <span>Entry fee</span>
-                    <span>{(activeEntryFee / 1_000_000_000).toFixed(2)} SOL x {maxPlayers} players</span>
-                  </div>
+                  {isCreatorFunded ? (
+                    <div className="flex justify-between text-zinc-500 text-xs">
+                      <span>Your deposit</span>
+                      <span>{(activeCreatorDeposit / 1_000_000_000).toFixed(2)} SOL</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between text-zinc-500 text-xs">
+                      <span>Entry fee</span>
+                      <span>{(activeEntryFee / 1_000_000_000).toFixed(2)} SOL x {maxPlayers} players</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-zinc-400 text-xs font-bold">
                     <span>Total pot</span>
                     <span>{(estimatedPot / 1_000_000_000).toFixed(2)} SOL</span>
@@ -551,10 +624,6 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   <div className="flex justify-between text-zinc-600 text-[10px]">
                     <span>Platform cut (10%)</span>
                     <span>-{(platformCut / 1_000_000_000).toFixed(4)} SOL</span>
-                  </div>
-                  <div className="flex justify-between text-zinc-600 text-[10px]">
-                    <span className="pl-4">5% to revenue, 5% to you (creator)</span>
-                    <span></span>
                   </div>
                   <div className="border-t border-white/5 pt-2 mt-2">
                     <div className="flex justify-between text-[#38BDF8] text-sm font-[1000] italic">
@@ -570,7 +639,11 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                       </div>
                     ))}
                   </div>
-                  <p className="text-zinc-700 text-[9px] mt-2">+ {TXN_FEE_LAMPORTS / 1_000_000_000} SOL platform fee per entry</p>
+                  {isCreatorFunded ? (
+                    <p className="text-zinc-700 text-[9px] mt-2">Players join for {TXN_FEE_LAMPORTS / 1_000_000_000} SOL platform fee only. You deposit {(activeCreatorDeposit / 1_000_000_000).toFixed(2)} SOL when you start the game.</p>
+                  ) : (
+                    <p className="text-zinc-700 text-[9px] mt-2">+ {TXN_FEE_LAMPORTS / 1_000_000_000} SOL platform fee per entry</p>
+                  )}
                 </div>
               </>
             )}

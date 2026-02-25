@@ -88,9 +88,9 @@ import DuelWaitingView from './components/DuelWaitingView';
 import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
 import CompeteLobbyView from './components/CompeteLobbyView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel, type ActiveDuel } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel, type ActiveDuel } from './src/utils/api';
 import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES } from './src/utils/constants';
-import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildExpireDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
+import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildExpireDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildFundCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
 import { useKeepAlive } from './src/hooks/useKeepAlive';
@@ -141,11 +141,11 @@ const App: React.FC = () => {
     return null;
   });
   const [customGameSessionId, setCustomGameSessionId] = useState<string | null>(null);
-  const [customGameData, setCustomGameData] = useState<{ name: string; questionCount: number; roundCount: number; timeLimitSeconds: number; isPaidGame?: boolean; prizePotSol?: number } | null>(null);
+  const [customGameData, setCustomGameData] = useState<{ name: string; questionCount: number; roundCount: number; timeLimitSeconds: number; isPaidGame?: boolean; isCreatorFunded?: boolean; prizePotSol?: number } | null>(null);
   const [customGameResults, setCustomGameResults] = useState<{
     score: number; correctCount: number; totalQuestions: number; totalPoints: number;
     timeTakenMs: number; rank: number | null; gameName: string; slug: string;
-    isPaidGame?: boolean; prizePotSol?: number;
+    isPaidGame?: boolean; isCreatorFunded?: boolean; prizePotSol?: number;
   } | null>(null);
   const [customGameAttemptsUsed, setCustomGameAttemptsUsed] = useState(0);
   const [showContentDisclaimer, setShowContentDisclaimer] = useState(false);
@@ -177,6 +177,9 @@ const App: React.FC = () => {
   const [refundableEntries, setRefundableEntries] = useState<RefundableEntry[]>([]);
   const [refundableCustomGames, setRefundableCustomGames] = useState<RefundableCustomGame[]>([]);
   const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [showFundingDisclaimer, setShowFundingDisclaimer] = useState(false);
+  const [fundingGameData, setFundingGameData] = useState<CustomGameData | null>(null);
+  const [funding, setFunding] = useState(false);
 
   // Ref: current wallet so async fetch can avoid applying stale result for a different wallet (reload race)
   const currentWalletRef = useRef<string | null>(null);
@@ -986,7 +989,8 @@ const App: React.FC = () => {
         questionCount: gameData.question_count,
         roundCount: gameData.round_count,
         timeLimitSeconds: gameData.time_limit_seconds,
-        isPaidGame: gameData.prize_model === 'player_funded',
+        isPaidGame: gameData.prize_model === 'player_funded' || gameData.prize_model === 'creator_funded',
+        isCreatorFunded: gameData.prize_model === 'creator_funded',
         prizePotSol: gameData.prize_pot_lamports / 1e9,
       });
       setCustomGameAttemptsUsed(gameData.player_attempts + (res.resumed ? 0 : 1));
@@ -1005,6 +1009,7 @@ const App: React.FC = () => {
       gameName: customGameData?.name ?? '',
       slug: customGameSlug ?? '',
       isPaidGame: customGameData?.isPaidGame,
+      isCreatorFunded: customGameData?.isCreatorFunded,
       prizePotSol: customGameData?.prizePotSol,
     });
     setCustomGameSessionId(null);
@@ -1060,6 +1065,61 @@ const App: React.FC = () => {
       return;
     }
     await startCustomGameTimer(gameData.game_id, publicKey.toBase58());
+  };
+
+  // Show disclaimer modal before funding a creator-funded game
+  const handleFundAndStartRequest = (gameData: CustomGameData) => {
+    setFundingGameData(gameData);
+    setShowFundingDisclaimer(true);
+  };
+
+  // Actually fund the game after disclaimer is accepted
+  const handleFundAndStartCreatorGame = async () => {
+    if (!connected || !publicKey || !fundingGameData) {
+      setShowWalletRequired(true);
+      return;
+    }
+    const gameData = fundingGameData;
+    if (!gameData.on_chain_game_id && gameData.on_chain_game_id !== 0) {
+      alert('Game has no on-chain ID');
+      return;
+    }
+    const depositLamports = gameData.creator_deposit_lamports || 0;
+    if (depositLamports <= 0) {
+      alert('Invalid deposit amount');
+      return;
+    }
+    setFunding(true);
+    try {
+      const { blockhash } = await connection.getLatestBlockhash();
+      const ix = buildFundCustomGameIx(publicKey, gameData.on_chain_game_id, depositLamports);
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+
+      // Register funding in Supabase
+      await recordCustomGameFunding(
+        gameData.game_id,
+        publicKey.toBase58(),
+        signature,
+        depositLamports,
+      );
+
+      setShowFundingDisclaimer(false);
+      setFundingGameData(null);
+    } catch (err: any) {
+      console.error('Failed to fund creator game:', err);
+      if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to fund game. Please try again.');
+      }
+    } finally {
+      setFunding(false);
+    }
   };
 
   const handleClaimCustomPrize = async (onChainGameId: number) => {
@@ -1705,6 +1765,7 @@ const App: React.FC = () => {
             onStartGame={handleStartCustomGame}
             onJoinGame={handleJoinCustomGame}
             onStartTimer={handleStartCustomGameTimer}
+            onFundAndStart={handleFundAndStartRequest}
             onClaimPrize={handleClaimCustomPrize}
             onClaimRefund={handleClaimCGRefundById}
             onBack={() => setCurrentView(View.HOME)}
@@ -1735,6 +1796,7 @@ const App: React.FC = () => {
             attemptsUsed={customGameAttemptsUsed}
             maxAttempts={CUSTOM_GAME_MAX_ATTEMPTS}
             isPaidGame={customGameResults.isPaidGame}
+            isCreatorFunded={customGameResults.isCreatorFunded}
             prizePotSol={customGameResults.prizePotSol}
             onPlayAgain={handleCustomGamePlayAgain}
             onViewLeaderboard={() => {
@@ -1915,6 +1977,42 @@ const App: React.FC = () => {
         }}
         onClose={() => setShowContentDisclaimer(false)}
       />
+
+      {/* Funding Disclaimer Modal for Creator-Funded Games */}
+      {showFundingDisclaimer && fundingGameData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-6 max-w-md w-full space-y-4">
+            <h3 className="text-xl font-[1000] italic text-white uppercase tracking-tighter">Fund Your Game</h3>
+            <div className="space-y-3 text-zinc-400 text-sm">
+              <p>You are about to deposit <span className="text-white font-bold">{(fundingGameData.creator_deposit_lamports / 1e9).toFixed(2)} SOL</span> into the prize vault.</p>
+              <div className="bg-white/[0.03] border border-white/5 rounded-xl p-3 space-y-2 text-xs">
+                <p>Your deposit goes into a smart contract vault on Solana</p>
+                <p>10% platform fee is deducted from the prize pool at finalization</p>
+                <p>Winners claim their prizes directly from the vault</p>
+                <p>Once the game plays out, your deposit cannot be withdrawn</p>
+                <p>If no one finishes the quiz, the vault can be swept back by admin</p>
+              </div>
+              <p className="text-zinc-500 text-xs">The game timer will start immediately after funding.</p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => { setShowFundingDisclaimer(false); setFundingGameData(null); }}
+                className="flex-1 min-h-[44px] px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-zinc-400 font-black uppercase text-xs tracking-wider hover:bg-white/10 transition-all active:scale-[0.98]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFundAndStartCreatorGame}
+                disabled={funding}
+                className="flex-1 min-h-[44px] px-4 py-3 bg-amber-500 text-black font-[1000] italic uppercase text-sm rounded-xl hover:bg-amber-400 transition-all active:scale-[0.98] disabled:opacity-50"
+              >
+                {funding ? 'Funding...' : `Fund ${(fundingGameData.creator_deposit_lamports / 1e9).toFixed(2)} SOL`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <PwaInstallPrompt />
       {!hasAcceptedTerms && currentView !== View.TERMS && currentView !== View.PRIVACY && (
         <LegalDisclaimerModal

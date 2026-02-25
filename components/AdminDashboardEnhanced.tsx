@@ -24,7 +24,7 @@ function getAdminCreds(): { u: string; p: string } {
   };
 }
 
-type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'referrals' | 'answer_debug' | 'game_passes' | 'custom_games' | 'duels';
+type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'referrals' | 'answer_debug' | 'game_passes' | 'custom_games' | 'duels' | 'notifications';
 
 interface Question {
   id?: string;
@@ -193,6 +193,7 @@ const AdminDashboardEnhanced: React.FC = () => {
           { id: 'custom_games', label: '🎲 Custom Games', icon: '🎲' },
           { id: 'duels', label: '⚔️ Duels', icon: '⚔️' },
           { id: 'referrals', label: '🔗 Referrals', icon: '🔗' },
+          { id: 'notifications', label: '🔔 Notifications', icon: '🔔' },
           { id: 'answer_debug', label: '🔬 Answer debug', icon: '🔬' },
         ].map((tab) => (
           <button
@@ -223,6 +224,7 @@ const AdminDashboardEnhanced: React.FC = () => {
         {activeTab === 'custom_games' && <CustomGamesAdminView />}
         {activeTab === 'duels' && <DuelsAdminView />}
         {activeTab === 'referrals' && <ReferralsView />}
+        {activeTab === 'notifications' && <NotificationsView />}
         {activeTab === 'answer_debug' && <AnswerDebugView functionsUrl={SUPABASE_FUNCTIONS_URL} />}
       </div>
     </div>
@@ -2806,6 +2808,143 @@ const DuelsAdminView: React.FC = () => {
 
       {duels.length === 0 && !loading && <p className="text-zinc-500 mt-4">No duels found.</p>}
       <Pagination currentPage={page} totalCount={totalCount} pageSize={DUELS_PAGE_SIZE} onPageChange={setPage} />
+    </div>
+  );
+};
+
+// ===================== NOTIFICATIONS TAB =====================
+const NotificationsView: React.FC = () => {
+  const [subs, setSubs] = useState<{ wallet_address: string; subscription_json: any; created_at: string; updated_at: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [targetWallet, setTargetWallet] = useState('');
+  const [title, setTitle] = useState('Test from SolTrivia');
+  const [body, setBody] = useState('If you see this, push notifications are working!');
+
+  useEffect(() => { loadSubs(); }, []);
+
+  const loadSubs = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('push_subscriptions')
+      .select('*')
+      .order('updated_at', { ascending: false });
+    if (!error && data) setSubs(data);
+    setLoading(false);
+  };
+
+  const sendTest = async (wallets?: string[]) => {
+    setSending(true);
+    setResult(null);
+    try {
+      const payload: any = { title, body, url: '/', tag: 'admin-test' };
+      if (wallets && wallets.length > 0) {
+        payload.wallet_addresses = wallets;
+      } else {
+        payload.all_subscribers = true;
+      }
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/send-notification`, {
+        method: 'POST',
+        headers: getAdminHeaders(),
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setResult(`Sent: ${json.sent}, Failed: ${json.failed}, Cleaned: ${json.cleaned ?? 0}`);
+      } else {
+        setResult(`Error ${res.status}: ${json.error || JSON.stringify(json)}`);
+      }
+    } catch (err: any) {
+      setResult(`Network error: ${err.message}`);
+    }
+    setSending(false);
+  };
+
+  const deleteSub = async (wallet: string) => {
+    if (!confirm(`Remove subscription for ${wallet.slice(0, 8)}...?`)) return;
+    await supabase.from('push_subscriptions').delete().eq('wallet_address', wallet);
+    setSubs(prev => prev.filter(s => s.wallet_address !== wallet));
+  };
+
+  return (
+    <div>
+      <h2 className="text-xl font-black text-white mb-4">Push Notifications</h2>
+
+      {/* Send test notification */}
+      <div className="bg-white/5 rounded-xl p-6 mb-6 border border-white/10">
+        <h3 className="text-lg font-bold text-white mb-3">Send Test Notification</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Title</label>
+            <input value={title} onChange={e => setTitle(e.target.value)}
+              className="w-full bg-black/50 border border-white/20 rounded-lg px-3 py-2 text-white text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Body</label>
+            <input value={body} onChange={e => setBody(e.target.value)}
+              className="w-full bg-black/50 border border-white/20 rounded-lg px-3 py-2 text-white text-sm" />
+          </div>
+        </div>
+        <div className="mb-4">
+          <label className="text-xs text-zinc-400 block mb-1">Target wallet (leave empty = all subscribers)</label>
+          <input value={targetWallet} onChange={e => setTargetWallet(e.target.value)} placeholder="e.g. GRjf5em..."
+            className="w-full bg-black/50 border border-white/20 rounded-lg px-3 py-2 text-white text-sm font-mono" />
+        </div>
+        <div className="flex gap-3">
+          <button onClick={() => sendTest(targetWallet ? [targetWallet] : undefined)} disabled={sending || !title || !body}
+            className="px-6 py-2 bg-[#14F195] text-black font-bold rounded-lg disabled:opacity-50">
+            {sending ? 'Sending...' : targetWallet ? 'Send to Wallet' : 'Send to ALL'}
+          </button>
+          {subs.length > 0 && (
+            <button onClick={() => sendTest([subs[0].wallet_address])} disabled={sending}
+              className="px-6 py-2 bg-purple-600 text-white font-bold rounded-lg disabled:opacity-50">
+              {sending ? 'Sending...' : `Test ${subs[0].wallet_address.slice(0, 6)}...`}
+            </button>
+          )}
+        </div>
+        {result && (
+          <div className={`mt-3 p-3 rounded-lg text-sm font-mono ${result.startsWith('Error') || result.startsWith('Network') ? 'bg-red-500/20 text-red-300' : 'bg-green-500/20 text-green-300'}`}>
+            {result}
+          </div>
+        )}
+      </div>
+
+      {/* Subscriber list */}
+      <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold text-white">Active Subscribers ({subs.length})</h3>
+          <button onClick={loadSubs} disabled={loading} className="text-xs text-zinc-400 hover:text-white">
+            {loading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
+        {subs.length === 0 && !loading && <p className="text-zinc-500">No push subscribers yet.</p>}
+        <div className="space-y-3">
+          {subs.map(sub => {
+            const endpoint = sub.subscription_json?.endpoint || '';
+            const shortEndpoint = endpoint.length > 60 ? endpoint.slice(0, 60) + '...' : endpoint;
+            return (
+              <div key={sub.wallet_address} className="flex items-center justify-between bg-black/30 rounded-lg p-3 border border-white/5">
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-sm text-white truncate">{sub.wallet_address}</div>
+                  <div className="text-xs text-zinc-500 truncate">{shortEndpoint}</div>
+                  <div className="text-xs text-zinc-600">Updated: {new Date(sub.updated_at).toLocaleString()}</div>
+                </div>
+                <div className="flex gap-2 ml-3 shrink-0">
+                  <button onClick={() => sendTest([sub.wallet_address])} disabled={sending}
+                    className="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded disabled:opacity-50">
+                    Test
+                  </button>
+                  <button onClick={() => deleteSub(sub.wallet_address)}
+                    className="px-3 py-1 bg-red-600/50 text-red-300 text-xs font-bold rounded hover:bg-red-600">
+                    Remove
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 };
