@@ -908,7 +908,8 @@ export async function fetchClaimableRoundPayouts(walletAddress: string): Promise
   const { data: rounds, error: roundErr } = await supabase
     .from('daily_rounds')
     .select('id, date, round_number')
-    .in('id', roundIds);
+    .in('id', roundIds)
+    .gte('date', '2026-02-22'); // V2 contract only — exclude V1 rounds
   if (roundErr || !rounds?.length) return [];
   const byId = Object.fromEntries((rounds as { id: string; date: string; round_number: number }[]).map((r) => [r.id, r]));
   function contractRoundId(dateStr: string, roundNumber: number): number {
@@ -1000,7 +1001,8 @@ export async function fetchClaimedRoundPayouts(walletAddress: string): Promise<C
   const { data: rounds, error: roundErr } = await supabase
     .from('daily_rounds')
     .select('id, date, round_number')
-    .in('id', roundIds);
+    .in('id', roundIds)
+    .gte('date', '2026-02-22'); // V2 contract only — exclude V1 rounds
   if (roundErr || !rounds?.length) return [];
   const byId = Object.fromEntries((rounds as { id: string; date: string; round_number: number }[]).map((r) => [r.id, r]));
   return (payouts as { round_id: string; rank: number; prize_lamports: number; paid_at: string | null }[])

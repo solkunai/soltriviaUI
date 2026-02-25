@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useConnection } from '../src/contexts/WalletContext';
-import { getOpenDuels, fetchCompletedDuels, fetchMyDuelWins, fetchMyRefundableDuels, fetchMyActiveDuel, type CompletedDuel, type MyDuelWin, type RefundableDuel, type ActiveDuel } from '../src/utils/api';
+import { getOpenDuels, fetchCompletedDuels, fetchMyDuelWins, fetchMyRefundableDuels, fetchMyActiveDuel, updateDuelStatus, type CompletedDuel, type MyDuelWin, type RefundableDuel, type ActiveDuel } from '../src/utils/api';
 import { fetchDuel } from '../src/utils/soltriviaContract';
 import { V2_DUEL_FEES, V2_DUEL_LABELS, TXN_FEE_LAMPORTS } from '../src/utils/constants';
 
@@ -85,9 +85,14 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
       for (const d of duels) {
         try {
           const onChain = await fetchDuel(connection, d.duel_id);
-          // On-chain status 0 = waiting (can be cancelled/expired), vault has funds
-          if (onChain && onChain.status === 0) refundable.push(d);
-        } catch { /* skip */ }
+          if (onChain && onChain.status === 0) {
+            // Status 0 = waiting, vault has funds, eligible for refund
+            refundable.push(d);
+          } else if (onChain && onChain.status !== 0) {
+            // Already expired/cancelled/resolved on-chain — sync DB so it won't show again
+            updateDuelStatus(d.duel_id, 'expired').catch(() => {});
+          }
+        } catch { /* skip — RPC failure, don't show duel */ }
       }
       setRefundableDuels(refundable);
     } catch { /* non-fatal */ }
