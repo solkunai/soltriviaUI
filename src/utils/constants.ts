@@ -104,6 +104,12 @@ export const CUSTOM_GAME_QUESTION_COUNTS = [5, 10, 15] as const;
 export const CUSTOM_GAME_ROUND_COUNTS = [1, 3, 5] as const;
 export const CUSTOM_GAME_TIME_LIMITS = [10, 15, 20, 30] as const;
 export const CUSTOM_GAME_MAX_ATTEMPTS = 3;
+
+/** Re-entry fee = 10% of entry fee, minimum 0.0025 SOL (platform fee) */
+export function getReEntryFeeLamports(entryFeeLamports: number): number {
+  if (entryFeeLamports <= 0) return TXN_FEE_LAMPORTS; // creator-funded fallback
+  return Math.max(Math.floor(entryFeeLamports * 0.10), TXN_FEE_LAMPORTS);
+}
 export const CUSTOM_GAME_EXPIRY_DAYS = 7;
 export const CUSTOM_GAME_NAME_MAX = 60;
 export const CUSTOM_GAME_QUESTION_TEXT_MAX = 500;

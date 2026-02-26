@@ -89,7 +89,7 @@ import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
 import CompeteLobbyView from './components/CompeteLobbyView';
 import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel, type ActiveDuel } from './src/utils/api';
-import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES } from './src/utils/constants';
+import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES, getReEntryFeeLamports } from './src/utils/constants';
 import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildExpireDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildFundCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
@@ -142,11 +142,11 @@ const App: React.FC = () => {
     return null;
   });
   const [customGameSessionId, setCustomGameSessionId] = useState<string | null>(null);
-  const [customGameData, setCustomGameData] = useState<{ name: string; questionCount: number; roundCount: number; timeLimitSeconds: number; isPaidGame?: boolean; isCreatorFunded?: boolean; prizePotSol?: number } | null>(null);
+  const [customGameData, setCustomGameData] = useState<{ name: string; questionCount: number; roundCount: number; timeLimitSeconds: number; isPaidGame?: boolean; isCreatorFunded?: boolean; prizePotSol?: number; entryFeeLamports?: number } | null>(null);
   const [customGameResults, setCustomGameResults] = useState<{
     score: number; correctCount: number; totalQuestions: number; totalPoints: number;
     timeTakenMs: number; rank: number | null; gameName: string; slug: string;
-    isPaidGame?: boolean; isCreatorFunded?: boolean; prizePotSol?: number;
+    isPaidGame?: boolean; isCreatorFunded?: boolean; prizePotSol?: number; entryFeeLamports?: number;
   } | null>(null);
   const [customGameAttemptsUsed, setCustomGameAttemptsUsed] = useState(0);
   const [showContentDisclaimer, setShowContentDisclaimer] = useState(false);
@@ -983,21 +983,47 @@ const App: React.FC = () => {
     }
     try {
       const walletAddr = publicKey.toBase58();
-      const res = await startCustomGame(gameData.game_id, walletAddr);
+      const isPaidGame = gameData.prize_model === 'player_funded' || gameData.prize_model === 'creator_funded';
+      const isReEntry = isPaidGame && gameData.player_attempts > 0 && !gameData.player_has_in_progress;
+
+      let txSignature: string | undefined;
+      if (isReEntry) {
+        // Build system transfer for re-entry fee → revenue wallet
+        const reEntryFee = getReEntryFeeLamports(gameData.entry_fee_lamports);
+        const { blockhash } = await getRecentBlockhashWithRetry(connection);
+        const ix = SystemProgram.transfer({
+          fromPubkey: publicKey,
+          toPubkey: new PublicKey(REVENUE_WALLET),
+          lamports: reEntryFee,
+        });
+        const messageV0 = new TransactionMessage({
+          payerKey: publicKey,
+          recentBlockhash: blockhash,
+          instructions: [ix],
+        }).compileToV0Message();
+        const tx = new VersionedTransaction(messageV0);
+        txSignature = await sendTransaction(tx, connection);
+        await connection.confirmTransaction(txSignature, 'confirmed');
+      }
+
+      const res = await startCustomGame(gameData.game_id, walletAddr, txSignature);
       setCustomGameSessionId(res.session_id);
       setCustomGameData({
         name: gameData.name,
         questionCount: gameData.question_count,
         roundCount: gameData.round_count,
         timeLimitSeconds: gameData.time_limit_seconds,
-        isPaidGame: gameData.prize_model === 'player_funded' || gameData.prize_model === 'creator_funded',
+        isPaidGame,
         isCreatorFunded: gameData.prize_model === 'creator_funded',
         prizePotSol: gameData.prize_pot_lamports / 1e9,
+        entryFeeLamports: gameData.entry_fee_lamports,
       });
       setCustomGameAttemptsUsed(gameData.player_attempts + (res.resumed ? 0 : 1));
       setCurrentView(View.CUSTOM_GAME_PLAY);
     } catch (err: any) {
-      alert(err.message || 'Failed to start custom game');
+      if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to start custom game');
+      }
     }
   };
 
@@ -1012,6 +1038,7 @@ const App: React.FC = () => {
       isPaidGame: customGameData?.isPaidGame,
       isCreatorFunded: customGameData?.isCreatorFunded,
       prizePotSol: customGameData?.prizePotSol,
+      entryFeeLamports: customGameData?.entryFeeLamports,
     });
     setCustomGameSessionId(null);
     setCustomGameData(null);
@@ -1845,6 +1872,7 @@ const App: React.FC = () => {
             isPaidGame={customGameResults.isPaidGame}
             isCreatorFunded={customGameResults.isCreatorFunded}
             prizePotSol={customGameResults.prizePotSol}
+            entryFeeLamports={customGameResults.entryFeeLamports}
             onPlayAgain={handleCustomGamePlayAgain}
             onViewLeaderboard={() => {
               if (customGameSlug) setCurrentView(View.CUSTOM_GAME_LOBBY);

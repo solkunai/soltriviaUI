@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getReEntryFeeLamports } from '../src/utils/constants';
 
 interface CustomGameResultsViewProps {
   results: {
@@ -16,6 +17,7 @@ interface CustomGameResultsViewProps {
   isPaidGame?: boolean;
   isCreatorFunded?: boolean;
   prizePotSol?: number;
+  entryFeeLamports?: number;
   onPlayAgain: () => void;
   onViewLeaderboard: () => void;
   onBackToHome: () => void;
@@ -28,13 +30,17 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
   isPaidGame,
   isCreatorFunded,
   prizePotSol,
+  entryFeeLamports,
   onPlayAgain,
   onViewLeaderboard,
   onBackToHome,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [showReEntryConfirm, setShowReEntryConfirm] = useState(false);
   const shareUrl = `${window.location.origin}/game/${results.slug}`;
   const canPlayAgain = attemptsUsed < maxAttempts;
+  const isReEntry = isPaidGame && attemptsUsed > 0;
+  const reEntryFeeSOL = isReEntry && entryFeeLamports != null ? getReEntryFeeLamports(entryFeeLamports) / 1e9 : 0;
   const accuracy = results.totalQuestions > 0 ? Math.round((results.correctCount / results.totalQuestions) * 100) : 0;
   const timeSec = Math.round(results.timeTakenMs / 1000);
   const minutes = Math.floor(timeSec / 60);
@@ -120,12 +126,42 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
         {/* Action Buttons */}
         <div className="flex flex-col gap-3">
           {canPlayAgain && (
-            <button
-              onClick={onPlayAgain}
-              className="w-full min-h-[48px] px-6 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]"
-            >
-              Play Again
-            </button>
+            isReEntry && !showReEntryConfirm ? (
+              <button
+                onClick={() => setShowReEntryConfirm(true)}
+                className="w-full min-h-[48px] px-6 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]"
+              >
+                Play Again ({reEntryFeeSOL} SOL)
+              </button>
+            ) : isReEntry && showReEntryConfirm ? (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
+                <p className="text-amber-400 font-black text-sm uppercase text-center mb-1">Hold up, nerd.</p>
+                <p className="text-zinc-400 text-xs text-center mb-3">
+                  Re-entry costs <span className="text-white font-black">{reEntryFeeSOL} SOL</span>. Only your highest score counts. Re-entry fees are non-refundable. Proceed wisely.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowReEntryConfirm(false)}
+                    className="flex-1 min-h-[40px] px-4 py-2 bg-white/5 border border-white/10 text-zinc-400 font-black uppercase text-xs rounded-lg hover:bg-white/10 transition-all"
+                  >
+                    Nah
+                  </button>
+                  <button
+                    onClick={() => { setShowReEntryConfirm(false); onPlayAgain(); }}
+                    className="flex-1 min-h-[40px] px-4 py-2 bg-amber-500 text-black font-[1000] italic uppercase text-xs rounded-lg hover:bg-amber-400 transition-all"
+                  >
+                    Let's Go
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={onPlayAgain}
+                className="w-full min-h-[48px] px-6 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]"
+              >
+                Play Again
+              </button>
+            )
           )}
 
           <button

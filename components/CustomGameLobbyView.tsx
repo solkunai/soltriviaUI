@@ -4,6 +4,7 @@ import {
   CUSTOM_GAME_MAX_ATTEMPTS,
   CUSTOM_GAME_MIN_PLAYERS,
   DEFAULT_AVATAR,
+  getReEntryFeeLamports,
 } from '../src/utils/constants';
 
 interface CustomGameLobbyViewProps {
@@ -39,6 +40,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   const [claiming, setClaiming] = useState(false);
   const [refunding, setRefunding] = useState(false);
   const [countdown, setCountdown] = useState('');
+  const [showReEntryConfirm, setShowReEntryConfirm] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -261,6 +263,9 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   const hasEntered = gameData.player_has_entered;
   const attemptsUsed = gameData.player_attempts ?? 0;
   const canPlay = attemptsUsed < CUSTOM_GAME_MAX_ATTEMPTS;
+  const hasInProgress = gameData.player_has_in_progress;
+  const isReEntry = isPaid && hasEntered && attemptsUsed > 0 && !hasInProgress;
+  const reEntryFeeSOL = isReEntry ? getReEntryFeeLamports(gameData.entry_fee_lamports) / 1e9 : 0;
   const entryFeeSOL = gameData.entry_fee_lamports / 1e9;
   const creatorDepositSOL = (gameData.creator_deposit_lamports || 0) / 1e9;
   const prizePotSOL = isCreatorFunded
@@ -449,6 +454,28 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                     <span className="text-yellow-400 font-[1000] italic uppercase text-lg">Game In Progress</span>
                     <p className="text-zinc-500 text-xs font-black mt-1">{countdown ? `${countdown} remaining` : 'Players are competing'}</p>
                   </div>
+                ) : hasEntered && canPlay && isReEntry && !showReEntryConfirm ? (
+                  <button
+                    onClick={() => setShowReEntryConfirm(true)}
+                    className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98]"
+                  >
+                    Play Again ({reEntryFeeSOL} SOL)
+                  </button>
+                ) : hasEntered && canPlay && isReEntry && showReEntryConfirm ? (
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
+                    <p className="text-amber-400 font-black text-sm uppercase text-center mb-1">Hold up, nerd.</p>
+                    <p className="text-zinc-400 text-xs text-center mb-3">
+                      Re-entry costs <span className="text-white font-black">{reEntryFeeSOL} SOL</span>. Only your highest score counts. Re-entry fees are non-refundable. Proceed wisely.
+                    </p>
+                    <div className="flex gap-2">
+                      <button onClick={() => setShowReEntryConfirm(false)} className="flex-1 min-h-[40px] px-4 py-2 bg-white/5 border border-white/10 text-zinc-400 font-black uppercase text-xs rounded-lg hover:bg-white/10 transition-all">
+                        Nah
+                      </button>
+                      <button onClick={() => { setShowReEntryConfirm(false); onStartGame(gameData); }} className="flex-1 min-h-[40px] px-4 py-2 bg-amber-500 text-black font-[1000] italic uppercase text-xs rounded-lg hover:bg-amber-400 transition-all">
+                        Let's Go
+                      </button>
+                    </div>
+                  </div>
                 ) : hasEntered && canPlay ? (
                   <button
                     onClick={() => onStartGame(gameData)}
@@ -484,7 +511,33 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                     </button>
                   )}
 
-                  {hasEntered && !isCreator && canPlay && (
+                  {hasEntered && !isCreator && canPlay && isReEntry && !showReEntryConfirm && (
+                    <button
+                      onClick={() => setShowReEntryConfirm(true)}
+                      className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98]"
+                    >
+                      Play Again ({reEntryFeeSOL} SOL)
+                    </button>
+                  )}
+
+                  {hasEntered && !isCreator && canPlay && isReEntry && showReEntryConfirm && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
+                      <p className="text-amber-400 font-black text-sm uppercase text-center mb-1">Hold up, nerd.</p>
+                      <p className="text-zinc-400 text-xs text-center mb-3">
+                        Re-entry costs <span className="text-white font-black">{reEntryFeeSOL} SOL</span>. Only your highest score counts. Re-entry fees are non-refundable. Proceed wisely.
+                      </p>
+                      <div className="flex gap-2">
+                        <button onClick={() => setShowReEntryConfirm(false)} className="flex-1 min-h-[40px] px-4 py-2 bg-white/5 border border-white/10 text-zinc-400 font-black uppercase text-xs rounded-lg hover:bg-white/10 transition-all">
+                          Nah
+                        </button>
+                        <button onClick={() => { setShowReEntryConfirm(false); onStartGame(gameData); }} className="flex-1 min-h-[40px] px-4 py-2 bg-amber-500 text-black font-[1000] italic uppercase text-xs rounded-lg hover:bg-amber-400 transition-all">
+                          Let's Go
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {hasEntered && !isCreator && canPlay && !isReEntry && (
                     <button
                       onClick={() => onStartGame(gameData)}
                       className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98]"

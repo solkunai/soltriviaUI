@@ -1369,6 +1369,7 @@ export interface CustomGameData {
   is_expired: boolean;
   player_best_score: number | null;
   player_attempts: number;
+  player_has_in_progress: boolean;
   // Prize pool fields (paid games)
   prize_model: 'free' | 'player_funded' | 'creator_funded';
   on_chain_game_id: number | null;
@@ -1423,11 +1424,13 @@ export interface StartCustomGameResponse {
   resumed: boolean;
 }
 
-export async function startCustomGame(gameId: string, walletAddress: string): Promise<StartCustomGameResponse> {
+export async function startCustomGame(gameId: string, walletAddress: string, txSignature?: string): Promise<StartCustomGameResponse> {
+  const body: Record<string, string> = { game_id: gameId, wallet_address: walletAddress };
+  if (txSignature) body.tx_signature = txSignature;
   const response = await fetch(`${FUNCTIONS_URL}/start-custom-game`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ game_id: gameId, wallet_address: walletAddress }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
