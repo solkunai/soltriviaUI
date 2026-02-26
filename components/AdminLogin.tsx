@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 interface AdminLoginProps {
-  onLogin: (username: string, password: string) => boolean;
+  onLogin: (username: string, password: string) => Promise<boolean>;
 }
 
 const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
@@ -15,16 +15,17 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
     setError('');
     setLoading(true);
 
-    // Small delay to prevent brute force
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    const success = onLogin(username, password);
-    
-    if (!success) {
-      setError('Invalid credentials');
+    try {
+      const success = await onLogin(username, password);
+      if (!success) {
+        setError('Invalid credentials');
+        setPassword('');
+      }
+    } catch (_) {
+      setError('Login failed. Please try again.');
       setPassword('');
     }
-    
+
     setLoading(false);
   };
 

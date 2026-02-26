@@ -21,11 +21,26 @@ export const getAuthHeaders = (): Record<string, string> => {
 
 // Admin-authenticated headers: includes x-admin-secret for protected EFs (manage-questions, manage-quests, etc.)
 export const getAdminHeaders = (): Record<string, string> => {
-  const adminSecret = import.meta.env.VITE_ADMIN_SECRET || '';
+  let adminSecret = '';
+  try { adminSecret = sessionStorage.getItem('admin_secret') || ''; } catch (_) {}
   return {
     ...getAuthHeaders(),
     'x-admin-secret': adminSecret,
   };
+};
+
+// Authenticate admin via server-side edge function (returns admin_secret on success)
+export const adminLogin = async (username: string, password: string): Promise<{ admin_secret: string }> => {
+  const res = await fetch(`${FUNCTIONS_URL}/admin-login`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Login failed');
+  }
+  return res.json();
 };
 
 // Types

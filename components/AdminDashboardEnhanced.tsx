@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../src/utils/supabase';
 import { Connection, PublicKey, LAMPORTS_PER_SOL, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
-import { PRIZE_POOL_WALLET, REVENUE_WALLET, SUPABASE_FUNCTIONS_URL, OPERATOR_WALLET } from '../src/utils/constants';
+import { REVENUE_WALLET, SUPABASE_FUNCTIONS_URL, OPERATOR_WALLET, OWNER_WALLET } from '../src/utils/constants';
 import { getAuthHeaders, getAdminHeaders, fetchRoundPayouts, markPayoutPaid, postWinnersOnChain, finalizeCustomGame, type RoundPayout } from '../src/utils/api';
 import { getSolanaRpcEndpoint, getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import { useWallet } from '../src/contexts/WalletContext';
@@ -11,18 +11,6 @@ import { buildInitializeIx, fetchGameConfig, SOLTRIVIA_PROGRAM_ID } from '../src
 import Pagination from './Pagination';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
-
-function getAdminCreds(): { u: string; p: string } {
-  try {
-    const u = sessionStorage.getItem('admin_username');
-    const p = sessionStorage.getItem('admin_password');
-    if (u != null && p != null) return { u, p };
-  } catch (_) {}
-  return {
-    u: import.meta.env.VITE_ADMIN_USERNAME || '',
-    p: import.meta.env.VITE_ADMIN_PASSWORD || '',
-  };
-}
 
 type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'referrals' | 'answer_debug' | 'game_passes' | 'custom_games' | 'duels' | 'notifications';
 
@@ -65,7 +53,8 @@ const AdminDashboardEnhanced: React.FC = () => {
     totalLivesPurchased: 0,
     totalRevenueSol: 0,
     revenueWalletBalance: 0,
-    prizePoolWalletBalance: 0,
+    operatorWalletBalance: 0,
+    ownerWalletBalance: 0,
     totalGamePasses: 0,
     totalCustomGames: 0,
     totalCustomGamePlays: 0,
@@ -128,17 +117,20 @@ const AdminDashboardEnhanced: React.FC = () => {
 
       // Fetch wallet balances
       let revenueBalance = 0;
-      let prizePoolBalance = 0;
+      let operatorBalance = 0;
+      let ownerBalance = 0;
       try {
         const connection = new Connection(getSolanaRpcEndpoint(), 'confirmed');
-        
-        const [revenueLamports, prizePoolLamports] = await Promise.all([
+
+        const [revenueLamports, operatorLamports, ownerLamports] = await Promise.all([
           connection.getBalance(new PublicKey(REVENUE_WALLET)),
-          connection.getBalance(new PublicKey(PRIZE_POOL_WALLET)),
+          connection.getBalance(new PublicKey(OPERATOR_WALLET)),
+          connection.getBalance(new PublicKey(OWNER_WALLET)),
         ]);
 
         revenueBalance = revenueLamports / LAMPORTS_PER_SOL;
-        prizePoolBalance = prizePoolLamports / LAMPORTS_PER_SOL;
+        operatorBalance = operatorLamports / LAMPORTS_PER_SOL;
+        ownerBalance = ownerLamports / LAMPORTS_PER_SOL;
       } catch (balanceError) {
         console.error('Error fetching wallet balances:', balanceError);
       }
@@ -189,7 +181,8 @@ const AdminDashboardEnhanced: React.FC = () => {
         totalLivesPurchased: totalLives,
         totalRevenueSol: totalRevenue / LAMPORTS_PER_SOL,
         revenueWalletBalance: revenueBalance,
-        prizePoolWalletBalance: prizePoolBalance,
+        operatorWalletBalance: operatorBalance,
+        ownerWalletBalance: ownerBalance,
         totalGamePasses: gamePassesRes.count || 0,
         totalCustomGames: customGamesRes.count || 0,
         totalCustomGamePlays: customGamePlaysRes.count || 0,
@@ -459,8 +452,6 @@ const RoundWinnersAdminView: React.FC = () => {
   const [totalRoundsCount, setTotalRoundsCount] = useState(0);
   const [claimFilter, setClaimFilter] = useState<'all' | 'unclaimed' | 'claimed'>('all');
 
-  const creds = getAdminCreds();
-
   useEffect(() => {
     let mounted = true;
     setLoading(true);
@@ -498,12 +489,8 @@ const RoundWinnersAdminView: React.FC = () => {
   };
 
   const handleMarkPaid = async (roundId: string, rank: number, paidLamports: number) => {
-    if (!creds.u?.trim() || !creds.p) {
-      alert('Admin credentials missing. Please log out and log in again so Mark as paid can authenticate.');
-      return;
-    }
     setMarking(`${roundId}-${rank}`);
-    const result = await markPayoutPaid(roundId, rank, paidLamports, creds.u, creds.p);
+    const result = await markPayoutPaid(roundId, rank, paidLamports);
     setMarking(null);
     setPaidInput(null);
     if (result.success) {
@@ -1016,21 +1003,37 @@ const StatsView: React.FC<{ stats: any; loading: boolean }> = ({ stats, loading 
       <h2 className="text-2xl font-black mb-6">Platform Overview</h2>
       
       {/* Wallet Balances - Featured */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-gradient-to-br from-green-500/20 to-green-500/5 border border-green-500/30 p-6 rounded-xl">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-zinc-400 text-xs uppercase font-black">💰 Prize Pool Wallet</p>
+            <p className="text-zinc-400 text-xs uppercase font-black">🔧 Deployer / Operator</p>
             <button
-              onClick={() => window.open(`https://solscan.io/account/${PRIZE_POOL_WALLET}`, '_blank')}
+              onClick={() => window.open(`https://solscan.io/account/${OPERATOR_WALLET}`, '_blank')}
               className="text-xs text-blue-400 hover:underline"
             >
               View on Solscan →
             </button>
           </div>
           <p className="text-4xl font-[1000] italic text-green-400 mb-2">
-            {stats.prizePoolWalletBalance.toFixed(4)} SOL
+            {stats.operatorWalletBalance.toFixed(4)} SOL
           </p>
-          <p className="text-xs text-zinc-500 font-mono">{PRIZE_POOL_WALLET.slice(0, 12)}...{PRIZE_POOL_WALLET.slice(-8)}</p>
+          <p className="text-xs text-zinc-500 font-mono">{OPERATOR_WALLET.slice(0, 12)}...{OPERATOR_WALLET.slice(-8)}</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 border border-yellow-500/30 p-6 rounded-xl">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-zinc-400 text-xs uppercase font-black">🔒 Owner / Sweep (Ledger)</p>
+            <button
+              onClick={() => window.open(`https://solscan.io/account/${OWNER_WALLET}`, '_blank')}
+              className="text-xs text-blue-400 hover:underline"
+            >
+              View on Solscan →
+            </button>
+          </div>
+          <p className="text-4xl font-[1000] italic text-yellow-400 mb-2">
+            {stats.ownerWalletBalance.toFixed(4)} SOL
+          </p>
+          <p className="text-xs text-zinc-500 font-mono">{OWNER_WALLET.slice(0, 12)}...{OWNER_WALLET.slice(-8)}</p>
         </div>
 
         <div className="bg-gradient-to-br from-purple-500/20 to-purple-500/5 border border-purple-500/30 p-6 rounded-xl">

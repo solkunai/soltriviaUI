@@ -18,8 +18,6 @@ interface ImportMetaEnv {
   readonly VITE_ENTRY_FEE_LAMPORTS?: string;
   readonly VITE_TXN_FEE_LAMPORTS?: string;
   readonly VITE_LIVES_PRICE_LAMPORTS?: string;
-  readonly VITE_ADMIN_USERNAME?: string;
-  readonly VITE_ADMIN_PASSWORD?: string;
   readonly VITE_SOLTRIVIA_PROGRAM_ID?: string;
   readonly VITE_JUPITER_API_KEY?: string;
 }

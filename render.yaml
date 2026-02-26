@@ -44,12 +44,6 @@ services:
       - key: VITE_ALCHEMY_API_KEY
         sync: false
       
-      # Admin Credentials (Optional - for admin dashboard)
-      - key: VITE_ADMIN_USERNAME
-        sync: false
-      - key: VITE_ADMIN_PASSWORD
-        sync: false
-      
       # Render Service URL for in-app keep-alive
       - key: VITE_RENDER_SERVICE_URL
         value: https://soltriviaui.onrender.com
