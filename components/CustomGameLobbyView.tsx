@@ -336,7 +336,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     : null;
 
   return (
-    <div className="min-h-full flex flex-col bg-[#050505] p-4 sm:p-6 md:p-12 relative overflow-x-hidden overflow-y-auto">
+    <div className="flex flex-col bg-[#050505] p-4 sm:p-6 md:p-12 relative">
       <div className="absolute inset-0 pointer-events-none">
         <div className="scan-line opacity-10"></div>
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[#38BDF8]/5 rounded-full blur-[120px]"></div>
