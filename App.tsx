@@ -1031,8 +1031,12 @@ const App: React.FC = () => {
 
   // ─── Custom Games: Paid Game Handlers ──────────────────────────────────────
   const handleJoinCustomGame = async (gameData: CustomGameData) => {
-    if (!connected || !publicKey || !gameData.on_chain_game_id) {
+    if (!connected || !publicKey) {
       setShowWalletRequired(true);
+      return;
+    }
+    if (gameData.on_chain_game_id == null) {
+      alert('Game is not set up on-chain yet. Please try again later.');
       return;
     }
     const { blockhash } = await getRecentBlockhashWithRetry(connection);

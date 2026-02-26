@@ -151,7 +151,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   };
 
   const handleClaim = async () => {
-    if (!gameData?.on_chain_game_id) return;
+    if (gameData?.on_chain_game_id == null) return;
     setClaiming(true);
     try {
       await onClaimPrize(gameData.on_chain_game_id);
@@ -202,7 +202,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     const entryRefundSOL = gameData.entry_fee_lamports / 1e9;
 
     const handleRefund = async () => {
-      if (!gameData.on_chain_game_id || !onClaimRefund) return;
+      if (gameData.on_chain_game_id == null || !onClaimRefund) return;
       setRefunding(true);
       try {
         await onClaimRefund(gameData.on_chain_game_id);
