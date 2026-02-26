@@ -24,7 +24,6 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   walletAddress,
   onStartGame,
   onJoinGame,
-  onStartTimer,
   onClaimPrize,
   onClaimRefund,
   onFundAndStart,
@@ -36,7 +35,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [joining, setJoining] = useState(false);
-  const [startingTimer, setStartingTimer] = useState(false);
+
   const [claiming, setClaiming] = useState(false);
   const [refunding, setRefunding] = useState(false);
   const [countdown, setCountdown] = useState('');
@@ -137,18 +136,6 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     }
   };
 
-  const handleStartTimerClick = async () => {
-    if (!gameData) return;
-    setStartingTimer(true);
-    try {
-      await onStartTimer(gameData);
-      await fetchGame();
-    } catch (err: any) {
-      alert(err.message || 'Failed to start game timer');
-    } finally {
-      setStartingTimer(false);
-    }
-  };
 
   const handleClaim = async () => {
     if (gameData?.on_chain_game_id == null) return;
@@ -326,7 +313,6 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   };
 
   // CTA logic
-  const canCreatorStart = isPaid && isCreator && gameData.status === 'active' && gameData.player_count >= CUSTOM_GAME_MIN_PLAYERS;
   const canCreatorFund = isCreatorFunded && isCreator && gameData.status === 'active' && gameData.player_count >= CUSTOM_GAME_MIN_PLAYERS && !isFunded;
   const showJoinButton = isPaid && !hasEntered && !isCreator && gameData.status === 'active';
 
@@ -498,12 +484,21 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                     </button>
                   )}
 
-                  {hasEntered && !isCreator && (
-                    <div className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8]/10 border border-[#38BDF8]/20 rounded-xl text-center">
-                      <span className="text-[#38BDF8] font-[1000] italic uppercase text-lg">You're In!</span>
-                      <p className="text-zinc-400 text-xs font-black mt-1">
-                        {isCreatorFunded ? 'Waiting for the creator to fund & start the game.' : 'Waiting for the creator to start the game.'}
-                      </p>
+                  {hasEntered && !isCreator && canPlay && (
+                    <button
+                      onClick={() => onStartGame(gameData)}
+                      className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98]"
+                    >
+                      Play Now
+                    </button>
+                  )}
+
+                  {hasEntered && !isCreator && !canPlay && (
+                    <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
+                      <span className="text-zinc-400 font-[1000] italic uppercase text-lg">Max Attempts Reached</span>
+                      {gameData.player_best_score != null && (
+                        <p className="text-zinc-500 text-xs font-black mt-1">Your best: {gameData.player_best_score} XP</p>
+                      )}
                     </div>
                   )}
 
@@ -516,21 +511,15 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                         >
                           Fund & Start Game ({creatorDepositSOL} SOL)
                         </button>
-                      ) : canCreatorStart && !isCreatorFunded ? (
-                        <button
-                          onClick={handleStartTimerClick}
-                          disabled={startingTimer}
-                          className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98] disabled:opacity-50"
-                        >
-                          {startingTimer ? 'Starting...' : 'Start Game Timer'}
-                        </button>
                       ) : (
                         <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
                           <span className="text-zinc-400 font-[1000] italic uppercase text-sm">
-                            Need {CUSTOM_GAME_MIN_PLAYERS}+ players to start
+                            {gameData.player_count > 0
+                              ? `${gameData.player_count} player${gameData.player_count !== 1 ? 's' : ''} joined`
+                              : 'Waiting for players to join'}
                           </span>
                           <p className="text-zinc-500 text-xs font-black mt-1">
-                            {gameData.player_count} / {CUSTOM_GAME_MIN_PLAYERS} players joined
+                            Share the link to get players in!
                           </p>
                         </div>
                       )}

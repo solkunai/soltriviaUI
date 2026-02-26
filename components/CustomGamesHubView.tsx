@@ -57,6 +57,7 @@ interface EndedGame {
 }
 
 const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, hasGamePass, onCreateGame, onViewGame, onBack }) => {
+  const [myGames, setMyGames] = useState<BrowsableGame[]>([]);
   const [joinable, setJoinable] = useState<BrowsableGame[]>([]);
   const [inProgress, setInProgress] = useState<InProgressGame[]>([]);
   const [ended, setEnded] = useState<EndedGame[]>([]);
@@ -78,7 +79,13 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
           .limit(20);
 
         if (mounted && activeGames) {
-          setJoinable(activeGames.filter(g => g.creator_wallet !== walletAddress));
+          if (walletAddress) {
+            setMyGames(activeGames.filter(g => g.creator_wallet === walletAddress));
+            setJoinable(activeGames.filter(g => g.creator_wallet !== walletAddress));
+          } else {
+            setMyGames([]);
+            setJoinable(activeGames);
+          }
         }
 
         // In Progress: status='started' (timer running)
@@ -139,6 +146,53 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
             + Create Game
           </button>
         </div>
+
+        {/* My Games */}
+        {!loading && myGames.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white font-black text-sm uppercase tracking-wider">My Games</h2>
+              <span className="text-[#38BDF8] text-[10px] font-bold">{myGames.length} active</span>
+            </div>
+
+            <div className="space-y-2">
+              {myGames.map((game) => {
+                const daysLeft = Math.max(0, Math.ceil((new Date(game.expires_at).getTime() - Date.now()) / 86400000));
+                const isPaid = game.prize_model === 'player_funded' || game.prize_model === 'creator_funded';
+                const isCreatorFunded = game.prize_model === 'creator_funded';
+                return (
+                  <div key={game.id} className="flex items-center justify-between p-4 bg-[#38BDF8]/[0.04] border border-[#38BDF8]/15 rounded-lg hover:border-[#38BDF8]/30 transition-all">
+                    <div className="flex-1 min-w-0 mr-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-white font-[1000] text-sm italic truncate">{game.name}</span>
+                        <span className="text-[#38BDF8] text-[7px] font-black italic uppercase px-1.5 py-0.5 bg-[#38BDF8]/10 rounded shrink-0">Creator</span>
+                        {isPaid && (
+                          <span className={`text-[7px] font-black italic uppercase px-1.5 py-0.5 rounded shrink-0 ${isCreatorFunded ? 'text-amber-400 bg-amber-400/10' : 'text-amber-400 bg-amber-400/10'}`}>
+                            {isCreatorFunded ? 'Creator Prize' : 'Prize'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-zinc-500 text-[10px] font-bold">
+                        <span>{game.question_count} Q</span>
+                        <span>{game.player_count ?? 0}{game.max_players ? `/${game.max_players}` : ''} players</span>
+                        <span>{daysLeft}d left</span>
+                        {isPaid && game.entry_fee_lamports ? (
+                          <span className="text-amber-400">{(game.entry_fee_lamports / 1e9).toFixed(3)} SOL entry</span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onViewGame(game.slug)}
+                      className="px-4 py-2 bg-[#38BDF8]/20 text-[#38BDF8] font-black uppercase text-[10px] rounded hover:bg-[#38BDF8]/30 transition-all active:scale-[0.98] shrink-0"
+                    >
+                      View
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* In Progress Games */}
         {!loading && inProgress.length > 0 && (
