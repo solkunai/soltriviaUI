@@ -432,7 +432,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                     <div key={entry.wallet_address} className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/[0.04] transition-all">
                       <span className={`w-8 text-center font-[1000] italic text-lg tabular-nums leading-none ${rankColor}`}>{idx + 1}</span>
                       <div className="w-9 h-9 rounded-lg overflow-hidden border border-white/10 flex-shrink-0 bg-zinc-900">
-                        <img src={entry.avatar || DEFAULT_AVATAR} className="w-full h-full object-cover grayscale" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
+                        <img src={entry.avatar || DEFAULT_AVATAR} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-[1000] italic text-sm uppercase text-white truncate tracking-tight flex items-center gap-1">
@@ -502,7 +502,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                     <div key={entry.wallet_address} className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/[0.04] transition-all">
                       <span className={`w-8 text-center font-[1000] italic text-lg tabular-nums leading-none ${rankColor}`}>{idx + 1}</span>
                       <div className="w-9 h-9 rounded-lg overflow-hidden border border-white/10 flex-shrink-0 bg-zinc-900">
-                        <img src={entry.avatar || DEFAULT_AVATAR} className="w-full h-full object-cover grayscale" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
+                        <img src={entry.avatar || DEFAULT_AVATAR} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-[1000] italic text-sm uppercase text-white truncate tracking-tight flex items-center gap-1">
@@ -644,7 +644,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                 <div key={idx} className={`flex flex-col items-center flex-1 ${isFirst ? 'max-w-[150px] -translate-y-8' : 'max-w-[120px]'}`}>
                    <div className="relative mb-6">
                       <div className={`w-24 h-24 sm:w-32 sm:h-32 rounded-full border-[6px] ${rankColor} overflow-hidden bg-zinc-900 shadow-2xl`}>
-                        <img src={avatarFor(player.wallet_address, player.avatar)} className="w-full h-full object-cover grayscale" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
+                        <img src={avatarFor(player.wallet_address, player.avatar)} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                       </div>
                       <div className={`absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full ${badgeColor} border-[3px] border-white flex items-center justify-center shadow-lg`}>
                         <span className="text-black font-[1000] italic text-[11px] leading-none">{player.rank}</span>
@@ -713,7 +713,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                 <div key={idx} className={`flex flex-col items-center ${containerY} transition-all duration-500`}>
                    <div className="relative mb-6">
                       <div className={`${size} rounded-full border-[6px] ${rankColor} ${glowColor} overflow-hidden bg-zinc-900`}>
-                        <img src={avatarFor(player.wallet_address, player.avatar)} className="w-full h-full object-cover grayscale" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
+                        <img src={avatarFor(player.wallet_address, player.avatar)} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                       </div>
                       <div className={`absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-8 lg:w-10 lg:h-10 rounded-full ${badgeColor} border-[3px] border-[#050505] flex items-center justify-center shadow-xl`}>
                         <span className="font-[1000] italic text-sm lg:text-lg leading-none">{player.rank}</span>
@@ -750,7 +750,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
               {allPlayers.slice(leaderboardPage === 0 ? 5 : 0).map((player, idx) => (
                 <div key={idx} className="flex items-center gap-4 p-3 bg-white/[0.02] border border-white/5 rounded-xl group hover:bg-white/[0.04] transition-all duration-300">
                     <span className="w-10 text-center font-[1000] italic text-zinc-600 group-hover:text-[#14F195] text-2xl tabular-nums transition-colors leading-none">{player.rank}</span>
-                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/10 grayscale group-hover:grayscale-0 transition-all flex-shrink-0">
+                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/10 transition-all flex-shrink-0">
                         <img src={avatarFor(player.wallet_address, player.avatar)} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                     </div>
                     <div className="flex-1 truncate">
@@ -787,7 +787,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                     {player.rank}
                   </span>
 
-                  <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/10 grayscale flex-shrink-0">
+                  <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/10 flex-shrink-0">
                       <img src={avatarFor(player.wallet_address, player.avatar)} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                   </div>
 
