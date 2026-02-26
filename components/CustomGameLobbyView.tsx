@@ -336,8 +336,8 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     : null;
 
   return (
-    <div className="h-full flex flex-col bg-[#050505] p-4 sm:p-6 md:p-12 relative overflow-y-auto">
-      <div className="absolute inset-0 pointer-events-none">
+    <div className="flex flex-col h-full bg-[#050505] overflow-y-auto overflow-x-hidden relative p-4 sm:p-6 md:p-12">
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="scan-line opacity-10"></div>
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[#38BDF8]/5 rounded-full blur-[120px]"></div>
       </div>
@@ -366,9 +366,9 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             {gameData.name}
           </h1>
 
-          <div className="flex flex-wrap gap-3 mb-6">
+          <div className="flex flex-wrap gap-2 mb-4">
             <span className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-zinc-400 text-[10px] font-black uppercase tracking-wider">
-              {gameData.question_count} Questions
+              {gameData.question_count} Q's
             </span>
             <span className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-zinc-400 text-[10px] font-black uppercase tracking-wider">
               {gameData.round_count} {gameData.round_count === 1 ? 'Round' : 'Rounds'}
@@ -383,101 +383,43 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             )}
           </div>
 
-          {/* Prize Pool Info (paid games only) */}
+          {/* Compact stats row for paid games */}
           {isPaid && (
-            <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 mb-6">
-              {isCreatorFunded && (
-                <div className={`flex items-center gap-2 mb-3 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider ${isFunded ? 'bg-green-500/10 border border-green-500/20 text-green-400' : 'bg-amber-400/10 border border-amber-400/20 text-amber-400'}`}>
-                  <span>{isFunded ? 'Prize Pool Funded' : 'Awaiting Creator Funding'}</span>
-                </div>
-              )}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                <div className="text-center">
-                  <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">
-                    {isCreatorFunded ? 'Creator Prize' : 'Entry Fee'}
-                  </span>
-                  <span className="text-white text-lg font-[1000] italic">
-                    {isCreatorFunded ? creatorDepositSOL : entryFeeSOL}
-                  </span>
-                  <span className="text-zinc-500 text-[9px] block">SOL</span>
-                </div>
-                <div className="text-center">
-                  <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Prize Pool</span>
-                  <span className="text-[#38BDF8] text-lg font-[1000] italic">{prizePotSOL.toFixed(2)}</span>
-                  <span className="text-zinc-500 text-[9px] block">SOL{isCreatorFunded && !isFunded ? ' (est.)' : ''}</span>
-                </div>
-                <div className="text-center">
-                  <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Players</span>
-                  <span className="text-white text-lg font-[1000] italic">
-                    {gameData.player_count}{gameData.max_players ? `/${gameData.max_players}` : ''}
-                  </span>
-                </div>
-                <div className="text-center">
-                  <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">
-                    {gameData.status === 'started' ? 'Time Left' : 'Duration'}
-                  </span>
-                  {gameData.status === 'started' && countdown ? (
-                    <span className="text-yellow-400 text-lg font-[1000] italic">{countdown}</span>
-                  ) : (
-                    <span className="text-white text-lg font-[1000] italic">{durationLabel || '\u2014'}</span>
-                  )}
-                </div>
+            <div className="flex items-center gap-4 mb-4 text-center">
+              <div className="flex-1">
+                <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block">
+                  {isCreatorFunded ? 'Prize' : 'Pool'}
+                </span>
+                <span className="text-[#38BDF8] text-base font-[1000] italic">{prizePotSOL.toFixed(2)} SOL</span>
               </div>
-
-              {/* Prize breakdown */}
-              {prizeBreakdown.length > 0 && (
-                <div className="border-t border-white/5 pt-3">
-                  <p className="text-zinc-600 text-[8px] font-black uppercase tracking-widest mb-2">Prize Split (Top {gameData.max_winners})</p>
-                  <div className="flex gap-2">
-                    {prizeBreakdown.map((p) => (
-                      <div key={p.rank} className="flex-1 bg-white/[0.03] border border-white/5 rounded-lg p-2 text-center">
-                        <span className={`text-[10px] font-black block ${p.rank === 1 ? 'text-[#38BDF8]' : 'text-zinc-400'}`}>
-                          #{p.rank} ({p.pct})
-                        </span>
-                        <span className="text-white text-xs font-[1000] italic">{p.sol.toFixed(3)}</span>
-                        <span className="text-zinc-600 text-[8px] block">SOL</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <div className="w-px h-8 bg-white/10"></div>
+              <div className="flex-1">
+                <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block">Players</span>
+                <span className="text-white text-base font-[1000] italic">{gameData.player_count}{gameData.max_players ? `/${gameData.max_players}` : ''}</span>
+              </div>
+              <div className="w-px h-8 bg-white/10"></div>
+              <div className="flex-1">
+                <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block">
+                  {gameData.status === 'started' ? 'Left' : 'Duration'}
+                </span>
+                {gameData.status === 'started' && countdown ? (
+                  <span className="text-yellow-400 text-base font-[1000] italic">{countdown}</span>
+                ) : (
+                  <span className="text-white text-base font-[1000] italic">{durationLabel || '\u2014'}</span>
+                )}
+              </div>
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="text-center">
-              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Created by</span>
-              <span className="text-white text-xs font-black italic">{creatorShort}</span>
+          {isCreatorFunded && (
+            <div className={`flex items-center gap-2 mb-4 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider ${isFunded ? 'bg-green-500/10 border border-green-500/20 text-green-400' : 'bg-amber-400/10 border border-amber-400/20 text-amber-400'}`}>
+              <span>{isFunded ? 'Prize Pool Funded' : 'Awaiting Creator Funding'}</span>
             </div>
-            <div className="text-center">
-              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Total Plays</span>
-              <span className="text-white text-xs font-black italic">{gameData.total_plays}</span>
-            </div>
-            <div className="text-center">
-              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Expires</span>
-              <span className="text-yellow-400 text-xs font-black italic">{expiryLabel}</span>
-            </div>
-          </div>
-
-          {/* Share */}
-          <div className="flex gap-2">
-            <button
-              onClick={handleCopyLink}
-              className="flex-1 min-h-[44px] px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-zinc-400 font-black uppercase text-[10px] tracking-wider hover:bg-white/10 transition-all active:scale-[0.98]"
-            >
-              {copied ? 'Copied!' : 'Copy Link'}
-            </button>
-            <button
-              onClick={handleShareX}
-              className="flex-1 min-h-[44px] px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-zinc-400 font-black uppercase text-[10px] tracking-wider hover:bg-white/10 transition-all active:scale-[0.98]"
-            >
-              Share on X
-            </button>
-          </div>
+          )}
         </div>
 
-        {/* Action Area */}
-        <div className="mb-6">
+        {/* CTA — immediately visible */}
+        <div className="mb-4">
           {!walletAddress ? (
             <button
               onClick={onConnectWallet}
@@ -632,6 +574,55 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
               )}
             </>
           )}
+        </div>
+
+        {/* Game Details (below CTA) */}
+        {isPaid && prizeBreakdown.length > 0 && (
+          <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 md:p-6 mb-4">
+            <p className="text-zinc-600 text-[8px] font-black uppercase tracking-widest mb-2">Prize Split (Top {gameData.max_winners})</p>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {prizeBreakdown.map((p) => (
+                <div key={p.rank} className="bg-white/[0.03] border border-white/5 rounded-lg p-2 text-center">
+                  <span className={`text-[10px] font-black block ${p.rank === 1 ? 'text-[#38BDF8]' : 'text-zinc-400'}`}>
+                    #{p.rank} ({p.pct})
+                  </span>
+                  <span className="text-white text-xs font-[1000] italic">{p.sol.toFixed(3)}</span>
+                  <span className="text-zinc-600 text-[8px] block">SOL</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 md:p-6 mb-4">
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="text-center">
+              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Created by</span>
+              <span className="text-white text-xs font-black italic">{creatorShort}</span>
+            </div>
+            <div className="text-center">
+              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Total Plays</span>
+              <span className="text-white text-xs font-black italic">{gameData.total_plays}</span>
+            </div>
+            <div className="text-center">
+              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Expires</span>
+              <span className="text-yellow-400 text-xs font-black italic">{expiryLabel}</span>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleCopyLink}
+              className="flex-1 min-h-[44px] px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-zinc-400 font-black uppercase text-[10px] tracking-wider hover:bg-white/10 transition-all active:scale-[0.98]"
+            >
+              {copied ? 'Copied!' : 'Copy Link'}
+            </button>
+            <button
+              onClick={handleShareX}
+              className="flex-1 min-h-[44px] px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-zinc-400 font-black uppercase text-[10px] tracking-wider hover:bg-white/10 transition-all active:scale-[0.98]"
+            >
+              Share on X
+            </button>
+          </div>
         </div>
 
         {/* Leaderboard */}
