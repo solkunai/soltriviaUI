@@ -828,6 +828,26 @@ export function buildClaimCustomRefundIx(
   );
 }
 
+export function buildSweepTierRoundIx(
+  owner: PublicKey,
+  roundId: number,
+  tierIndex: number,
+  sweepWallet: PublicKey,
+  programId = SOLTRIVIA_PROGRAM_ID,
+): TransactionInstruction {
+  return makeIx(programId, DISC.sweepTierRound,
+    concat(u64Le(roundId), new Uint8Array([tierIndex])),
+    [
+      { pubkey: owner, isSigner: true, isWritable: false },
+      { pubkey: getConfigPda(programId), isSigner: false, isWritable: false },
+      { pubkey: getTierRoundPda(roundId, tierIndex, programId), isSigner: false, isWritable: true },
+      { pubkey: getTierVaultPda(roundId, tierIndex, programId), isSigner: false, isWritable: true },
+      { pubkey: sweepWallet, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
+}
+
 export function buildSweepCustomGameIx(
   owner: PublicKey,
   gameId: number,

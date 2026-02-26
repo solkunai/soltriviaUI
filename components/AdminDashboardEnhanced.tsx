@@ -7,7 +7,7 @@ import { getAuthHeaders, getAdminHeaders, fetchRoundPayouts, markPayoutPaid, pos
 import { getSolanaRpcEndpoint, getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import { useWallet } from '../src/contexts/WalletContext';
 import { WalletMultiButton } from '../src/contexts/WalletContext';
-import { buildInitializeIx, fetchGameConfig, SOLTRIVIA_PROGRAM_ID } from '../src/utils/soltriviaContract';
+import { buildSweepTierRoundIx, buildSweepCustomGameIx, getTierVaultPda, getCustomVaultPda, contractRoundIdFromDateAndNumber, fetchGameConfig, SOLTRIVIA_PROGRAM_ID } from '../src/utils/soltriviaContract';
 import Pagination from './Pagination';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
@@ -441,7 +441,7 @@ function getRoundLabel(date: string, roundNumber: number): string {
 
 const ROUND_WINNERS_PAGE_SIZE = 10;
 const RoundWinnersAdminView: React.FC = () => {
-  const [rounds, setRounds] = useState<Array<{ id: string; date: string; round_number: number; pot_lamports: number; player_count: number }>>([]);
+  const [rounds, setRounds] = useState<Array<{ id: string; date: string; round_number: number; pot_lamports: number; player_count: number; status: string }>>([]);
   const [payouts, setPayouts] = useState<RoundPayout[]>([]);
   const [loading, setLoading] = useState(true);
   const [marking, setMarking] = useState<string | null>(null);
@@ -460,19 +460,17 @@ const RoundWinnersAdminView: React.FC = () => {
     (async () => {
       const { data: roundsData, count: roundsCount, error: roundsErr } = await supabase
         .from('daily_rounds')
-        .select('id, date, round_number, pot_lamports, player_count', { count: 'exact' })
+        .select('id, date, round_number, pot_lamports, player_count, status', { count: 'exact' })
+        .in('status', ['paid', 'completed'])
         .order('date', { ascending: false })
         .order('round_number', { ascending: false })
         .range(from, to);
       if (roundsErr || !roundsData?.length) {
-        if (mounted) setRounds([]);
-        if (mounted) setPayouts([]);
-        if (mounted) setTotalRoundsCount(roundsCount ?? 0);
+        if (mounted) { setRounds([]); setPayouts([]); setTotalRoundsCount(roundsCount ?? 0); }
         setLoading(false);
         return;
       }
-      if (mounted) setRounds(roundsData as typeof rounds);
-      if (mounted) setTotalRoundsCount(roundsCount ?? 0);
+      if (mounted) { setRounds(roundsData as typeof rounds); setTotalRoundsCount(roundsCount ?? 0); }
       const ids = roundsData.map((r: { id: string }) => r.id);
       const list = await fetchRoundPayouts(ids);
       if (mounted) setPayouts(list);
@@ -500,16 +498,6 @@ const RoundWinnersAdminView: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="py-12 text-center text-zinc-400">
-        <p className="font-black uppercase tracking-widest">Loading round winners...</p>
-      </div>
-    );
-  }
-
-  const roundsWithFivePayouts = rounds.filter((r) => payouts.filter((p) => p.round_id === r.id).length >= 5);
-
   const handlePostWinnersOnChain = async (roundId: string) => {
     setPostingRoundId(roundId);
     const result = await postWinnersOnChain(roundId);
@@ -521,19 +509,37 @@ const RoundWinnersAdminView: React.FC = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="py-12 text-center text-zinc-400">
+        <p className="font-black uppercase tracking-widest">Loading round winners...</p>
+      </div>
+    );
+  }
+
   // Claim tracking stats
   const unclaimedPayouts = payouts.filter(p => !p.paid_at);
   const claimedPayouts = payouts.filter(p => !!p.paid_at);
   const unclaimedSol = unclaimedPayouts.reduce((sum, p) => sum + p.prize_lamports, 0) / 1_000_000_000;
   const claimedSol = claimedPayouts.reduce((sum, p) => sum + (p.paid_lamports ?? p.prize_lamports), 0) / 1_000_000_000;
 
-  // Filter payouts by claim status
-  const filteredPayouts = claimFilter === 'all' ? payouts : claimFilter === 'unclaimed' ? unclaimedPayouts : claimedPayouts;
+  // Filter payouts by claim status and group by round
+  const getFilteredPayoutsForRound = (roundId: string) => {
+    const roundPayouts = payouts.filter(p => p.round_id === roundId).sort((a, b) => a.rank - b.rank);
+    if (claimFilter === 'all') return roundPayouts;
+    if (claimFilter === 'unclaimed') return roundPayouts.filter(p => !p.paid_at);
+    return roundPayouts.filter(p => !!p.paid_at);
+  };
+
+  // Only show rounds that have matching payouts for the current filter
+  const visibleRounds = claimFilter === 'all'
+    ? rounds
+    : rounds.filter(r => getFilteredPayoutsForRound(r.id).length > 0);
 
   return (
     <div className="py-6">
       <h2 className="text-xl font-black text-white mb-2">Round Winners (Top 5, 100% pot)</h2>
-      <p className="text-zinc-500 text-sm mb-4">Copy wallet, mark as paid, and set prize amount paid. 1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%.</p>
+      <p className="text-zinc-500 text-sm mb-4">1st 50%, 2nd 20%, 3rd 15%, 4th 10%, 5th 5%</p>
 
       {/* Claim Status Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -555,7 +561,7 @@ const RoundWinnersAdminView: React.FC = () => {
       </div>
 
       {/* Filter Buttons */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-6">
         {(['all', 'unclaimed', 'claimed'] as const).map(f => (
           <button
             key={f}
@@ -573,118 +579,129 @@ const RoundWinnersAdminView: React.FC = () => {
         ))}
       </div>
 
-      {roundsWithFivePayouts.length > 0 && (
-        <div className="mb-6 p-4 bg-white/5 border border-white/10 rounded-xl">
-          <p className="text-zinc-400 text-xs font-black uppercase tracking-wider mb-3">Finalize on-chain (so winners can claim from vault)</p>
-          <div className="flex flex-wrap gap-2">
-            {roundsWithFivePayouts.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                disabled={postingRoundId !== null}
-                onClick={() => handlePostWinnersOnChain(r.id)}
-                className="px-3 py-1.5 bg-[#14F195]/20 hover:bg-[#14F195]/30 border border-[#14F195]/40 text-[#14F195] text-xs font-bold rounded disabled:opacity-50"
-              >
-                {postingRoundId === r.id ? '…' : `Post ${getRoundLabel(r.date, r.round_number)} on-chain`}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-white/10">
-              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Round</th>
-              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Rank</th>
-              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Wallet</th>
-              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Score</th>
-              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Prize (SOL)</th>
-              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Claim Status</th>
-              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Paid amount</th>
-              <th className="py-3 px-2 text-zinc-500 font-black text-[10px] uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredPayouts.map((p) => {
-              const round = rounds.find((r) => r.id === p.round_id);
-              const roundLabel = round ? getRoundLabel(round.date, round.round_number) : p.round_id.slice(0, 8);
-              const isMarking = marking === `${p.round_id}-${p.rank}`;
-              const isInputOpen = paidInput?.roundId === p.round_id && paidInput?.rank === p.rank;
-              return (
-                <tr key={`${p.round_id}-${p.rank}`} className="border-b border-white/5 hover:bg-white/5">
-                  <td className="py-2 px-2 text-white text-sm font-mono">{roundLabel}</td>
-                  <td className="py-2 px-2 text-zinc-400 font-black">#{p.rank}</td>
-                  <td className="py-2 px-2">
-                    <span className="font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 6)}...{p.wallet_address.slice(-4)}</span>
-                    <button
-                      type="button"
-                      onClick={() => copyWallet(p.wallet_address)}
-                      className="ml-2 px-2 py-0.5 bg-white/10 hover:bg-[#14F195]/20 text-[10px] font-bold rounded"
-                    >
-                      {copyFeedback === p.wallet_address ? 'Copied!' : 'Copy'}
-                    </button>
-                  </td>
-                  <td className="py-2 px-2 text-[#14F195] text-sm font-bold">{p.score.toLocaleString()}</td>
-                  <td className="py-2 px-2 text-white text-sm">{(p.prize_lamports / 1_000_000_000).toFixed(4)}</td>
-                  <td className="py-2 px-2">
-                    {p.paid_at ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#14F195]/20 text-[#14F195] text-xs font-bold rounded-full">
-                        Claimed
-                        <span className="text-[#14F195]/60 text-[10px] ml-1">{new Date(p.paid_at).toLocaleDateString()}</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded-full">
-                        Unclaimed
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2 px-2">
-                    {p.paid_lamports != null ? (p.paid_lamports / 1_000_000_000).toFixed(4) + ' SOL' : '—'}
-                  </td>
-                  <td className="py-2 px-2">
-                    {isInputOpen ? (
-                      <div className="flex items-center gap-1 flex-wrap">
-                        <input
-                          type="number"
-                          step="any"
-                          placeholder="SOL"
-                          value={paidInput.value}
-                          onChange={(e) => setPaidInput((prev) => prev ? { ...prev, value: e.target.value } : null)}
-                          className="w-24 px-2 py-1 bg-black border border-white/20 rounded text-white text-xs"
-                        />
-                        <button
-                          type="button"
-                          disabled={isMarking}
-                          onClick={() => {
-                            const lamports = Math.round(parseFloat(paidInput.value || '0') * 1_000_000_000);
-                            if (lamports >= 0) handleMarkPaid(p.round_id, p.rank, lamports);
-                          }}
-                          className="px-2 py-1 bg-[#14F195] text-black text-xs font-bold rounded disabled:opacity-50"
-                        >
-                          {isMarking ? '…' : 'Save'}
-                        </button>
-                        <button type="button" onClick={() => setPaidInput(null)} className="px-2 py-1 text-zinc-400 text-xs">Cancel</button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setPaidInput({ roundId: p.round_id, rank: p.rank, value: p.paid_lamports != null ? String(p.paid_lamports / 1_000_000_000) : '' })}
-                        className="px-2 py-1 bg-white/10 hover:bg-[#14F195]/20 text-[10px] font-bold rounded"
-                      >
-                        Mark paid
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      {/* Round Cards */}
+      <div className="space-y-4">
+        {visibleRounds.map((r) => {
+          const roundPayouts = getFilteredPayoutsForRound(r.id);
+          const hasFivePayouts = payouts.filter(p => p.round_id === r.id).length >= 5;
+          const potSol = ((r.pot_lamports ?? 0) / 1_000_000_000).toFixed(4);
+          return (
+            <div key={r.id} className="border border-white/10 rounded-xl overflow-hidden">
+              {/* Round Header */}
+              <div className="flex items-center justify-between gap-4 px-4 py-3 bg-white/5 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-white text-sm font-black">{getRoundLabel(r.date, r.round_number)}</h3>
+                  <span className="text-zinc-400 text-xs">{potSol} SOL pot</span>
+                  <span className="text-zinc-500 text-xs">{r.player_count} entries</span>
+                  <span className={`px-2 py-0.5 text-[10px] font-black uppercase rounded ${
+                    r.status === 'paid' ? 'bg-[#14F195]/20 text-[#14F195]' : 'bg-blue-500/20 text-blue-400'
+                  }`}>{r.status}</span>
+                </div>
+                {hasFivePayouts && (
+                  <button
+                    type="button"
+                    disabled={postingRoundId !== null}
+                    onClick={() => handlePostWinnersOnChain(r.id)}
+                    className="px-3 py-1 bg-[#14F195]/20 hover:bg-[#14F195]/30 border border-[#14F195]/40 text-[#14F195] text-xs font-bold rounded disabled:opacity-50"
+                  >
+                    {postingRoundId === r.id ? '...' : 'Post on-chain'}
+                  </button>
+                )}
+              </div>
+              {/* Payout Rows */}
+              {roundPayouts.length > 0 ? (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/5">
+                      <th className="py-2 px-4 text-zinc-600 font-black text-[10px] uppercase w-12">Rank</th>
+                      <th className="py-2 px-2 text-zinc-600 font-black text-[10px] uppercase">Wallet</th>
+                      <th className="py-2 px-2 text-zinc-600 font-black text-[10px] uppercase">Score</th>
+                      <th className="py-2 px-2 text-zinc-600 font-black text-[10px] uppercase">Prize</th>
+                      <th className="py-2 px-2 text-zinc-600 font-black text-[10px] uppercase">Status</th>
+                      <th className="py-2 px-2 text-zinc-600 font-black text-[10px] uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roundPayouts.map((p) => {
+                      const isMarking = marking === `${p.round_id}-${p.rank}`;
+                      const isInputOpen = paidInput?.roundId === p.round_id && paidInput?.rank === p.rank;
+                      return (
+                        <tr key={`${p.round_id}-${p.rank}`} className="border-b border-white/5 hover:bg-white/[0.03]">
+                          <td className="py-2 px-4 text-zinc-400 font-black">#{p.rank}</td>
+                          <td className="py-2 px-2">
+                            <span className="font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 6)}...{p.wallet_address.slice(-4)}</span>
+                            <button
+                              type="button"
+                              onClick={() => copyWallet(p.wallet_address)}
+                              className="ml-2 px-2 py-0.5 bg-white/10 hover:bg-[#14F195]/20 text-[10px] font-bold rounded"
+                            >
+                              {copyFeedback === p.wallet_address ? 'Copied!' : 'Copy'}
+                            </button>
+                          </td>
+                          <td className="py-2 px-2 text-[#14F195] text-sm font-bold">{p.score.toLocaleString()}</td>
+                          <td className="py-2 px-2 text-white text-sm">{(p.prize_lamports / 1_000_000_000).toFixed(4)}</td>
+                          <td className="py-2 px-2">
+                            {p.paid_at ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#14F195]/20 text-[#14F195] text-xs font-bold rounded-full">
+                                Claimed
+                                <span className="text-[#14F195]/60 text-[10px] ml-1">{new Date(p.paid_at).toLocaleDateString()}</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded-full">
+                                Unclaimed
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2">
+                            {isInputOpen ? (
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <input
+                                  type="number"
+                                  step="any"
+                                  placeholder="SOL"
+                                  value={paidInput.value}
+                                  onChange={(e) => setPaidInput((prev) => prev ? { ...prev, value: e.target.value } : null)}
+                                  className="w-24 px-2 py-1 bg-black border border-white/20 rounded text-white text-xs"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={isMarking}
+                                  onClick={() => {
+                                    const lamports = Math.round(parseFloat(paidInput.value || '0') * 1_000_000_000);
+                                    if (lamports >= 0) handleMarkPaid(p.round_id, p.rank, lamports);
+                                  }}
+                                  className="px-2 py-1 bg-[#14F195] text-black text-xs font-bold rounded disabled:opacity-50"
+                                >
+                                  {isMarking ? '...' : 'Save'}
+                                </button>
+                                <button type="button" onClick={() => setPaidInput(null)} className="px-2 py-1 text-zinc-400 text-xs">Cancel</button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setPaidInput({ roundId: p.round_id, rank: p.rank, value: p.paid_lamports != null ? String(p.paid_lamports / 1_000_000_000) : '' })}
+                                className="px-2 py-1 bg-white/10 hover:bg-[#14F195]/20 text-[10px] font-bold rounded"
+                              >
+                                {p.paid_lamports != null ? `${(p.paid_lamports / 1_000_000_000).toFixed(4)} SOL` : 'Mark paid'}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="px-4 py-3 text-zinc-600 text-xs">No matching payouts for this filter.</p>
+              )}
+            </div>
+          );
+        })}
       </div>
-      {rounds.length > 0 && filteredPayouts.length === 0 && (
+
+      {visibleRounds.length === 0 && (
         <p className="text-zinc-500 text-sm mt-4">
-          {claimFilter === 'all' ? 'No payouts yet. Top 5 are populated when players complete games (calculate_rankings_and_winner).'
+          {claimFilter === 'all' ? 'No rounds with payouts yet.'
             : claimFilter === 'unclaimed' ? 'All payouts have been claimed!' : 'No claimed payouts yet.'}
         </p>
       )}
@@ -1001,17 +1018,17 @@ const StatsView: React.FC<{ stats: any; loading: boolean }> = ({ stats, loading 
   return (
     <div>
       <h2 className="text-2xl font-black mb-6">Platform Overview</h2>
-      
+
       {/* Wallet Balances - Featured */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-gradient-to-br from-green-500/20 to-green-500/5 border border-green-500/30 p-6 rounded-xl">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-zinc-400 text-xs uppercase font-black">🔧 Deployer / Operator</p>
+            <p className="text-zinc-400 text-xs uppercase font-black">Deployer / Operator</p>
             <button
               onClick={() => window.open(`https://solscan.io/account/${OPERATOR_WALLET}`, '_blank')}
               className="text-xs text-blue-400 hover:underline"
             >
-              View on Solscan →
+              Solscan
             </button>
           </div>
           <p className="text-4xl font-[1000] italic text-green-400 mb-2">
@@ -1022,12 +1039,12 @@ const StatsView: React.FC<{ stats: any; loading: boolean }> = ({ stats, loading 
 
         <div className="bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 border border-yellow-500/30 p-6 rounded-xl">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-zinc-400 text-xs uppercase font-black">🔒 Owner / Sweep (Ledger)</p>
+            <p className="text-zinc-400 text-xs uppercase font-black">Owner / Sweep (Ledger)</p>
             <button
               onClick={() => window.open(`https://solscan.io/account/${OWNER_WALLET}`, '_blank')}
               className="text-xs text-blue-400 hover:underline"
             >
-              View on Solscan →
+              Solscan
             </button>
           </div>
           <p className="text-4xl font-[1000] italic text-yellow-400 mb-2">
@@ -1038,12 +1055,12 @@ const StatsView: React.FC<{ stats: any; loading: boolean }> = ({ stats, loading 
 
         <div className="bg-gradient-to-br from-purple-500/20 to-purple-500/5 border border-purple-500/30 p-6 rounded-xl">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-zinc-400 text-xs uppercase font-black">💵 Revenue Wallet</p>
+            <p className="text-zinc-400 text-xs uppercase font-black">Revenue Wallet</p>
             <button
               onClick={() => window.open(`https://solscan.io/account/${REVENUE_WALLET}`, '_blank')}
               className="text-xs text-blue-400 hover:underline"
             >
-              View on Solscan →
+              Solscan
             </button>
           </div>
           <p className="text-4xl font-[1000] italic text-purple-400 mb-2">
@@ -1053,60 +1070,51 @@ const StatsView: React.FC<{ stats: any; loading: boolean }> = ({ stats, loading 
         </div>
       </div>
 
-      {/* Player & Engagement */}
-      <h3 className="text-xl font-black mb-4 text-zinc-400">Players & Engagement</h3>
+      {/* Key Metrics */}
+      <h3 className="text-xl font-black mb-4 text-zinc-400">Key Metrics</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard label="Total Players" value={stats.totalPlayers} color="green" />
         <StatCard label="Active (24h)" value={stats.activePlayers24h} color="yellow" />
-        <StatCard label="Unique Wallets (7d)" value={stats.uniqueWalletsWeek} color="blue" />
-        <StatCard label="Referrals Completed" value={stats.totalReferrals} color="purple" />
-      </div>
-
-      {/* Games & Content */}
-      <h3 className="text-xl font-black mb-4 text-zinc-400">Games & Content</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard label="Total Paid Games" value={stats.totalGames} color="purple" />
         <StatCard label="Rounds Completed" value={stats.totalRoundsCompleted} color="blue" />
-        <StatCard label="Total Questions" value={stats.totalQuestions} color="blue" />
-        <StatCard label="Quests Completed" value={stats.totalQuestsCompleted} color="yellow" />
       </div>
 
-      {/* Custom Games & Passes */}
-      <h3 className="text-xl font-black mb-4 text-zinc-400">Custom Games & Passes</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <StatCard label="Total Custom Games" value={stats.totalCustomGames} color="purple" />
-        <StatCard label="Free Games" value={stats.customGamesFree} color="blue" />
-        <StatCard label="Player-Funded Games" value={stats.customGamesPlayerFunded} color="green" />
-        <StatCard label="Creator-Funded Games" value={stats.customGamesCreatorFunded} color="yellow" />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <StatCard label="Active" value={stats.customGamesActive} color="green" />
-        <StatCard label="Started (Timer)" value={stats.customGamesStarted} color="yellow" />
-        <StatCard label="Finalized" value={stats.customGamesFinalized} color="purple" />
-        <StatCard label="Expired" value={stats.customGamesExpired} color="red" />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <StatCard label="Player-Funded Pots" value={`${stats.customPlayerFundedPotSol.toFixed(4)} SOL`} color="green" />
-        <StatCard label="Creator-Funded Deposits" value={`${stats.customCreatorFundedPotSol.toFixed(4)} SOL`} color="yellow" />
+      {/* Revenue & Payouts */}
+      <h3 className="text-xl font-black mb-4 text-zinc-400">Revenue & Payouts</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatCard label="Lives Revenue" value={`${stats.totalRevenueSol.toFixed(3)} SOL`} color="green" />
         <StatCard label="Platform Fees (Custom)" value={`${stats.customPlatformFeesSol.toFixed(4)} SOL`} color="purple" />
-        <StatCard label="Paid Player Entries" value={stats.customPlayerEntries} color="blue" />
+        <StatCard label="Total Paid to Winners" value={`${stats.totalPaidOutSol.toFixed(4)} SOL`} color="green" />
+        <StatCard label="Lives Purchased" value={stats.totalLivesPurchased} color="red" />
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        <StatCard label="Custom Games Played" value={stats.totalCustomGamePlays} color="blue" />
+
+      {/* Engagement */}
+      <h3 className="text-xl font-black mb-4 text-zinc-400">Engagement</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatCard label="Unique Wallets (7d)" value={stats.uniqueWalletsWeek} color="blue" />
+        <StatCard label="Referrals Completed" value={stats.totalReferrals} color="purple" />
+        <StatCard label="Quests Completed" value={stats.totalQuestsCompleted} color="yellow" />
         <StatCard label="Game Passes Sold" value={stats.totalGamePasses} color="green" />
       </div>
 
-      {/* Revenue */}
-      <h3 className="text-xl font-black mb-4 text-zinc-400">Revenue & Payouts</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        <StatCard label="Lives Purchased" value={stats.totalLivesPurchased} color="red" />
-        <StatCard label="Lives Revenue" value={`${stats.totalRevenueSol.toFixed(3)} SOL`} color="green" />
-        <StatCard label="Total Paid to Winners" value={`${stats.totalPaidOutSol.toFixed(4)} SOL`} color="green" />
+      {/* Custom Games */}
+      <h3 className="text-xl font-black mb-4 text-zinc-400">Custom Games</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <StatCard label="Total Custom Games" value={stats.totalCustomGames} color="purple" />
+        <StatCard label="Free" value={stats.customGamesFree} color="blue" />
+        <StatCard label="Player-Funded" value={stats.customGamesPlayerFunded} color="green" />
+        <StatCard label="Creator-Funded" value={stats.customGamesCreatorFunded} color="yellow" />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatCard label="Active" value={stats.customGamesActive} color="green" />
+        <StatCard label="Finalized" value={stats.customGamesFinalized} color="purple" />
+        <StatCard label="Player-Funded Pots" value={`${stats.customPlayerFundedPotSol.toFixed(4)} SOL`} color="green" />
+        <StatCard label="Creator-Funded Deposits" value={`${stats.customCreatorFundedPotSol.toFixed(4)} SOL`} color="yellow" />
       </div>
 
-      {/* On-Chain Program Setup */}
-      <h3 className="text-xl font-black mb-4 text-zinc-400">On-Chain Contract</h3>
-      <InitializeMainnetCard />
+      {/* On-Chain Operations */}
+      <h3 className="text-xl font-black mb-4 text-zinc-400">On-Chain Operations</h3>
+      <SweepSection />
     </div>
   );
 };
@@ -1132,143 +1140,250 @@ const StatCard: React.FC<{ label: string; value: string | number; color: string 
   );
 };
 
-// ─── Initialize Mainnet Card (one-time setup) ────────────────────────────────
-const MAINNET_RPC = (() => {
-  const helius = import.meta.env.VITE_HELIUS_API_KEY;
-  if (helius) return `https://mainnet.helius-rpc.com/?api-key=${helius}`;
-  const alchemy = import.meta.env.VITE_ALCHEMY_API_KEY;
-  if (alchemy) return `https://solana-mainnet.g.alchemy.com/v2/${alchemy}`;
-  return 'https://rpc.ankr.com/solana';
-})();
-const OPERATOR = new PublicKey(OPERATOR_WALLET);
-const REVENUE = new PublicKey(REVENUE_WALLET);
-const OWNER_WALLET = '8qHMpkPLfj4neP7MYm74Xos26jPE55bMUUBTJBQRYuBF';
+// ─── Sweep Section (recover unclaimed funds from vaults) ─────────────────────
+interface SweepableVault {
+  type: 'round' | 'custom';
+  label: string;
+  vaultPda: PublicKey;
+  balanceLamports: number;
+  // round-specific
+  contractRoundId?: number;
+  tierIndex?: number;
+  // custom-specific
+  onChainGameId?: number;
+}
 
-const InitializeMainnetCard: React.FC = () => {
+const SweepSection: React.FC = () => {
   const { publicKey, connected, sendTransaction } = useWallet();
-  const [status, setStatus] = useState<'idle' | 'checking' | 'ready' | 'sending' | 'done' | 'already' | 'error'>('idle');
-  const [message, setMessage] = useState('');
-  const [sig, setSig] = useState('');
+  const [vaults, setVaults] = useState<SweepableVault[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [sweeping, setSweeping] = useState<string | null>(null);
+  const [sweepConfig, setSweepConfig] = useState<{ sweepWallet: string } | null>(null);
+  const [error, setError] = useState('');
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
-  const checkConfig = async () => {
-    setStatus('checking');
-    setMessage('Checking if program is already initialized on mainnet...');
+  const fetchSweepableVaults = async () => {
+    setLoading(true);
+    setError('');
     try {
-      const conn = new Connection(MAINNET_RPC, 'confirmed');
-      const config = await fetchGameConfig(conn, SOLTRIVIA_PROGRAM_ID);
+      const connection = new Connection(getSolanaRpcEndpoint(), 'confirmed');
+
+      // Fetch on-chain config to get sweep wallet
+      const config = await fetchGameConfig(connection, SOLTRIVIA_PROGRAM_ID);
       if (config) {
-        setStatus('already');
-        setMessage(`Program already initialized. Owner: ${config.owner.slice(0, 8)}... Operator: ${config.operator.slice(0, 8)}...`);
-      } else {
-        setStatus('ready');
-        setMessage('Program deployed but NOT initialized. Connect wallet 8qHMpk... and click Initialize.');
+        setSweepConfig({ sweepWallet: config.sweepWallet });
       }
+
+      // Fetch paid/completed rounds
+      const { data: roundsData } = await supabase
+        .from('daily_rounds')
+        .select('id, date, round_number')
+        .in('status', ['paid', 'completed']);
+
+      // Fetch finalized/expired custom games with on-chain IDs
+      const { data: customData } = await supabase
+        .from('custom_games')
+        .select('id, name, slug, on_chain_game_id, status')
+        .in('status', ['finalized', 'expired'])
+        .not('on_chain_game_id', 'is', null);
+
+      // Build vault PDA list
+      const vaultChecks: Array<{ pda: PublicKey; meta: Omit<SweepableVault, 'balanceLamports' | 'vaultPda'> }> = [];
+
+      if (roundsData) {
+        for (const r of roundsData) {
+          const crid = contractRoundIdFromDateAndNumber(r.date, r.round_number);
+          const vaultPda = getTierVaultPda(crid, 0);
+          vaultChecks.push({
+            pda: vaultPda,
+            meta: { type: 'round', label: getRoundLabel(r.date, r.round_number), contractRoundId: crid, tierIndex: 0 },
+          });
+        }
+      }
+
+      if (customData) {
+        for (const g of customData) {
+          const gameId = Number(g.on_chain_game_id);
+          const vaultPda = getCustomVaultPda(gameId);
+          vaultChecks.push({
+            pda: vaultPda,
+            meta: { type: 'custom', label: g.name || g.slug || `Game #${gameId}`, onChainGameId: gameId },
+          });
+        }
+      }
+
+      if (vaultChecks.length === 0) {
+        setVaults([]);
+        setLastRefresh(new Date());
+        setLoading(false);
+        return;
+      }
+
+      // Batch fetch balances (max 100 per call)
+      const allPdas = vaultChecks.map(v => v.pda);
+      const batchSize = 100;
+      const allInfos: (import('@solana/web3.js').AccountInfo<Buffer> | null)[] = [];
+      for (let i = 0; i < allPdas.length; i += batchSize) {
+        const batch = allPdas.slice(i, i + batchSize);
+        const infos = await connection.getMultipleAccountsInfo(batch);
+        allInfos.push(...infos);
+      }
+
+      const sweepable: SweepableVault[] = [];
+      for (let i = 0; i < vaultChecks.length; i++) {
+        const info = allInfos[i];
+        const lamports = info?.lamports ?? 0;
+        if (lamports > 0) {
+          sweepable.push({ ...vaultChecks[i].meta, vaultPda: vaultChecks[i].pda, balanceLamports: lamports });
+        }
+      }
+
+      // Sort: highest balance first
+      sweepable.sort((a, b) => b.balanceLamports - a.balanceLamports);
+      setVaults(sweepable);
+      setLastRefresh(new Date());
     } catch (err: any) {
-      setStatus('ready');
-      setMessage('Could not check config (may not exist yet). Ready to initialize.');
+      setError(`Failed to fetch vaults: ${err.message || String(err)}`);
     }
+    setLoading(false);
   };
 
-  useEffect(() => { checkConfig(); }, []);
+  useEffect(() => { fetchSweepableVaults(); }, []);
 
-  const handleInitialize = async () => {
-    if (!publicKey || !sendTransaction) {
-      setMessage('Connect your wallet first using the button above.');
-      return;
-    }
-
-    if (publicKey.toBase58() !== OWNER_WALLET) {
-      setMessage(`Wrong wallet. Expected: ${OWNER_WALLET.slice(0, 8)}... but got ${publicKey.toBase58().slice(0, 8)}... Switch wallet in Phantom.`);
-      setStatus('error');
-      return;
-    }
-
-    setStatus('sending');
-    setMessage('Building transaction... Confirm in Phantom when prompted.');
-
+  const handleSweep = async (vault: SweepableVault) => {
+    if (!publicKey || !sendTransaction || !sweepConfig) return;
+    const key = `${vault.type}-${vault.contractRoundId ?? vault.onChainGameId}`;
+    setSweeping(key);
+    setError('');
     try {
-      const conn = new Connection(MAINNET_RPC, 'confirmed');
-      const ix = buildInitializeIx(publicKey, OPERATOR, REVENUE, REVENUE);
+      const connection = new Connection(getSolanaRpcEndpoint(), 'confirmed');
+      const sweepWallet = new PublicKey(sweepConfig.sweepWallet);
 
-      const { blockhash } = await getRecentBlockhashWithRetry(conn);
+      let ix;
+      if (vault.type === 'round' && vault.contractRoundId != null && vault.tierIndex != null) {
+        ix = buildSweepTierRoundIx(publicKey, vault.contractRoundId, vault.tierIndex, sweepWallet);
+      } else if (vault.type === 'custom' && vault.onChainGameId != null) {
+        ix = buildSweepCustomGameIx(publicKey, vault.onChainGameId, sweepWallet);
+      } else {
+        throw new Error('Invalid vault type');
+      }
+
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const msg = new TransactionMessage({
         payerKey: publicKey,
         recentBlockhash: blockhash,
         instructions: [ix],
       }).compileToV0Message();
       const tx = new VersionedTransaction(msg);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
 
-      const signature = await sendTransaction(tx, conn);
-      await conn.confirmTransaction(signature, 'confirmed');
-
-      setSig(signature);
-      setStatus('done');
-      setMessage('Program initialized successfully on mainnet!');
+      // Remove swept vault from list
+      setVaults(prev => prev.filter(v => v !== vault));
+      alert(`Swept ${(vault.balanceLamports / LAMPORTS_PER_SOL).toFixed(4)} SOL. Tx: ${signature.slice(0, 16)}...`);
     } catch (err: any) {
-      setStatus('error');
-      setMessage(`Initialize failed: ${err.message || String(err)}`);
+      setError(`Sweep failed: ${err.message || String(err)}`);
     }
+    setSweeping(null);
   };
 
-  const statusColor = {
-    idle: 'border-zinc-500/30',
-    checking: 'border-yellow-500/30',
-    ready: 'border-orange-500/30',
-    sending: 'border-yellow-500/30',
-    done: 'border-green-500/30',
-    already: 'border-green-500/30',
-    error: 'border-red-500/30',
-  }[status];
+  const totalSweepable = vaults.reduce((s, v) => s + v.balanceLamports, 0);
 
   return (
-    <div className={`border ${statusColor} bg-gradient-to-br from-white/5 to-transparent p-6 rounded-xl`}>
-      <h3 className="text-lg font-black mb-3">Mainnet Program Setup</h3>
-      <div className="text-xs text-zinc-400 space-y-1 mb-4">
-        <p>Program: <span className="font-mono text-zinc-300">{SOLTRIVIA_PROGRAM_ID.toBase58().slice(0, 16)}...</span></p>
-        <p>Owner: <span className="font-mono text-zinc-300">{OWNER_WALLET.slice(0, 8)}... (transfer to Ledger later)</span></p>
-        <p>Operator: <span className="font-mono text-zinc-300">{OPERATOR_WALLET.slice(0, 8)}...</span></p>
-        <p>Revenue: <span className="font-mono text-zinc-300">{REVENUE_WALLET.slice(0, 8)}...</span></p>
-        <p>Sweep: <span className="font-mono text-zinc-300">{REVENUE_WALLET.slice(0, 8)}... (same as revenue)</span></p>
+    <div className="border border-white/10 bg-gradient-to-br from-white/5 to-transparent p-6 rounded-xl">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-black">Sweep Vault Funds</h3>
+          <p className="text-zinc-500 text-xs mt-1">Recover unclaimed SOL from completed round and custom game vaults</p>
+        </div>
+        <button
+          onClick={fetchSweepableVaults}
+          disabled={loading}
+          className="px-3 py-1.5 bg-white/10 hover:bg-white/15 text-zinc-300 text-xs font-bold rounded disabled:opacity-50"
+        >
+          {loading ? 'Scanning...' : 'Refresh'}
+        </button>
       </div>
 
-      {message && (
-        <p className={`text-sm mb-4 ${status === 'error' ? 'text-red-400' : status === 'done' || status === 'already' ? 'text-green-400' : 'text-yellow-400'}`}>
-          {message}
+      {sweepConfig && (
+        <p className="text-zinc-500 text-xs mb-4">
+          Sweep wallet: <span className="font-mono text-zinc-400">{sweepConfig.sweepWallet.slice(0, 8)}...{sweepConfig.sweepWallet.slice(-4)}</span>
+          {' | '}Program: <span className="font-mono text-zinc-400">{SOLTRIVIA_PROGRAM_ID.toBase58().slice(0, 8)}...</span>
         </p>
       )}
 
-      {sig && (
-        <p className="text-xs mb-4">
-          <a href={`https://solscan.io/tx/${sig}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-            View transaction on Solscan
-          </a>
-        </p>
+      {error && (
+        <div className="p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+          <p className="text-red-400 text-xs">{error}</p>
+        </div>
       )}
 
-      {(status === 'ready' || status === 'error') && (
-        <div className="space-y-3">
-          {!connected && (
-            <div className="flex items-center gap-3">
-              <WalletMultiButton />
-              <span className="text-xs text-zinc-500">Connect your Ledger wallet</span>
+      {!connected && (
+        <div className="flex items-center gap-3 mb-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+          <WalletMultiButton />
+          <span className="text-xs text-yellow-400">Connect owner wallet (Ledger) to sweep</span>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-zinc-400 text-sm py-4">Scanning vault PDAs for balances...</p>
+      ) : vaults.length === 0 ? (
+        <div className="py-4">
+          <p className="text-zinc-500 text-sm">No sweepable vaults found. All vault balances are zero.</p>
+          {lastRefresh && <p className="text-zinc-600 text-xs mt-1">Last checked: {lastRefresh.toLocaleTimeString()}</p>}
+        </div>
+      ) : (
+        <>
+          <div className="p-3 mb-4 bg-[#14F195]/10 border border-[#14F195]/20 rounded-lg flex items-center justify-between">
+            <div>
+              <p className="text-[#14F195] text-xs font-black uppercase">Sweepable Funds</p>
+              <p className="text-2xl font-[1000] text-[#14F195]">{(totalSweepable / LAMPORTS_PER_SOL).toFixed(4)} SOL</p>
+              <p className="text-zinc-500 text-xs">{vaults.length} vault{vaults.length !== 1 ? 's' : ''} with balance</p>
             </div>
-          )}
-          {connected && (
-            <button
-              onClick={handleInitialize}
-              className="w-full py-3 px-4 rounded-lg font-black text-sm uppercase bg-[#14F195] text-black hover:bg-[#0dd884] transition-all"
-            >
-              Initialize Program on Mainnet
-            </button>
-          )}
-        </div>
-      )}
+            {lastRefresh && <p className="text-zinc-600 text-xs">Checked: {lastRefresh.toLocaleTimeString()}</p>}
+          </div>
 
-      {status === 'sending' && (
-        <div className="flex items-center gap-2 text-yellow-400 text-sm">
-          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-          Waiting for Ledger confirmation...
-        </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="py-2 px-2 text-zinc-600 font-black text-[10px] uppercase">Type</th>
+                  <th className="py-2 px-2 text-zinc-600 font-black text-[10px] uppercase">Label</th>
+                  <th className="py-2 px-2 text-zinc-600 font-black text-[10px] uppercase">Vault PDA</th>
+                  <th className="py-2 px-2 text-zinc-600 font-black text-[10px] uppercase">Balance</th>
+                  <th className="py-2 px-2 text-zinc-600 font-black text-[10px] uppercase">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vaults.map((v) => {
+                  const key = `${v.type}-${v.contractRoundId ?? v.onChainGameId}`;
+                  return (
+                    <tr key={key} className="border-b border-white/5 hover:bg-white/[0.03]">
+                      <td className="py-2 px-2">
+                        <span className={`px-2 py-0.5 text-[10px] font-black uppercase rounded ${
+                          v.type === 'round' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
+                        }`}>{v.type}</span>
+                      </td>
+                      <td className="py-2 px-2 text-zinc-300 text-xs">{v.label}</td>
+                      <td className="py-2 px-2 font-mono text-xs text-zinc-500">{v.vaultPda.toBase58().slice(0, 8)}...{v.vaultPda.toBase58().slice(-4)}</td>
+                      <td className="py-2 px-2 text-[#14F195] text-sm font-bold">{(v.balanceLamports / LAMPORTS_PER_SOL).toFixed(4)}</td>
+                      <td className="py-2 px-2">
+                        <button
+                          type="button"
+                          disabled={!connected || sweeping !== null}
+                          onClick={() => handleSweep(v)}
+                          className="px-3 py-1 bg-[#14F195]/20 hover:bg-[#14F195]/30 border border-[#14F195]/40 text-[#14F195] text-xs font-bold rounded disabled:opacity-50"
+                        >
+                          {sweeping === key ? '...' : 'Sweep'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
