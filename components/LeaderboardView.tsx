@@ -5,7 +5,7 @@ import { useWallet } from '../src/contexts/WalletContext';
 import { useTranslation } from 'react-i18next';
 import Pagination from './Pagination';
 
-type RankPeriod = 'ALL_TIME' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+type RankPeriod = 'ALL_TIME' | 'DAILY';
 type MainLeaderboardTab = 'LEADERBOARD' | 'ROUND_WINS' | 'DUEL_WINS' | 'CUSTOM_GAMES';
 
 interface PlayerStats {
@@ -51,7 +51,9 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
   };
   const { t } = useTranslation();
   const [mainTab, setMainTab] = useState<MainLeaderboardTab>('LEADERBOARD');
-  const [period, setPeriod] = useState<RankPeriod>('ALL_TIME'); // Default: highest score across all rounds
+  const [period, setPeriod] = useState<RankPeriod>('ALL_TIME');
+  const [leaderboardPage, setLeaderboardPage] = useState(0);
+  const [leaderboardTotalCount, setLeaderboardTotalCount] = useState(0);
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,22 +82,25 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
   }, [leaderboardData]);
 
   // Fetch leaderboard; refresh every 2s so it updates as rounds complete
-  const periodApi = period === 'ALL_TIME' ? 'all' : period === 'DAILY' ? 'daily' : period === 'WEEKLY' ? 'weekly' : 'monthly';
+  const LEADERBOARD_PAGE_SIZE = 50;
+  const periodApi = period === 'ALL_TIME' ? 'all' : 'daily';
   useEffect(() => {
     const fetchLeaderboard = async (showLoading: boolean) => {
       try {
         if (showLoading) setLoading(true);
         const userAddress = publicKey?.toBase58();
-        const response = await getLeaderboard(undefined, userAddress || undefined, periodApi);
-        
-        // API returns { leaderboard: [...], period, pot_lamports, player_count, user_rank, user_score }
+        const offset = period === 'ALL_TIME' ? leaderboardPage * LEADERBOARD_PAGE_SIZE : 0;
+        const response = await getLeaderboard(undefined, userAddress || undefined, periodApi, offset);
+
+        // API returns { leaderboard: [...], period, pot_lamports, player_count, user_rank, user_score, total_count }
         const data = Array.isArray(response) ? response : (response.leaderboard || []);
         setLeaderboardData(data);
-        
+
         if (!Array.isArray(response)) {
           const potSol = (response.pot_lamports || 0) / 1_000_000_000;
           setTotalSolWon(potSol);
           setPlayerCount(response.player_count || 0);
+          if (response.total_count != null) setLeaderboardTotalCount(response.total_count);
           // Use API user_rank/user_score when provided; else find in list
           if (userAddress && (response.user_rank != null || response.user_score != null)) {
             setUserRank({
@@ -137,7 +142,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
     const interval = setInterval(() => fetchLeaderboard(false), 2000);
 
     return () => clearInterval(interval);
-  }, [publicKey, period, periodApi]);
+  }, [publicKey, period, periodApi, leaderboardPage]);
 
   // Fetch round winners when Round Wins tab is selected (paginated)
   const ROUNDS_PAGE_SIZE = 10;
@@ -224,7 +229,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
         <div className="flex justify-center mb-6 px-2">
           <div className="flex w-full max-w-lg items-center bg-black/40 p-1 rounded-full border border-white/10 overflow-x-auto no-scrollbar">
             {([
-              { key: 'LEADERBOARD', label: t('leaderboard.tabXp') },
+              { key: 'LEADERBOARD', label: t('leaderboard.tabAllTime', 'All-Time') },
               { key: 'ROUND_WINS', label: t('leaderboard.tabRounds') },
               { key: 'DUEL_WINS', label: t('leaderboard.tabDuels') },
               { key: 'CUSTOM_GAMES', label: t('leaderboard.tabCustom') },
@@ -527,7 +532,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
         ) : (
           <>
         {/* Title & Stats Section */}
-        <div className="flex justify-between items-start mb-6">
+        <div className="flex justify-between items-start mb-8">
           <div>
             <h1 className="text-4xl md:text-6xl font-[1000] italic uppercase tracking-tighter leading-[0.85] pr-4">
               GLOBAL<br/>
@@ -552,22 +557,22 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
           </div>
         </div>
 
-        {/* Period Tabs — ALL_TIME = highest score across all rounds; DAILY = current 6h round */}
-        <div className="flex flex-col items-center gap-2 mb-6 px-4">
+        {/* Period Tabs */}
+        <div className="flex flex-col items-center gap-2 mb-8 px-4">
           {period === 'ALL_TIME' && (
-            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">{t('leaderboard.highestScoreEver')}</p>
+            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">{t('leaderboard.allTimeSubtitle', 'RANKED BY TOTAL XP EARNED')}</p>
           )}
           {period === 'DAILY' && (
             <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">{t('leaderboard.currentRound')}</p>
           )}
           <div className="flex w-full max-w-md items-center justify-between bg-black/40 p-1.5 rounded-full border border-white/10">
-            {(['ALL_TIME', 'DAILY', 'WEEKLY', 'MONTHLY'] as RankPeriod[]).map((p) => (
+            {(['ALL_TIME', 'DAILY'] as RankPeriod[]).map((p) => (
               <button
                 key={p}
-                onClick={() => setPeriod(p)}
+                onClick={() => { setPeriod(p); setLeaderboardPage(0); }}
                 className={`flex-1 text-[11px] font-black uppercase tracking-[0.2em] py-3.5 rounded-full transition-all ${
-                  period === p 
-                    ? 'bg-[#14F195] text-black active-tab-shadow scale-105 shadow-xl shadow-[#14F195]/20' 
+                  period === p
+                    ? 'bg-[#14F195] text-black active-tab-shadow scale-105 shadow-xl shadow-[#14F195]/20'
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
@@ -627,8 +632,8 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
             </div>
           )}
 
-          {/* Mobile Podium (Top 3) */}
-          {allPlayers.length >= 3 && (
+          {/* Mobile Podium (Top 3) — only on first page */}
+          {leaderboardPage === 0 && allPlayers.length >= 3 && (
             <div className="md:hidden flex items-end justify-center gap-2 mb-10 px-2">
               {[allPlayers[1], allPlayers[0], allPlayers[2]].filter(Boolean).map((player, idx) => {
               const isFirst = player.rank === '1';
@@ -667,8 +672,8 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
             </div>
           )}
 
-          {/* Desktop Podium (Top 5) */}
-          {allPlayers.length >= 5 && (
+          {/* Desktop Podium (Top 5) — only on first page */}
+          {leaderboardPage === 0 && allPlayers.length >= 5 && (
             <div className="hidden md:flex items-end justify-center gap-6 lg:gap-8 mb-16">
               {[allPlayers[4], allPlayers[2], allPlayers[0], allPlayers[1], allPlayers[3]].filter(Boolean).map((player, idx) => {
               const rankInt = parseInt(player.rank);
@@ -742,7 +747,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                 <span className="w-24 text-center">{t('leaderboard.games')}</span>
                 <span className="w-32 text-right">{t('leaderboard.xpEarned')}</span>
               </div>
-              {allPlayers.slice(5).map((player, idx) => (
+              {allPlayers.slice(leaderboardPage === 0 ? 5 : 0).map((player, idx) => (
                 <div key={idx} className="flex items-center gap-4 p-3 bg-white/[0.02] border border-white/5 rounded-xl group hover:bg-white/[0.04] transition-all duration-300">
                     <span className="w-10 text-center font-[1000] italic text-zinc-600 group-hover:text-[#14F195] text-2xl tabular-nums transition-colors leading-none">{player.rank}</span>
                     <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/10 grayscale group-hover:grayscale-0 transition-all flex-shrink-0">
@@ -763,11 +768,11 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
 
           {/* Mobile Version: Compact Row Layout */}
           <div className="md:hidden space-y-2">
-            {allPlayers.slice(3).map((player, idx) => {
+            {allPlayers.slice(leaderboardPage === 0 ? 3 : 0).map((player, idx) => {
               let rankColor = 'text-zinc-600';
               let scoreColor = 'text-[#14F195]';
               let cardStyle = 'bg-zinc-900/40 border-white/5';
-              
+
               if (player.rank === '4') {
                   rankColor = 'text-[#9945FF]';
                   cardStyle = 'bg-[#9945FF]/5 border-[#9945FF]/10';
@@ -781,11 +786,11 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                   <span className={`${rankColor} text-2xl font-[1000] italic leading-none w-8 text-center tabular-nums`}>
                     {player.rank}
                   </span>
-                  
+
                   <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/10 grayscale flex-shrink-0">
                       <img src={avatarFor(player.wallet_address, player.avatar)} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }} />
                   </div>
-                  
+
                   <div className="flex-1 min-w-0">
                       <p className="font-[1000] italic text-[13px] uppercase text-white truncate tracking-tight leading-tight mb-0.5 flex items-center gap-1">{player.username}{player.is_seeker_verified && <SeekerBadge className="ml-0.5" />}</p>
                       <div className="flex items-center gap-2">
@@ -794,7 +799,7 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
                          <span className="text-zinc-500 text-[7px] font-black uppercase italic tracking-tighter truncate max-w-[60px]">{player.winnings}</span>
                       </div>
                   </div>
-                  
+
                   <div className="text-right flex-shrink-0">
                       <p className={`${scoreColor} font-[1000] italic text-lg leading-none tabular-nums`}>{player.score}</p>
                       <p className="text-zinc-600 text-[6px] font-black uppercase italic tracking-widest leading-none mt-1">POINTS</p>
@@ -803,6 +808,16 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
               );
             })}
           </div>
+
+          {/* Pagination — All-Time only */}
+          {period === 'ALL_TIME' && (
+            <Pagination
+              currentPage={leaderboardPage}
+              totalCount={leaderboardTotalCount}
+              pageSize={LEADERBOARD_PAGE_SIZE}
+              onPageChange={setLeaderboardPage}
+            />
+          )}
         </div>
         )}
           </>

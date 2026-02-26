@@ -297,11 +297,13 @@ export interface LeaderboardResponse {
   player_count: number;
   user_rank: number | null;
   user_score: number | null;
+  total_count?: number;
 }
 
-export async function getLeaderboard(round_id?: string, wallet?: string, period?: 'daily' | 'weekly' | 'monthly' | 'all'): Promise<LeaderboardResponse> {
-  const body: { round_id?: string; wallet?: string; period?: string } = { round_id, wallet };
+export async function getLeaderboard(round_id?: string, wallet?: string, period?: 'daily' | 'weekly' | 'monthly' | 'all', offset?: number): Promise<LeaderboardResponse> {
+  const body: { round_id?: string; wallet?: string; period?: string; offset?: number } = { round_id, wallet };
   if (period) body.period = period;
+  if (offset != null && offset > 0) body.offset = offset;
   const response = await fetch(`${FUNCTIONS_URL}/get-leaderboard`, {
     method: 'POST',
     headers: getAuthHeaders(),
@@ -880,21 +882,39 @@ export async function fetchRoundPayouts(roundIds: string[]): Promise<RoundPayout
   return (data ?? []) as RoundPayout[];
 }
 
-/** Total SOL won (lamports) per wallet from round_payouts (prize/paid). For leaderboard SOL won column. */
+/** Total SOL won (lamports) per wallet from round_payouts + duel winnings. For leaderboard SOL won column. */
 export async function getTotalSolWonByWallets(walletAddresses: string[]): Promise<Record<string, number>> {
   if (!isSupabaseConfigured || walletAddresses.length === 0) return {};
   const uniq = [...new Set(walletAddresses)].slice(0, 200);
-  const { data, error } = await supabase
+  const out: Record<string, number> = {};
+
+  // Round payouts
+  const { data: roundData, error: roundErr } = await supabase
     .from('round_payouts')
     .select('wallet_address, prize_lamports, paid_lamports')
     .in('wallet_address', uniq);
-  if (error) return {};
-  const out: Record<string, number> = {};
-  for (const row of data ?? []) {
-    const w = row.wallet_address as string;
-    const lamports = Number(row.paid_lamports ?? row.prize_lamports ?? 0) || 0;
-    out[w] = (out[w] ?? 0) + lamports;
+  if (!roundErr) {
+    for (const row of roundData ?? []) {
+      const w = row.wallet_address as string;
+      const lamports = Number(row.paid_lamports ?? row.prize_lamports ?? 0) || 0;
+      out[w] = (out[w] ?? 0) + lamports;
+    }
   }
+
+  // Duel winnings (winner gets 2x entry fee)
+  const { data: duelData, error: duelErr } = await supabase
+    .from('duels')
+    .select('winner_wallet, entry_fee_lamports')
+    .in('winner_wallet', uniq)
+    .in('status', ['completed', 'resolved']);
+  if (!duelErr) {
+    for (const row of duelData ?? []) {
+      const w = row.winner_wallet as string;
+      const lamports = Number(row.entry_fee_lamports ?? 0) * 2;
+      out[w] = (out[w] ?? 0) + lamports;
+    }
+  }
+
   return out;
 }
 
