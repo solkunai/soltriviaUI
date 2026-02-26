@@ -262,8 +262,8 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   const isCreator = !!(walletAddress && gameData.creator_wallet === walletAddress);
   const hasEntered = gameData.player_has_entered;
   const attemptsUsed = gameData.player_attempts ?? 0;
-  const canPlay = attemptsUsed < CUSTOM_GAME_MAX_ATTEMPTS;
   const hasInProgress = gameData.player_has_in_progress;
+  const canPlay = attemptsUsed < CUSTOM_GAME_MAX_ATTEMPTS || hasInProgress;
   const isReEntry = isPaid && hasEntered && attemptsUsed > 0 && !hasInProgress;
   const reEntryFeeSOL = isReEntry ? getReEntryFeeLamports(gameData.entry_fee_lamports) / 1e9 : 0;
   const entryFeeSOL = gameData.entry_fee_lamports / 1e9;
