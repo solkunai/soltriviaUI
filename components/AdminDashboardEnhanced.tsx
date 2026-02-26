@@ -432,11 +432,15 @@ const RoundsView: React.FC = () => {
 };
 
 function getRoundLabel(date: string, roundNumber: number): string {
-  const d = new Date(date + 'Z');
-  const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  const start = roundNumber * 6;
-  const end = start + 6;
-  return `${day} ${start}:00–${end}:00 UTC`;
+  const startHourUTC = roundNumber * 6;
+  const startMs = new Date(date + 'T00:00:00Z').getTime() + startHourUTC * 3600_000;
+  const endMs = startMs + 6 * 3600_000;
+  const tz = 'America/New_York';
+  const day = new Date(startMs).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: tz });
+  const startTime = new Date(startMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz });
+  const endTime = new Date(endMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz });
+  const tzAbbr = new Date(startMs).toLocaleTimeString('en-US', { timeZoneName: 'short', timeZone: tz }).split(' ').pop();
+  return `${day} ${startTime}–${endTime} ${tzAbbr}`;
 }
 
 const ROUND_WINNERS_PAGE_SIZE = 10;
