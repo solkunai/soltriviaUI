@@ -189,9 +189,9 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
         HapticFeedback.error();
         playWrongSound();
         setTimeout(() => {
-          timeoutFiredRef.current = false;
-          setTimedOut(false);
           if (currentIdx < questions.length - 1) {
+            timeoutFiredRef.current = false;
+            setTimedOut(false);
             setCurrentIdx((prev) => prev + 1);
             setSelectedOption(null);
             setIsCorrect(null);
@@ -291,9 +291,16 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
 
       } catch (err) {
         console.error('❌ Failed to submit answer:', err);
-        // Reset so player can tap again when connection recovers
-        setSelectedOption(null);
-        setIsCorrect(null);
+        if (currentIdx >= questions.length - 1) {
+          // Last question — server likely already processed, finish gracefully
+          if (timerRef.current) clearInterval(timerRef.current);
+          if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+          onFinish(score, totalPoints, sessionTimer);
+        } else {
+          // Earlier questions — reset so player can tap again
+          setSelectedOption(null);
+          setIsCorrect(null);
+        }
         return;
       }
     }

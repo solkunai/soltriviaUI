@@ -144,8 +144,10 @@ const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAdd
         setOpponentCorrect(response.opponentCorrectCount);
 
         setTimeout(() => {
-          timeoutFiredRef.current = false;
-          setTimedOut(false);
+          if (!response.isLastQuestion && !response.duelComplete) {
+            timeoutFiredRef.current = false;
+            setTimedOut(false);
+          }
           handleAdvance(response);
         }, 800);
       } catch (err) {
@@ -253,9 +255,23 @@ const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAdd
       }, 1200);
     } catch (err: any) {
       console.error('Failed to submit duel answer:', err);
-      // Reset so player can tap again when connection recovers
-      setSelectedOption(null);
-      setIsCorrect(null);
+      if (currentIdx >= questions.length - 1) {
+        // Last question — server likely already processed, finish gracefully
+        if (timerRef.current) clearInterval(timerRef.current);
+        if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+        onFinish({
+          myScore,
+          myCorrect,
+          opponentScore,
+          opponentCorrect,
+          winner: null,
+          duelComplete: false,
+        });
+      } else {
+        // Earlier questions — reset so player can tap again
+        setSelectedOption(null);
+        setIsCorrect(null);
+      }
     }
   };
 

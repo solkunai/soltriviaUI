@@ -154,8 +154,10 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
         playWrongSound();
 
         setTimeout(() => {
-          timeoutFiredRef.current = false;
-          setTimedOut(false);
+          if (!response.isLastQuestion) {
+            timeoutFiredRef.current = false;
+            setTimedOut(false);
+          }
           handleAdvance(response.isLastQuestionInRound, response.isLastQuestion, response.newScore, score);
         }, 800);
       } catch (err) {
@@ -282,9 +284,27 @@ const CustomGameQuizView: React.FC<CustomGameQuizViewProps> = ({ sessionId, game
       }, 1200);
     } catch (err: any) {
       console.error('Failed to submit custom answer:', err);
-      // Reset so player can tap again when connection recovers
-      setSelectedOption(null);
-      setIsCorrect(null);
+      const isLastInGame = (roundQuestionOffset + currentIdx) >= questionCount - 1;
+      if (isLastInGame) {
+        // Last question — server likely already processed, finish gracefully
+        if (timerRef.current) clearInterval(timerRef.current);
+        if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+        const totalTimeMs = sessionTimer * 1000;
+        completeCustomSession({
+          session_id: sessionId,
+          total_score: totalPoints,
+          correct_count: score,
+          time_taken_ms: totalTimeMs,
+        }).then((result) => {
+          onFinish({ score, correctCount: score, totalPoints, timeTakenMs: totalTimeMs, rank: result.rank });
+        }).catch(() => {
+          onFinish({ score, correctCount: score, totalPoints, timeTakenMs: totalTimeMs, rank: null });
+        });
+      } else {
+        // Earlier questions — reset so player can tap again
+        setSelectedOption(null);
+        setIsCorrect(null);
+      }
     }
   };
 
