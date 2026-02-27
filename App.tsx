@@ -1761,7 +1761,7 @@ const App: React.FC = () => {
             lives={livesDisplayReady ? lives : null}
             roundEntriesLeft={Math.max(0, ROUND_ENTRIES_MAX - roundEntriesUsed)}
             roundEntriesMax={ROUND_ENTRIES_MAX}
-            onRestart={handleStartQuiz}
+            onRestart={() => handleStartQuiz()}
             onGoHome={() => setCurrentView(View.HOME)}
             onBuyLives={() => setIsBuyLivesOpen(true)}
           />
