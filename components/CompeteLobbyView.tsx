@@ -3,6 +3,7 @@ import { useConnection } from '../src/contexts/WalletContext';
 import { fetchTierRound, contractRoundIdFromDateAndNumber, type TierRoundData } from '../src/utils/soltriviaContract';
 import { fetchRoundsWithWinnersPaginated, getCurrentRoundKey, getRoundLabel, type RoundWithWinner } from '../src/utils/api';
 import { V2_TIER_FEES, V2_TIER_LABELS, TXN_FEE_LAMPORTS, TRIVIA_PRIZE_BPS, TRIVIA_PRIZE_LABELS } from '../src/utils/constants';
+import { supabase } from '../src/utils/supabase';
 
 interface CompeteLobbyViewProps {
   lives: number | null;
@@ -69,6 +70,8 @@ export default function CompeteLobbyView({
   const [recentRounds, setRecentRounds] = useState<RoundWithWinner[]>([]);
   const [recentLoading, setRecentLoading] = useState(true);
   const [recentPage, setRecentPage] = useState(0);
+  const [activeDuelCount, setActiveDuelCount] = useState(0);
+  const [activeCustomGameCount, setActiveCustomGameCount] = useState(0);
   const lastRoundNumberRef = useRef(getContractRoundId().roundNumber);
 
   const roundEntriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
@@ -141,6 +144,22 @@ export default function CompeteLobbyView({
     return () => clearInterval(id);
   }, [fetchTierData, fetchRecent]);
 
+  // Active duels & custom games counts
+  useEffect(() => {
+    const fetchCounts = async () => {
+      const now = new Date().toISOString();
+      const [duels, cg] = await Promise.all([
+        supabase.from('duels').select('*', { count: 'exact', head: true }).in('status', ['waiting', 'active']).gt('expires_at', now),
+        supabase.from('custom_games').select('*', { count: 'exact', head: true }).in('status', ['active', 'started']),
+      ]);
+      setActiveDuelCount(duels.count ?? 0);
+      setActiveCustomGameCount(cg.count ?? 0);
+    };
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleCTA = () => {
     if (!walletConnected) { onConnectWallet(); return; }
     if (!canPlay) { onOpenBuyLives(); return; }
@@ -158,6 +177,61 @@ export default function CompeteLobbyView({
           </button>
           <h1 className="text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter text-white">Compete for SOL</h1>
           <div className="w-6" /> {/* spacer */}
+        </div>
+
+        {/* Game Modes */}
+        <div className="grid grid-cols-3 gap-2">
+          {/* 1v1 Duels */}
+          <button
+            onClick={onEnterDuels}
+            className="bg-[#0A0A0A] border border-[#FF3131]/20 hover:border-[#FF3131]/40 rounded-xl p-3 text-left transition-all active:scale-[0.98]"
+          >
+            <span className="text-[#FF3131]/60 text-[7px] font-black uppercase tracking-[0.15em] block mb-1">1V1 ARENA</span>
+            <span className="text-[#FF3131] text-xs md:text-sm font-[1000] italic leading-none uppercase tracking-tighter block">
+              Enter the Arena
+            </span>
+            <div className="mt-2 flex items-center gap-1.5">
+              {activeDuelCount > 0 && (
+                <span className="bg-[#FF3131]/20 text-[#FF3131] text-[7px] font-black italic uppercase tracking-wider px-1.5 py-0.5 rounded-full">
+                  {activeDuelCount} ACTIVE
+                </span>
+              )}
+              <span className="text-zinc-500 text-[8px] font-bold italic">0.01–1 SOL</span>
+            </div>
+          </button>
+
+          {/* Custom Games */}
+          <button
+            onClick={onCreateCustomGame}
+            className="bg-[#0A0A0A] border border-[#38BDF8]/20 hover:border-[#38BDF8]/40 rounded-xl p-3 text-left transition-all active:scale-[0.98]"
+          >
+            <span className="text-[#38BDF8]/60 text-[7px] font-black uppercase tracking-[0.15em] block mb-1">CREATE & SHARE</span>
+            <span className="text-[#38BDF8] text-xs md:text-sm font-[1000] italic leading-none uppercase tracking-tighter block">
+              Join a Game
+            </span>
+            <div className="mt-2 flex items-center gap-1.5">
+              {activeCustomGameCount > 0 && (
+                <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[7px] font-black italic uppercase tracking-wider px-1.5 py-0.5 rounded-full">
+                  {activeCustomGameCount} ACTIVE
+                </span>
+              )}
+              <span className="text-zinc-500 text-[8px] font-bold italic">{hasGamePass ? '0.0025' : '0.0225'} SOL</span>
+            </div>
+          </button>
+
+          {/* Free Play */}
+          <button
+            onClick={onStartPractice}
+            className="bg-[#0A0A0A] border border-white/10 hover:border-white/20 rounded-xl p-3 text-left transition-all active:scale-[0.98]"
+          >
+            <span className="text-white/40 text-[7px] font-black uppercase tracking-[0.15em] block mb-1">PRACTICE</span>
+            <span className="text-white/80 text-xs md:text-sm font-[1000] italic leading-none uppercase tracking-tighter block">
+              Free Play
+            </span>
+            <div className="mt-2">
+              <span className="text-zinc-500 text-[8px] font-bold italic">No SOL needed</span>
+            </div>
+          </button>
         </div>
 
         {/* Live Round Info */}
@@ -345,34 +419,6 @@ export default function CompeteLobbyView({
               )}
             </>
           )}
-        </div>
-
-        {/* Other Game Modes */}
-        <div>
-          <div className="text-[9px] font-black uppercase tracking-[0.3em] text-white/70 mb-2">Other Game Modes</div>
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              onClick={onStartPractice}
-              className="bg-[#0A0A0A] border border-white/10 hover:border-[#3b82f6]/50 rounded-xl px-3 py-3 text-center transition-all"
-            >
-              <div className="text-base mb-0.5">🧠</div>
-              <div className="text-[9px] font-black uppercase tracking-wider text-white/70">Free Play</div>
-            </button>
-            <button
-              onClick={onEnterDuels}
-              className="bg-[#0A0A0A] border border-white/10 hover:border-[#FF3131]/50 rounded-xl px-3 py-3 text-center transition-all"
-            >
-              <div className="text-base mb-0.5">&#9876;&#65039;</div>
-              <div className="text-[9px] font-black uppercase tracking-wider text-white/70">1v1 Duels</div>
-            </button>
-            <button
-              onClick={onCreateCustomGame}
-              className="bg-[#0A0A0A] border border-white/10 hover:border-[#9945FF]/50 rounded-xl px-3 py-3 text-center transition-all"
-            >
-              <div className="text-base mb-0.5">&#127922;</div>
-              <div className="text-[9px] font-black uppercase tracking-wider text-white/70">Custom</div>
-            </button>
-          </div>
         </div>
 
         {/* Round info line */}

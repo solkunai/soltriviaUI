@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PAID_TRIVIA_ENABLED, V2_TIER_FEES, V2_TIER_LABELS, TXN_FEE_LAMPORTS } from '../src/utils/constants';
 import type { ClaimablePayout, ClaimableCustomGameWin, RefundableEntry, RefundableCustomGame } from '../src/utils/api';
+import { supabase } from '../src/utils/supabase';
 
 interface PlayViewProps {
   lives: number | null;
@@ -30,7 +31,24 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
   const { t } = useTranslation();
   const [selectedTier, setSelectedTier] = useState(0);
   const [claimsExpanded, setClaimsExpanded] = useState(false);
+  const [activeDuelCount, setActiveDuelCount] = useState(0);
+  const [activeCustomGameCount, setActiveCustomGameCount] = useState(0);
   const roundEntriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
+
+  useEffect(() => {
+    const fetchCounts = async () => {
+      const now = new Date().toISOString();
+      const [duels, cg] = await Promise.all([
+        supabase.from('duels').select('*', { count: 'exact', head: true }).in('status', ['waiting', 'active']).gt('expires_at', now),
+        supabase.from('custom_games').select('*', { count: 'exact', head: true }).in('status', ['active', 'started']),
+      ]);
+      setActiveDuelCount(duels.count ?? 0);
+      setActiveCustomGameCount(cg.count ?? 0);
+    };
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 30_000);
+    return () => clearInterval(interval);
+  }, []);
   const livesNum = lives ?? 0;
   const canPlay = roundEntriesLeft > 0 || livesNum > 0;
 
@@ -158,23 +176,67 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
           </div>
         )}
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 gap-2.5 w-full mb-3 md:mb-4">
-          <div className={`bg-[#0A0A0A] border rounded-xl p-3 md:p-4 text-center ${roundEntriesLeft > 0 ? 'border-[#14F195]/20' : 'border-white/5'}`}>
-            <span className="text-zinc-500 text-[8px] font-black uppercase block mb-1 tracking-widest italic">{t('play.roundEntries')}</span>
-            <span className={`font-[1000] text-lg md:text-xl italic tabular-nums leading-none ${roundEntriesLeft > 0 ? 'text-[#14F195]' : 'text-zinc-600'}`}>
-              {roundEntriesLeft}<span className="text-zinc-600 text-xs">/{roundEntriesMax}</span>
-            </span>
-          </div>
+        {/* Game Mode Cards — 3 column grid */}
+        <div className="grid grid-cols-3 gap-2 md:gap-3 w-full mb-3 md:mb-4">
+          {/* Compete for SOL */}
           <button
-            onClick={onOpenBuyLives}
-            className={`border rounded-xl p-3 md:p-4 text-center transition-colors ${livesNum > 0 ? 'bg-[#0A0A0A] border-white/10 hover:border-white/20' : 'bg-[#FF3131]/5 border-[#FF3131]/20 hover:bg-[#FF3131]/10'}`}
+            onClick={PAID_TRIVIA_ENABLED ? (canPlay ? () => onStartQuiz(selectedTier) : onOpenBuyLives) : undefined}
+            disabled={!PAID_TRIVIA_ENABLED}
+            className={`p-3 md:p-4 rounded-xl text-left transition-all active:scale-[0.98] ${PAID_TRIVIA_ENABLED ? 'bg-[#0A0A0A] border border-[#14F195]/30 hover:border-[#14F195]/60' : 'bg-[#0A0A0A] border border-zinc-800 opacity-50 cursor-not-allowed'}`}
           >
-            <span className={`text-[8px] font-black uppercase block mb-1 tracking-widest italic ${livesNum > 0 ? 'text-zinc-500' : 'text-[#FF3131]'}`}>{t('play.extraLives')}</span>
-            <span className={`font-[1000] text-lg md:text-xl italic tabular-nums leading-none ${livesNum > 0 ? 'text-white' : 'text-[#FF3131]'}`}>
-              {livesNum > 0 ? livesNum : t('play.buy')}
+            <span className="text-[#14F195]/60 text-[7px] md:text-[8px] font-black uppercase tracking-[0.2em] block mb-1">{t('play.entry', { amount: totalFee })}</span>
+            <span className="text-[#14F195] text-sm md:text-lg font-[1000] italic leading-none uppercase tracking-tighter block">
+              {t('play.competeForSol')}
             </span>
+            <div className="mt-2 flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#14F195] animate-pulse"></div>
+              <span className="text-zinc-500 text-[8px] md:text-[9px] font-bold italic">{roundEntriesLeft}/{roundEntriesMax} {t('play.roundEntries').toLowerCase()}</span>
+            </div>
           </button>
+
+          {/* 1v1 Duels */}
+          {onEnterDuels && (
+            <button
+              onClick={onEnterDuels}
+              className="p-3 md:p-4 bg-[#0A0A0A] border border-[#FF3131]/20 hover:border-[#FF3131]/40 rounded-xl text-left transition-all active:scale-[0.98]"
+            >
+              <span className="text-[#FF3131]/60 text-[7px] md:text-[8px] font-black uppercase tracking-[0.2em] block mb-1">1V1 ARENA</span>
+              <span className="text-[#FF3131] text-sm md:text-lg font-[1000] italic leading-none uppercase tracking-tighter block">
+                {t('play.enterArena')}
+              </span>
+              <div className="mt-2 flex items-center gap-1.5">
+                {activeDuelCount > 0 && (
+                  <span className="bg-[#FF3131]/20 text-[#FF3131] text-[7px] font-black italic uppercase tracking-wider px-1.5 py-0.5 rounded-full">
+                    {activeDuelCount} {t('play.active')}
+                  </span>
+                )}
+                <div className="w-1.5 h-1.5 rounded-full bg-[#FF3131] animate-pulse"></div>
+                <span className="text-zinc-500 text-[8px] md:text-[9px] font-bold italic">{t('play.duelPriceRange')}</span>
+              </div>
+            </button>
+          )}
+
+          {/* Custom Games */}
+          {onCreateCustomGame && (
+            <button
+              onClick={onCreateCustomGame}
+              className="p-3 md:p-4 bg-[#0A0A0A] border border-[#38BDF8]/20 hover:border-[#38BDF8]/40 rounded-xl text-left transition-all active:scale-[0.98]"
+            >
+              <span className="text-[#38BDF8]/60 text-[7px] md:text-[8px] font-black uppercase tracking-[0.2em] block mb-1">{t('play.createAndShare')}</span>
+              <span className="text-[#38BDF8] text-sm md:text-lg font-[1000] italic leading-none uppercase tracking-tighter block">
+                {t('play.joinGame')}
+              </span>
+              <div className="mt-2 flex items-center gap-1.5">
+                {activeCustomGameCount > 0 && (
+                  <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[7px] font-black italic uppercase tracking-wider px-1.5 py-0.5 rounded-full">
+                    {activeCustomGameCount} {t('play.active')}
+                  </span>
+                )}
+                <div className="w-1.5 h-1.5 rounded-full bg-[#38BDF8]"></div>
+                <span className="text-zinc-500 text-[8px] md:text-[9px] font-bold italic">{hasGamePass ? '0.0025 SOL' : '0.0225 SOL'}</span>
+              </div>
+            </button>
+          )}
         </div>
 
         {/* Tier Selector */}
@@ -202,40 +264,34 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
           </div>
         )}
 
-        {/* Primary: Compete for SOL */}
-        <button
-          onClick={PAID_TRIVIA_ENABLED ? (canPlay ? () => onStartQuiz(selectedTier) : onOpenBuyLives) : undefined}
-          disabled={!PAID_TRIVIA_ENABLED}
-          className={`w-full h-16 md:h-20 rounded-2xl flex items-center justify-between px-6 md:px-8 transition-all relative overflow-hidden mb-2.5 ${PAID_TRIVIA_ENABLED ? 'bg-gradient-to-r from-[#00FFA3] to-[#14F195] active:scale-[0.98] group shadow-[0_10px_30px_-8px_rgba(20,241,149,0.4)] hover:shadow-[0_15px_40px_-8px_rgba(20,241,149,0.6)] border border-white/20' : 'bg-zinc-800/60 border border-zinc-700/40 cursor-not-allowed'}`}
-        >
-          {PAID_TRIVIA_ENABLED && <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>}
-          <div className="flex flex-col items-start relative z-10">
-            <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] mb-0.5 ${PAID_TRIVIA_ENABLED ? 'text-black/50' : 'text-zinc-500'}`}>{PAID_TRIVIA_ENABLED ? t('play.entry', { amount: totalFee }) : t('play.paused')}</span>
-            <span className={`${PAID_TRIVIA_ENABLED ? 'text-black' : 'text-zinc-500'} text-xl md:text-3xl font-[1000] italic leading-none uppercase tracking-tighter`}>
-              {canPlay ? t('play.competeForSol') : t('play.getExtraLives')}
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 gap-2.5 w-full mb-3 md:mb-4">
+          <div className={`bg-[#0A0A0A] border rounded-xl p-3 md:p-4 text-center ${roundEntriesLeft > 0 ? 'border-[#14F195]/20' : 'border-white/5'}`}>
+            <span className="text-zinc-500 text-[8px] font-black uppercase block mb-1 tracking-widest italic">{t('play.roundEntries')}</span>
+            <span className={`font-[1000] text-lg md:text-xl italic tabular-nums leading-none ${roundEntriesLeft > 0 ? 'text-[#14F195]' : 'text-zinc-600'}`}>
+              {roundEntriesLeft}<span className="text-zinc-600 text-xs">/{roundEntriesMax}</span>
             </span>
           </div>
-          <div className={`w-8 h-8 rounded-full ${PAID_TRIVIA_ENABLED ? 'bg-black/10' : 'bg-white/10'} flex items-center justify-center relative z-10`}>
-            <svg className={`w-4 h-4 ${PAID_TRIVIA_ENABLED ? 'text-black' : 'text-zinc-500'}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-            </svg>
-          </div>
-        </button>
+          <button
+            onClick={onOpenBuyLives}
+            className={`border rounded-xl p-3 md:p-4 text-center transition-colors ${livesNum > 0 ? 'bg-[#0A0A0A] border-white/10 hover:border-white/20' : 'bg-[#FF3131]/5 border-[#FF3131]/20 hover:bg-[#FF3131]/10'}`}
+          >
+            <span className={`text-[8px] font-black uppercase block mb-1 tracking-widest italic ${livesNum > 0 ? 'text-zinc-500' : 'text-[#FF3131]'}`}>{t('play.extraLives')}</span>
+            <span className={`font-[1000] text-lg md:text-xl italic tabular-nums leading-none ${livesNum > 0 ? 'text-white' : 'text-[#FF3131]'}`}>
+              {livesNum > 0 ? livesNum : t('play.buy')}
+            </span>
+          </button>
+        </div>
 
-        {/* Secondary: Practice / Free Play */}
+        {/* Free Play */}
         <button
           onClick={onStartPractice}
           disabled={!hasGamePass && practiceRunsLeft <= 0}
-          className={`w-full h-14 md:h-16 bg-[#0A0A0A] border-2 rounded-2xl flex items-center justify-center px-6 active:scale-[0.98] transition-all group relative overflow-hidden mb-2.5 ${(hasGamePass || practiceRunsLeft > 0) ? 'border-[#14F195]/30 hover:border-[#14F195]/60' : 'border-zinc-700/30 opacity-50 cursor-not-allowed'}`}
+          className={`w-full h-12 md:h-14 bg-[#0A0A0A] border-2 rounded-2xl flex items-center justify-center px-6 active:scale-[0.98] transition-all group relative overflow-hidden mb-2.5 ${(hasGamePass || practiceRunsLeft > 0) ? 'border-[#14F195]/30 hover:border-[#14F195]/60' : 'border-zinc-700/30 opacity-50 cursor-not-allowed'}`}
         >
-          <div className="flex items-center gap-2 relative z-10">
-            <svg className="w-5 h-5 text-[#14F195]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            <span className="text-[#14F195] text-base md:text-xl font-[1000] italic leading-none uppercase tracking-tighter">
-              {hasGamePass ? t('play.freePlay') : practiceRunsLeft > 0 ? t('play.tryFreePlay') : t('play.noRunsLeft')}
-            </span>
-          </div>
+          <span className="text-[#14F195] text-sm md:text-base font-[1000] italic leading-none uppercase tracking-tighter">
+            {hasGamePass ? t('play.freePlay') : practiceRunsLeft > 0 ? t('play.tryFreePlay') : t('play.noRunsLeft')}
+          </span>
           {hasGamePass ? (
             <span className="absolute right-5 text-[#14F195]/60 text-[9px] font-black italic uppercase tracking-wider">{t('play.unlimited')}</span>
           ) : practiceRunsLeft > 0 ? (
@@ -243,44 +299,26 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
           ) : null}
         </button>
 
-        {/* 1v1 Duels */}
-        {onEnterDuels && (
+        {/* Game Pass Promo */}
+        {!hasGamePass && (
           <button
-            onClick={onEnterDuels}
-            className="w-full h-12 md:h-14 bg-[#0A0A0A] border-2 border-[#FF3131]/30 hover:border-[#FF3131]/60 rounded-2xl flex items-center justify-between px-6 active:scale-[0.98] transition-all group relative overflow-hidden mb-2.5"
+            onClick={onOpenBuyLives}
+            className="w-full flex items-center justify-between px-4 py-3 bg-[#0A0A0A] border border-[#14F195]/15 hover:border-[#14F195]/35 rounded-xl transition-all active:scale-[0.98] mb-3"
           >
-            <div className="flex items-center gap-2 relative z-10">
-              <svg className="w-4 h-4 text-[#FF3131]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              <span className="text-[#FF3131] text-sm md:text-base font-[1000] italic leading-none uppercase tracking-tighter">
-                {t('play.duels')}
-              </span>
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-[#14F195]/10 flex items-center justify-center">
+                <svg className="w-3.5 h-3.5 text-[#14F195]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="text-left">
+                <span className="text-[#14F195] text-[10px] font-[1000] italic uppercase tracking-tight block">Game Pass — $20</span>
+                <span className="text-zinc-500 text-[8px] font-bold italic">Unlimited practice + cheap custom games</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 relative z-10">
-              <span className="bg-[#FF3131]/20 text-[#FF3131] text-[7px] font-black italic uppercase tracking-wider px-1.5 py-0.5 rounded-full">{t('play.live')}</span>
-              <span className="text-zinc-500 text-[9px] font-black italic">{t('play.duelPriceRange')}</span>
-            </div>
-          </button>
-        )}
-
-        {/* Create Custom Game */}
-        {onCreateCustomGame && (
-          <button
-            onClick={onCreateCustomGame}
-            className="w-full h-12 md:h-14 bg-[#0A0A0A] border-2 border-white/10 hover:border-white/25 rounded-2xl flex items-center justify-between px-6 active:scale-[0.98] transition-all group relative overflow-hidden mb-4"
-          >
-            <div className="flex items-center gap-2 relative z-10">
-              <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-              </svg>
-              <span className="text-zinc-300 text-sm md:text-base font-[1000] italic leading-none uppercase tracking-tighter">
-                {t('play.createCustomGame')}
-              </span>
-            </div>
-            <span className="text-zinc-600 text-[9px] font-black italic uppercase tracking-wider relative z-10">
-              {hasGamePass ? '0.0025 SOL' : '0.0225 SOL'}
-            </span>
+            <svg className="w-4 h-4 text-zinc-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
           </button>
         )}
 

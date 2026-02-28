@@ -44,6 +44,8 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
   const [playersEntered, setPlayersEntered] = useState(0);
   const [nextRoundCountdown, setNextRoundCountdown] = useState('');
   const [myPlayedGames, setMyPlayedGames] = useState<PlayedGame[]>([]);
+  const [activeDuelCount, setActiveDuelCount] = useState(0);
+  const [activeCustomGameCount, setActiveCustomGameCount] = useState(0);
 
   // Calculate time until next round (6-hour intervals)
   const calculateNextRoundTime = () => {
@@ -162,6 +164,22 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
     const interval = setInterval(refresh, 15_000);
     return () => { mounted = false; clearInterval(interval); };
   }, [connection]);
+
+  // Active duels & custom games counts
+  useEffect(() => {
+    const fetchCounts = async () => {
+      const now = new Date().toISOString();
+      const [duels, cg] = await Promise.all([
+        supabase.from('duels').select('*', { count: 'exact', head: true }).in('status', ['waiting', 'active']).gt('expires_at', now),
+        supabase.from('custom_games').select('*', { count: 'exact', head: true }).in('status', ['active', 'started']),
+      ]);
+      setActiveDuelCount(duels.count ?? 0);
+      setActiveCustomGameCount(cg.count ?? 0);
+    };
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="flex flex-col h-full bg-[#050505] overflow-y-auto custom-scrollbar relative">
@@ -310,8 +328,13 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 className="p-4 md:p-5 bg-[#0A0A0A] border border-[#FF3131]/20 hover:border-[#FF3131]/40 rounded-xl text-left transition-all active:scale-[0.98]"
               >
                 <span className="text-[#FF3131]/60 text-[8px] font-black uppercase tracking-[0.3em] block mb-1.5">{t('home.duelsArena')}</span>
-                <span className="text-[#FF3131] text-lg md:text-xl font-[1000] italic leading-none uppercase tracking-tighter block">{t('home.duelsTitle')}</span>
-                <div className="mt-3 flex items-center gap-1.5">
+                <span className="text-[#FF3131] text-lg md:text-xl font-[1000] italic leading-none uppercase tracking-tighter block">{t('home.enterArena')}</span>
+                <div className="mt-3 flex items-center gap-2">
+                  {activeDuelCount > 0 && (
+                    <span className="bg-[#FF3131]/20 text-[#FF3131] text-[7px] font-black italic uppercase tracking-wider px-1.5 py-0.5 rounded-full">
+                      {activeDuelCount} {t('home.active')}
+                    </span>
+                  )}
                   <div className="w-1.5 h-1.5 rounded-full bg-[#FF3131] animate-pulse"></div>
                   <span className="text-zinc-500 text-[9px] font-bold italic">{t('home.duelsPriceRange')}</span>
                 </div>
@@ -333,17 +356,17 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                 className="col-span-2 lg:col-span-1 p-4 md:p-5 bg-[#0A0A0A] border border-[#38BDF8]/20 hover:border-[#38BDF8]/40 rounded-xl text-left transition-all active:scale-[0.98]"
               >
                 <div className="flex items-center gap-3 lg:flex-col lg:items-start lg:gap-0">
-                  <div className="w-9 h-9 rounded-lg bg-[#38BDF8]/10 flex items-center justify-center lg:mb-2">
-                    <svg className="w-4 h-4 text-[#38BDF8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                    </svg>
-                  </div>
                   <div>
                     <span className="text-[#38BDF8]/60 text-[8px] font-black uppercase tracking-[0.3em] block mb-0.5">{t('home.createAndShare')}</span>
-                    <span className="text-[#38BDF8] text-base md:text-lg lg:text-xl font-[1000] italic leading-none uppercase tracking-tighter">{t('home.customGame')}</span>
+                    <span className="text-[#38BDF8] text-base md:text-lg lg:text-xl font-[1000] italic leading-none uppercase tracking-tighter">{t('home.joinGame')}</span>
                   </div>
                 </div>
-                <div className="mt-3 flex items-center gap-1.5">
+                <div className="mt-3 flex items-center gap-2">
+                  {activeCustomGameCount > 0 && (
+                    <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[7px] font-black italic uppercase tracking-wider px-1.5 py-0.5 rounded-full">
+                      {activeCustomGameCount} {t('home.active')}
+                    </span>
+                  )}
                   <div className="w-1.5 h-1.5 rounded-full bg-[#38BDF8]"></div>
                   {hasGamePass ? (
                     <span className="text-[#14F195] text-[9px] font-black italic uppercase">{t('home.free')}</span>
