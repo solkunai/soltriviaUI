@@ -2016,7 +2016,7 @@ const App: React.FC = () => {
             </span>
           </a>
         )}
-        <main className="flex-1 overflow-y-auto relative scroll-smooth flex flex-col pb-[100px] md:pb-0 safe-bottom">
+        <main className="flex-1 min-h-0 overflow-y-auto relative scroll-smooth flex flex-col pb-[100px] md:pb-0 safe-bottom">
           <div className="flex-1 min-h-0">{renderContent()}</div>
         </main>
       </div>
