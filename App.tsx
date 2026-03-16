@@ -103,6 +103,7 @@ const App: React.FC = () => {
   const { connection } = useConnection();
   const [currentView, setCurrentView] = useState<View>(viewFromPath);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [nerdMintCopied, setNerdMintCopied] = useState(false);
   const [isBuyLivesOpen, setIsBuyLivesOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [showWalletRequired, setShowWalletRequired] = useState(false);
@@ -2001,20 +2002,42 @@ const App: React.FC = () => {
       <main className="flex-1 overflow-y-auto relative h-full scroll-smooth flex flex-col pb-[100px] md:pb-0 safe-bottom">
         {/* $NERD Promo Banner — sticky inside scroll container */}
         {!hideSidebar && (
-          <a
-            href="https://jup.ag/swap?sell=So11111111111111111111111111111111111111112&buy=DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="sticky top-0 z-10 shrink-0 flex items-center justify-center gap-2 w-full bg-amber-500/[0.06] border-b border-amber-500/15 px-4 py-1.5 text-center hover:bg-amber-500/[0.10] transition-colors"
-          >
-            <img src="/token-nerd.png" alt="$NERD" className="w-4 h-4 rounded-full object-cover" />
-            <span className="text-amber-400 text-[10px] font-black uppercase tracking-wider italic">
-              Buy $NERD &middot; Save 10% on lives & game pass
-            </span>
-            <span className="text-amber-300/80 text-[10px] font-black uppercase tracking-wider">
-              &rarr;
-            </span>
-          </a>
+          <div className="sticky top-0 z-10 shrink-0 flex items-center justify-center gap-2 w-full bg-amber-500/[0.06] border-b border-amber-500/15 px-4 py-1.5 text-center">
+            <a
+              href="https://bags.fm/DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 hover:opacity-80 transition-opacity"
+            >
+              <img src="/token-nerd.png" alt="$NERD" className="w-4 h-4 rounded-full object-cover" />
+              <span className="text-amber-400 text-[10px] font-black uppercase tracking-wider italic">
+                Buy $NERD &middot; Save 10% on lives & game pass
+              </span>
+              <span className="text-amber-300/80 text-[10px] font-black uppercase tracking-wider">
+                &rarr;
+              </span>
+            </a>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText('DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS');
+                setNerdMintCopied(true);
+                setTimeout(() => setNerdMintCopied(false), 1500);
+              }}
+              className="ml-1 p-1 rounded hover:bg-amber-500/20 transition-colors"
+              title="Copy $NERD mint address"
+            >
+              {nerdMintCopied ? (
+                <svg className="w-3.5 h-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-3.5 h-3.5 text-amber-400/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                </svg>
+              )}
+            </button>
+          </div>
         )}
         <div className="flex-1 min-h-0">{renderContent()}</div>
       </main>
