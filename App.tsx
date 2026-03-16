@@ -1998,14 +1998,14 @@ const App: React.FC = () => {
     <div className="flex flex-col md:flex-row h-screen bg-[#050505] overflow-hidden text-white selection:bg-[#00FFA3] selection:text-black">
       {!hideSidebar && <Sidebar currentView={currentView} setView={handleViewChange} />}
 
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* $NERD Promo Banner — persistent across all views */}
+      <main className="flex-1 overflow-y-auto relative h-full scroll-smooth flex flex-col pb-[100px] md:pb-0 safe-bottom">
+        {/* $NERD Promo Banner — sticky inside scroll container */}
         {!hideSidebar && (
           <a
             href="https://jup.ag/swap?sell=So11111111111111111111111111111111111111112&buy=DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS"
             target="_blank"
             rel="noopener noreferrer"
-            className="shrink-0 flex items-center justify-center gap-2 w-full bg-amber-500/[0.06] border-b border-amber-500/15 px-4 py-1.5 text-center hover:bg-amber-500/[0.10] transition-colors"
+            className="sticky top-0 z-10 shrink-0 flex items-center justify-center gap-2 w-full bg-amber-500/[0.06] border-b border-amber-500/15 px-4 py-1.5 text-center hover:bg-amber-500/[0.10] transition-colors"
           >
             <img src="/token-nerd.png" alt="$NERD" className="w-4 h-4 rounded-full object-cover" />
             <span className="text-amber-400 text-[10px] font-black uppercase tracking-wider italic">
@@ -2016,10 +2016,8 @@ const App: React.FC = () => {
             </span>
           </a>
         )}
-        <main className="flex-1 min-h-0 overflow-y-auto relative scroll-smooth flex flex-col pb-[100px] md:pb-0 safe-bottom">
-          <div className="flex-1 min-h-0">{renderContent()}</div>
-        </main>
-      </div>
+        <div className="flex-1 min-h-0">{renderContent()}</div>
+      </main>
 
       {/* Global Mobile Help Button for views without headers */}
       {showMobileHelpButton && (
