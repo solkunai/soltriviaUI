@@ -1,4 +1,4 @@
-// SPL Token transfer instruction builder for USDC and SKR payments
+// SPL Token transfer instruction builder for USDC, SKR, and NERD payments
 // Builds the instructions needed to send SPL tokens to the revenue wallet.
 
 import {
@@ -12,11 +12,12 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import type { PaymentToken } from './constants';
-import { USDC_MINT, SKR_MINT, TOKEN_DECIMALS, REVENUE_WALLET } from './constants';
+import { USDC_MINT, SKR_MINT, NERD_MINT, TOKEN_DECIMALS, REVENUE_WALLET } from './constants';
 
 const MINT_MAP: Record<Exclude<PaymentToken, 'SOL'>, PublicKey> = {
   USDC: new PublicKey(USDC_MINT),
   SKR: new PublicKey(SKR_MINT),
+  NERD: new PublicKey(NERD_MINT),
 };
 
 /**

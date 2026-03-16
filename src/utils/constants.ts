@@ -35,17 +35,19 @@ export const SEEKER_GAME_PASS_PRICE_LAMPORTS = 100_000_000; // 0.1 SOL for SGT h
 export const SEEKER_GAME_PASS_PRICE_SOL = 0.1;
 
 // ─── Multi-token payment support (SOL / USDC / SKR) ─────────────────────────
-export type PaymentToken = 'SOL' | 'USDC' | 'SKR';
+export type PaymentToken = 'SOL' | 'USDC' | 'SKR' | 'NERD';
 
 // Token mint addresses (Solana mainnet)
 export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 export const SKR_MINT = 'SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3';
+export const NERD_MINT = 'DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS';
 
 // Token decimals
 export const TOKEN_DECIMALS: Record<PaymentToken, number> = {
   SOL: 9,
   USDC: 6,
   SKR: 6,
+  NERD: 9,
 };
 
 // USD-based pricing for lives (used with all tokens)
@@ -60,6 +62,9 @@ export const GAME_PASS_USD_PRICING = {
   standard: 20,
   seeker: 10,
 } as const;
+
+// $NERD token payment discount (10% off when paying with $NERD)
+export const NERD_PAYMENT_DISCOUNT = 0.10;
 
 // Practice mode categories
 export const FREE_CATEGORIES = ['general', 'crypto'] as const;

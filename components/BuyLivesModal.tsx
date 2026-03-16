@@ -9,6 +9,7 @@ import {
   LIVES_TIERS,
   SEEKER_LIVES_TIERS,
   LIVES_USD_PRICING,
+  NERD_PAYMENT_DISCOUNT,
   type LivesTierId,
   type PaymentToken,
 } from '@/src/utils/constants';
@@ -22,10 +23,11 @@ interface BuyLivesModalProps {
   isSeekerVerified?: boolean;
 }
 
-const TOKEN_OPTIONS: { id: PaymentToken; label: string; color: string }[] = [
-  { id: 'SOL', label: 'SOL', color: '#9945FF' },
-  { id: 'USDC', label: 'USDC', color: '#2775CA' },
-  { id: 'SKR', label: 'SKR', color: '#14F195' },
+const TOKEN_OPTIONS: { id: PaymentToken; label: string; color: string; icon: string }[] = [
+  { id: 'SOL', label: 'SOL', color: '#9945FF', icon: '/token-sol.png' },
+  { id: 'USDC', label: 'USDC', color: '#2775CA', icon: '/token-usdc.png' },
+  { id: 'SKR', label: 'SKR', color: '#14F195', icon: '/token-skr.png' },
+  { id: 'NERD', label: '$NERD', color: '#F59E0B', icon: '/token-nerd.png' },
 ];
 
 const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuccess, isSeekerVerified = false }) => {
@@ -47,12 +49,16 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
       setPricesLoading(true);
       const p = await fetchTokenPrices();
       setPrices(p);
+      // Auto-fallback: if NERD is selected but price unavailable, switch to SOL
+      if (selectedToken === 'NERD' && !p.NERD) {
+        setSelectedToken('SOL');
+      }
     } catch (err) {
       console.error('Failed to fetch token prices:', err);
     } finally {
       setPricesLoading(false);
     }
-  }, []);
+  }, [selectedToken]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -65,7 +71,10 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
 
   // Get USD price for the selected tier
   const tierPricing = LIVES_USD_PRICING[selectedTier as keyof typeof LIVES_USD_PRICING];
-  const usdPrice = isSeekerVerified ? tierPricing.seeker : tierPricing.standard;
+  let usdPrice: number = isSeekerVerified ? tierPricing.seeker : tierPricing.standard;
+  if (selectedToken === 'NERD') {
+    usdPrice = +(usdPrice * (1 - NERD_PAYMENT_DISCOUNT)).toFixed(2);
+  }
   const livesCount = tierPricing.lives;
 
   // Calculate token amount if prices are loaded
@@ -220,22 +229,36 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
             </div>
           )}
 
+          {/* NERD Discount Banner */}
+          {selectedToken === 'NERD' && (
+            <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg mb-4">
+              <p className="text-amber-400 text-[9px] font-black uppercase tracking-wider text-center italic leading-tight">
+                10% discount applied — paying with $NERD
+              </p>
+            </div>
+          )}
+
           {/* Token Selector */}
           <div className="flex gap-2 mb-5">
             {TOKEN_OPTIONS.map((tok) => {
               const isActive = selectedToken === tok.id;
+              const nerdUnavailable = tok.id === 'NERD' && prices && !prices.NERD;
               return (
                 <button
                   key={tok.id}
-                  onClick={() => { setSelectedToken(tok.id); setError(null); }}
-                  disabled={purchasing}
+                  onClick={() => { if (!nerdUnavailable) { setSelectedToken(tok.id); setError(null); } }}
+                  disabled={purchasing || !!nerdUnavailable}
                   className={`flex-1 py-2.5 rounded-lg text-xs font-[900] italic uppercase tracking-wider transition-all border-2 ${
                     isActive
                       ? 'text-white shadow-lg'
-                      : 'border-white/5 bg-white/[0.02] text-zinc-500 hover:border-white/10 hover:text-zinc-300'
+                      : nerdUnavailable
+                        ? 'border-white/5 bg-white/[0.01] text-zinc-700 cursor-not-allowed'
+                        : 'border-white/5 bg-white/[0.02] text-zinc-500 hover:border-white/10 hover:text-zinc-300'
                   } ${purchasing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  style={isActive ? { borderColor: tok.color, backgroundColor: `${tok.color}15`, boxShadow: `0 0 15px ${tok.color}20` } : undefined}
+                  style={isActive && !nerdUnavailable ? { borderColor: tok.color, backgroundColor: `${tok.color}15`, boxShadow: `0 0 15px ${tok.color}20` } : undefined}
+                  title={nerdUnavailable ? '$NERD price unavailable — coming soon' : undefined}
                 >
+                  <img src={tok.icon} alt={tok.label} className={`w-4 h-4 rounded-full object-cover inline-block mr-1 align-middle ${nerdUnavailable ? 'opacity-30' : ''}`} />
                   {tok.label}
                 </button>
               );
@@ -254,7 +277,10 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
             {(['basic', 'value', 'bulk'] as const).map((tierId) => {
               const tp = LIVES_USD_PRICING[tierId];
               const isSelected = selectedTier === tierId;
-              const tierUsd = isSeekerVerified ? tp.seeker : tp.standard;
+              let tierUsd: number = isSeekerVerified ? tp.seeker : tp.standard;
+              if (selectedToken === 'NERD') {
+                tierUsd = +(tierUsd * (1 - NERD_PAYMENT_DISCOUNT)).toFixed(2);
+              }
               const badge = tierId === 'value' ? t('buyLives.popular') : tierId === 'bulk' ? t('buyLives.bestValue') : null;
               // Calculate display price for this tier
               let tierDisplayPrice = `$${tierUsd}`;

@@ -13,6 +13,7 @@ const WalletConnectButton: React.FC = () => {
   const { setVisible } = useWalletModal();
   const [connectError, setConnectError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [showDisconnect, setShowDisconnect] = useState(false);
 
   // Fetch username from player_profiles when connected
   useEffect(() => {
@@ -101,25 +102,43 @@ const WalletConnectButton: React.FC = () => {
   const label = displayName || (publicKey ? `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}` : 'Connected');
 
   return (
-    <div className="flex items-center gap-1.5">
-      {/* Username pill */}
-      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-full">
+    <div className="flex items-center gap-1.5 relative">
+      {/* Username pill — tappable on mobile to show disconnect dropdown */}
+      <button
+        onClick={() => setShowDisconnect((prev) => !prev)}
+        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-full active:scale-95 transition-all"
+      >
         <div className="w-1.5 h-1.5 rounded-full bg-[#14F195] shadow-[0_0_6px_#14F195]"></div>
         <span className="text-white text-[10px] font-black uppercase tracking-wide max-w-[120px] truncate">
           {label}
         </span>
-      </div>
+      </button>
 
-      {/* Disconnect */}
+      {/* Desktop: always-visible red X */}
       <button
         onClick={disconnect}
-        className="p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 rounded-full text-red-400 hover:text-red-300 transition-all active:scale-95"
+        className="hidden md:flex p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 rounded-full text-red-400 hover:text-red-300 transition-all active:scale-95"
         title={t('wallet.disconnect')}
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>
+
+      {/* Mobile disconnect dropdown */}
+      {showDisconnect && (
+        <div className="md:hidden absolute top-full right-0 mt-2 z-50">
+          <button
+            onClick={() => { disconnect(); setShowDisconnect(false); }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#0D0D0D] border border-red-500/30 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all active:scale-95 shadow-lg shadow-black/50 whitespace-nowrap"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            <span className="text-[10px] font-black uppercase tracking-wider">Disconnect</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

@@ -9,6 +9,7 @@ import {
   ALL_CATEGORIES,
   CATEGORY_LABELS,
   GAME_PASS_USD_PRICING,
+  NERD_PAYMENT_DISCOUNT,
   PracticeCategory,
   type PaymentToken,
 } from '../src/utils/constants';
@@ -35,10 +36,11 @@ const CATEGORY_ICONS: Record<PracticeCategory | 'all', string> = {
   science: '🔬',
 };
 
-const TOKEN_OPTIONS: { id: PaymentToken; label: string; color: string }[] = [
-  { id: 'SOL', label: 'SOL', color: '#9945FF' },
-  { id: 'USDC', label: 'USDC', color: '#2775CA' },
-  { id: 'SKR', label: 'SKR', color: '#14F195' },
+const TOKEN_OPTIONS: { id: PaymentToken; label: string; color: string; icon: string }[] = [
+  { id: 'SOL', label: 'SOL', color: '#9945FF', icon: '/token-sol.png' },
+  { id: 'USDC', label: 'USDC', color: '#2775CA', icon: '/token-usdc.png' },
+  { id: 'SKR', label: 'SKR', color: '#14F195', icon: '/token-skr.png' },
+  { id: 'NERD', label: '$NERD', color: '#F59E0B', icon: '/token-nerd.png' },
 ];
 
 const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
@@ -58,18 +60,25 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
   const [failedTxSignature, setFailedTxSignature] = useState<string | null>(null);
   const [prices, setPrices] = useState<TokenPrices | null>(null);
 
-  // USD-based pricing
-  const usdPrice = isSeekerVerified ? GAME_PASS_USD_PRICING.seeker : GAME_PASS_USD_PRICING.standard;
+  // USD-based pricing (NERD payment = 10% discount, stacks with Seeker)
+  let usdPrice: number = isSeekerVerified ? GAME_PASS_USD_PRICING.seeker : GAME_PASS_USD_PRICING.standard;
+  if (selectedToken === 'NERD') {
+    usdPrice = +(usdPrice * (1 - NERD_PAYMENT_DISCOUNT)).toFixed(2);
+  }
 
   // Fetch prices on open and refresh every 15s
   const loadPrices = useCallback(async () => {
     try {
       const p = await fetchTokenPrices();
       setPrices(p);
+      // Auto-fallback: if NERD is selected but price unavailable, switch to SOL
+      if (selectedToken === 'NERD' && !p.NERD) {
+        setSelectedToken('SOL');
+      }
     } catch (err) {
       console.error('Failed to fetch token prices:', err);
     }
-  }, []);
+  }, [selectedToken]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -292,18 +301,23 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
               <div className="flex gap-2 mb-3">
                 {TOKEN_OPTIONS.map((tok) => {
                   const isActive = selectedToken === tok.id;
+                  const nerdUnavailable = tok.id === 'NERD' && prices && !prices.NERD;
                   return (
                     <button
                       key={tok.id}
-                      onClick={() => { setSelectedToken(tok.id); setPurchaseError(null); }}
-                      disabled={purchasing}
+                      onClick={() => { if (!nerdUnavailable) { setSelectedToken(tok.id); setPurchaseError(null); } }}
+                      disabled={purchasing || !!nerdUnavailable}
                       className={`flex-1 py-2 rounded-lg text-[10px] font-[900] italic uppercase tracking-wider transition-all border-2 ${
                         isActive
                           ? 'text-white'
-                          : 'border-white/5 bg-white/[0.02] text-zinc-500 hover:border-white/10 hover:text-zinc-300'
+                          : nerdUnavailable
+                            ? 'border-white/5 bg-white/[0.01] text-zinc-700 cursor-not-allowed'
+                            : 'border-white/5 bg-white/[0.02] text-zinc-500 hover:border-white/10 hover:text-zinc-300'
                       } ${purchasing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      style={isActive ? { borderColor: tok.color, backgroundColor: `${tok.color}15` } : undefined}
+                      style={isActive && !nerdUnavailable ? { borderColor: tok.color, backgroundColor: `${tok.color}15` } : undefined}
+                      title={nerdUnavailable ? '$NERD price unavailable — coming soon' : undefined}
                     >
+                      <img src={tok.icon} alt={tok.label} className={`w-4 h-4 rounded-full object-cover inline-block mr-1 align-middle ${nerdUnavailable ? 'opacity-30' : ''}`} />
                       {tok.label}
                     </button>
                   );
@@ -319,6 +333,11 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
                   {isSeekerVerified && (
                     <span className="text-[9px] font-black uppercase tracking-wider text-[#14F195] bg-[#14F195]/10 px-2 py-0.5 rounded-full">
                       50% Seeker Discount
+                    </span>
+                  )}
+                  {selectedToken === 'NERD' && (
+                    <span className="text-[9px] font-black uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                      10% $NERD Discount
                     </span>
                   )}
                 </div>

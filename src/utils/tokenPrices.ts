@@ -1,4 +1,4 @@
-// Jupiter v3 Price API — fetches live USD prices for SOL and SKR
+// Jupiter v3 Price API — fetches live USD prices for SOL, SKR, and NERD
 // USDC is always $1 so no lookup needed.
 
 import type { PaymentToken } from './constants';
@@ -10,10 +10,12 @@ const JUPITER_API_KEY = import.meta.env.VITE_JUPITER_API_KEY || '';
 // Solana native SOL mint (wrapped SOL)
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const SKR_MINT = 'SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3';
+const NERD_MINT = 'DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS';
 
 export interface TokenPrices {
   SOL: number;
   SKR: number;
+  NERD: number;
   USDC: 1;
 }
 
@@ -32,7 +34,7 @@ export async function fetchTokenPrices(): Promise<TokenPrices> {
     return cachedPrices;
   }
 
-  const url = `${JUPITER_API_URL}?ids=${SOL_MINT},${SKR_MINT}`;
+  const url = `${JUPITER_API_URL}?ids=${SOL_MINT},${SKR_MINT},${NERD_MINT}`;
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (JUPITER_API_KEY) {
     headers['x-api-key'] = JUPITER_API_KEY;
@@ -47,6 +49,7 @@ export async function fetchTokenPrices(): Promise<TokenPrices> {
 
   const solPrice = data?.[SOL_MINT]?.usdPrice;
   const skrPrice = data?.[SKR_MINT]?.usdPrice;
+  const nerdPrice = data?.[NERD_MINT]?.usdPrice;
 
   if (typeof solPrice !== 'number' || solPrice <= 0) {
     throw new Error('Invalid SOL price from Jupiter');
@@ -54,8 +57,10 @@ export async function fetchTokenPrices(): Promise<TokenPrices> {
   if (typeof skrPrice !== 'number' || skrPrice <= 0) {
     throw new Error('Invalid SKR price from Jupiter');
   }
+  // NERD price is optional — token may not be on Jupiter yet (pre-graduation from Bags.fm)
+  const validNerdPrice = (typeof nerdPrice === 'number' && nerdPrice > 0) ? nerdPrice : 0;
 
-  cachedPrices = { SOL: solPrice, SKR: skrPrice, USDC: 1 };
+  cachedPrices = { SOL: solPrice, SKR: skrPrice, NERD: validNerdPrice, USDC: 1 };
   cacheTimestamp = now;
   return cachedPrices;
 }
@@ -65,6 +70,7 @@ export async function fetchTokenPrices(): Promise<TokenPrices> {
  * For SOL: returns lamports (9 decimals)
  * For USDC: returns micro-USDC (6 decimals)
  * For SKR: returns smallest SKR unit (6 decimals)
+ * For NERD: returns smallest NERD unit (9 decimals)
  */
 export function calculateTokenAmount(
   usdAmount: number,
@@ -93,6 +99,7 @@ export function formatTokenAmount(
   // Show enough decimal places to be useful
   if (token === 'USDC') return amount.toFixed(2);
   if (token === 'SOL') return amount.toFixed(4);
+  if (token === 'NERD') return amount.toFixed(2);
   // SKR — show 2 decimals for clean display
   return amount.toFixed(2);
 }
