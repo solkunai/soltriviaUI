@@ -1,12 +1,11 @@
-// Bags.fm REST API client for in-app SOL↔NERD swaps.
-// Uses direct fetch calls — no SDK needed (avoids heavy Anchor/Meteora deps).
-// Docs: https://docs.bags.fm/how-to-guides/trade-tokens
+// Bags.fm swap client — proxied through Supabase Edge Functions.
+// API key lives server-side (EF secret), not in the frontend bundle.
+// EFs: swap-quote, swap-transaction
 
 import { VersionedTransaction } from '@solana/web3.js';
 import bs58 from 'bs58';
-
-const BAGS_API_BASE = 'https://public-api-v2.bags.fm/api/v1';
-const BAGS_API_KEY = import.meta.env.VITE_BAGS_API_KEY || '';
+import { SUPABASE_FUNCTIONS_URL } from './constants';
+import { getAuthHeaders } from './api';
 
 const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';
 const NERD_MINT = 'DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS';
@@ -48,7 +47,7 @@ interface SwapTransactionResponse {
 // ── API Functions ──────────────────────────────────────
 
 /**
- * Fetch a swap quote from Bags API.
+ * Fetch a swap quote via the swap-quote Edge Function.
  * @param direction 'buy' = SOL→NERD, 'sell' = NERD→SOL
  * @param amount    Amount in smallest units (lamports for SOL, atoms for NERD)
  */
@@ -56,29 +55,31 @@ export async function getSwapQuote(
   direction: 'buy' | 'sell',
   amount: number,
 ): Promise<SwapQuote> {
-  if (!BAGS_API_KEY) throw new Error('Bags API key not configured');
   if (amount <= 0) throw new Error('Amount must be positive');
 
   const inputMint = direction === 'buy' ? WRAPPED_SOL_MINT : NERD_MINT;
   const outputMint = direction === 'buy' ? NERD_MINT : WRAPPED_SOL_MINT;
 
-  const params = new URLSearchParams({
-    inputMint,
-    outputMint,
-    amount: String(amount),
-    slippageMode: 'auto',
-  });
-
-  const res = await fetch(`${BAGS_API_BASE}/trade/quote?${params}`, {
-    headers: { 'x-api-key': BAGS_API_KEY },
+  const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/swap-quote`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      inputMint,
+      outputMint,
+      amount: String(amount),
+      slippageMode: 'auto',
+    }),
   });
 
   if (!res.ok) {
-    throw new Error(`Bags API error: ${res.status}`);
+    const body = await res.text().catch(() => '');
+    console.error('[BagsAPI] Quote error:', res.status, body);
+    throw new Error(`Swap quote error: ${res.status}`);
   }
 
   const data: BagsApiResponse<Record<string, unknown>> = await res.json();
   if (!data.success) {
+    console.error('[BagsAPI] Quote failed:', data.error);
     throw new Error(data.error || 'Failed to get swap quote');
   }
 
@@ -97,21 +98,16 @@ export async function getSwapQuote(
 }
 
 /**
- * Create a swap transaction from a quote.
+ * Create a swap transaction via the swap-transaction Edge Function.
  * Returns a VersionedTransaction ready for wallet signing.
  */
 export async function createSwapTransaction(
   quote: SwapQuote,
   userPublicKey: string,
 ): Promise<{ transaction: VersionedTransaction; lastValidBlockHeight: number }> {
-  if (!BAGS_API_KEY) throw new Error('Bags API key not configured');
-
-  const res = await fetch(`${BAGS_API_BASE}/trade/swap`, {
+  const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/swap-transaction`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': BAGS_API_KEY,
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       quoteResponse: quote._raw,
       userPublicKey,
@@ -119,7 +115,7 @@ export async function createSwapTransaction(
   });
 
   if (!res.ok) {
-    throw new Error(`Bags API error: ${res.status}`);
+    throw new Error(`Swap transaction error: ${res.status}`);
   }
 
   const data: BagsApiResponse<SwapTransactionResponse> = await res.json();
