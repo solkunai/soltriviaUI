@@ -73,6 +73,9 @@ marketing/
 # Seeker TWA Android app (standalone project, not part of web app)
 seeker-app/
 
+# Supabase Edge Functions (deployed via Supabase dashboard/MCP, not needed for Render build)
+supabase/functions/
+
 # SQL migrations (already applied in Supabase, not needed in repo)
 supabase/migrations/
 
