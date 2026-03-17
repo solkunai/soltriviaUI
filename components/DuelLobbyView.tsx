@@ -136,9 +136,14 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
   const getTimeRemaining = (expiresAt: string) => {
     const diff = new Date(expiresAt).getTime() - Date.now();
     if (diff <= 0) return 'Expired';
-    const mins = Math.floor(diff / 60000);
+    const totalMins = Math.floor(diff / 60000);
     const secs = Math.floor((diff % 60000) / 1000);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    if (totalMins >= 60) {
+      const hrs = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      return `${hrs}h ${mins.toString().padStart(2, '0')}m`;
+    }
+    return `${totalMins}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (

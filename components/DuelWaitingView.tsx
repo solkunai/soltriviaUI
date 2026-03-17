@@ -38,9 +38,15 @@ const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, sha
         if (timerRef.current) clearInterval(timerRef.current);
         return;
       }
-      const mins = Math.floor(diff / 60000);
+      const totalMins = Math.floor(diff / 60000);
       const secs = Math.floor((diff % 60000) / 1000);
-      setTimeLeft(`${mins}:${secs.toString().padStart(2, '0')}`);
+      if (totalMins >= 60) {
+        const hrs = Math.floor(totalMins / 60);
+        const mins = totalMins % 60;
+        setTimeLeft(`${hrs}h ${mins.toString().padStart(2, '0')}m`);
+      } else {
+        setTimeLeft(`${totalMins}:${secs.toString().padStart(2, '0')}`);
+      }
     };
     updateTimer();
     timerRef.current = window.setInterval(updateTimer, 1000);
