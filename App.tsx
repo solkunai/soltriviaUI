@@ -63,6 +63,7 @@ import ProfileView from './components/ProfileView';
 import PlayView from './components/PlayView';
 import GuideModal from './components/GuideModal';
 import BuyLivesModal from './components/BuyLivesModal';
+import SwapModal from './components/SwapModal';
 import EditProfileModal from './components/EditProfileModal';
 import QuizView from './components/QuizView';
 import ResultsView from './components/ResultsView';
@@ -105,6 +106,7 @@ const App: React.FC = () => {
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [nerdMintCopied, setNerdMintCopied] = useState(false);
   const [isBuyLivesOpen, setIsBuyLivesOpen] = useState(false);
+  const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [showWalletRequired, setShowWalletRequired] = useState(false);
   const [appLoading, setAppLoading] = useState(true);
@@ -1728,6 +1730,7 @@ const App: React.FC = () => {
             onClaimDuelPrize={handleClaimDuelPrize}
             onClaimDuelRefund={handleClaimDuelRefund}
             onClaimCustomPrize={handleClaimCustomPrize}
+            onOpenSwap={() => setIsSwapOpen(true)}
           />
         );
       case View.QUIZ:
@@ -2003,10 +2006,8 @@ const App: React.FC = () => {
         {/* $NERD Promo Banner — sticky inside scroll container */}
         {!hideSidebar && (
           <div className="sticky top-0 z-10 shrink-0 flex items-center justify-center gap-2 w-full bg-amber-500/[0.06] border-b border-amber-500/15 px-4 py-1.5 text-center">
-            <a
-              href="https://bags.fm/DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => setIsSwapOpen(true)}
               className="flex items-center justify-center gap-2 hover:opacity-80 transition-opacity"
             >
               <img src="/token-nerd.png" alt="$NERD" className="w-4 h-4 rounded-full object-cover" />
@@ -2016,7 +2017,7 @@ const App: React.FC = () => {
               <span className="text-amber-300/80 text-[10px] font-black uppercase tracking-wider">
                 &rarr;
               </span>
-            </a>
+            </button>
             <button
               onClick={() => {
                 navigator.clipboard.writeText('DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS');
@@ -2071,6 +2072,7 @@ const App: React.FC = () => {
         onGamePassPurchased={() => setHasGamePass(true)}
       />
       <BuyLivesModal isOpen={isBuyLivesOpen} onClose={() => setIsBuyLivesOpen(false)} onBuySuccess={handleBuyLivesSuccess} isSeekerVerified={isSeekerVerified} />
+      <SwapModal isOpen={isSwapOpen} onClose={() => setIsSwapOpen(false)} />
       <EditProfileModal 
         isOpen={isEditProfileOpen} 
         onClose={() => setIsEditProfileOpen(false)} 

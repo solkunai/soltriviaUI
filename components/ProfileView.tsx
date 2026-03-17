@@ -28,6 +28,7 @@ interface ProfileViewProps {
   onClaimDuelPrize?: (duelId: number) => Promise<void>;
   onClaimDuelRefund?: (duelId: number, player1Wallet: string) => Promise<void>;
   onClaimCustomPrize?: (onChainGameId: number) => Promise<void>;
+  onOpenSwap?: () => void;
 }
 
 interface PlayerStats {
@@ -61,7 +62,7 @@ interface PlayedCustomGame {
   completed_at: string;
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize, onClaimDuelRefund, onClaimCustomPrize }) => {
+const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize, onClaimDuelRefund, onClaimCustomPrize, onOpenSwap }) => {
   const { t } = useTranslation();
   const { publicKey, sendTransaction, signMessage } = useWallet();
   const { connection } = useConnection();
@@ -804,12 +805,23 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 <div className="h-0.5 w-10 md:h-1 md:w-14 bg-[#14F195] mx-auto md:mx-0 shadow-[0_0_10px_#14F195]"></div>
               </div>
 
-              <button
-                onClick={onEdit}
-                className="px-6 md:px-8 py-2.5 md:py-3 bg-white/[0.03] border border-white/10 hover:bg-[#14F195] hover:text-black text-white font-[1000] uppercase text-[10px] md:text-xs tracking-widest italic rounded-full transition-all active:scale-95 hover:scale-105"
-              >
-                {t('profile.editProfile')}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onEdit}
+                  className="px-6 md:px-8 py-2.5 md:py-3 bg-white/[0.03] border border-white/10 hover:bg-[#14F195] hover:text-black text-white font-[1000] uppercase text-[10px] md:text-xs tracking-widest italic rounded-full transition-all active:scale-95 hover:scale-105"
+                >
+                  {t('profile.editProfile')}
+                </button>
+                {onOpenSwap && (
+                  <button
+                    onClick={onOpenSwap}
+                    className="flex items-center gap-1.5 px-5 md:px-6 py-2.5 md:py-3 bg-amber-500/[0.08] border border-amber-500/20 hover:bg-amber-500/20 text-amber-400 font-[1000] uppercase text-[10px] md:text-xs tracking-widest italic rounded-full transition-all active:scale-95 hover:scale-105"
+                  >
+                    <img src="/token-nerd.png" alt="" className="w-4 h-4 rounded-full" />
+                    Swap
+                  </button>
+                )}
+              </div>
           </div>
         </div>
 
