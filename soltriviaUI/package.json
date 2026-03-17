@@ -1,5 +1,0 @@
-{
-  "dependencies": {
-    "solana-trivia-protocol": "file:.."
-  }
-}

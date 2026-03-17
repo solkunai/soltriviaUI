@@ -79,5 +79,34 @@ supabase/functions/
 # SQL migrations (already applied in Supabase, not needed in repo)
 supabase/migrations/
 
+# Supabase temp files (contains DB connection strings and project refs)
+supabase/.temp/
+
+# Supabase schema files
+supabase/schema.sql
+
+# SQL debug/setup scripts (internal, not part of web app)
+*.sql
+
+# Test files
+test-app.tsx
+
+# Contract references
+soltrivia-contracts
+
+# Nested duplicate package files
+soltriviaUI/
+
+# Publishing configs
+publishing/
+
+# Marketing HTML/PNG files (not part of web app)
+*.html
+!index.html
+
+# Screenshot/utility scripts
+screenshot-*.cjs
+check_round.cjs
+
 # MCP config (contains Supabase access token)
 .mcp.json
