@@ -21,16 +21,28 @@ interface PlayerStats {
 
 const SeekerBadge: React.FC<{ className?: string; size?: 'sm' | 'lg' }> = ({ className = '', size = 'sm' }) => {
   const dim = size === 'lg' ? 'w-10 h-10' : 'w-4 h-4 md:w-5 md:h-5';
-  const iconSize = size === 'lg' ? 24 : 12;
+  const iconSize = size === 'lg' ? 40 : 16;
   return (
     <span
       className={`inline-flex items-center justify-center ${dim} shrink-0 ${className}`}
       title="Seeker Genesis Token Holder"
     >
-      <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2L3 7V12C3 17.25 6.75 22.08 12 23C17.25 22.08 21 17.25 21 12V7L12 2Z" fill="#14F195" fillOpacity="0.15" stroke="#14F195" strokeWidth="1.5" strokeLinejoin="round"/>
-        <path d="M8.5 12.5L11 15L16 9.5" stroke="#14F195" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
+      <span
+        style={{
+          display: 'inline-block',
+          width: iconSize,
+          height: iconSize,
+          backgroundColor: '#14F195',
+          WebkitMaskImage: 'url(/seeker-badge.png)',
+          WebkitMaskSize: 'contain',
+          WebkitMaskRepeat: 'no-repeat',
+          WebkitMaskPosition: 'center',
+          maskImage: 'url(/seeker-badge.png)',
+          maskSize: 'contain',
+          maskRepeat: 'no-repeat',
+          maskPosition: 'center',
+        } as React.CSSProperties}
+      />
     </span>
   );
 };
