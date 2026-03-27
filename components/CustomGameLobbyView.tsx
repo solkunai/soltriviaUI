@@ -16,6 +16,7 @@ interface CustomGameLobbyViewProps {
   onClaimPrize: (onChainGameId: number) => Promise<void>;
   onClaimRefund?: (onChainGameId: number) => Promise<void>;
   onFundAndStart?: (gameData: CustomGameData) => void;
+  onEndGame?: (gameData: CustomGameData) => Promise<void>;
   onBack: () => void;
   onConnectWallet: () => void;
 }
@@ -28,6 +29,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   onClaimPrize,
   onClaimRefund,
   onFundAndStart,
+  onEndGame,
   onBack,
   onConnectWallet,
 }) => {
@@ -453,6 +455,14 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                   <div className="w-full min-h-[56px] px-6 py-4 bg-yellow-400/10 border border-yellow-400/20 rounded-xl text-center">
                     <span className="text-yellow-400 font-[1000] italic uppercase text-lg">Game In Progress</span>
                     <p className="text-zinc-500 text-xs font-black mt-1">{countdown ? `${countdown} remaining` : 'Players are competing'}</p>
+                    {onEndGame && (
+                      <button
+                        onClick={() => onEndGame(gameData)}
+                        className="w-full min-h-12 px-6 py-3 bg-red-600 text-white font-[1000] italic uppercase text-sm tracking-tighter rounded-xl hover:bg-red-500 transition-all active:scale-[0.98] mt-3"
+                      >
+                        End Game & Pay Winners
+                      </button>
+                    )}
                   </div>
                 ) : hasEntered && canPlay && isReEntry && !showReEntryConfirm ? (
                   <button

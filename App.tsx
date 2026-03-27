@@ -1157,6 +1157,18 @@ const App: React.FC = () => {
     }
   };
 
+  const handleEndCustomGame = async (gameData: any) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    try {
+      const { finalizeCustomGame } = await import('./src/utils/api');
+      await finalizeCustomGame(gameData.id, publicKey.toBase58());
+      alert('Game ended! Winners can now claim their prizes.');
+    } catch (err: any) {
+      console.error('End game error:', err);
+      alert(err.message || 'Failed to end game');
+    }
+  };
+
   const handleClaimCustomPrize = async (onChainGameId: number) => {
     if (!connected || !publicKey) { setShowWalletRequired(true); return; }
     setClaimingId(`custom-${onChainGameId}`);
@@ -1844,6 +1856,7 @@ const App: React.FC = () => {
             onJoinGame={handleJoinCustomGame}
             onStartTimer={handleStartCustomGameTimer}
             onFundAndStart={handleFundAndStartRequest}
+            onEndGame={handleEndCustomGame}
             onClaimPrize={handleClaimCustomPrize}
             onClaimRefund={handleClaimCGRefundById}
             onBack={() => setCurrentView(View.HOME)}

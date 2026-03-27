@@ -1632,16 +1632,18 @@ export async function recordCustomGameFunding(
   return response.json();
 }
 
-export async function finalizeCustomGame(gameId: string): Promise<{
+export async function finalizeCustomGame(gameId: string, creatorWallet?: string): Promise<{
   success: boolean;
   winners: string[];
   amounts: number[];
   signature: string;
 }> {
+  const body: Record<string, string> = { game_id: gameId };
+  if (creatorWallet) body.creator_wallet = creatorWallet;
   const response = await fetch(`${FUNCTIONS_URL}/finalize-custom-game`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ game_id: gameId }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
