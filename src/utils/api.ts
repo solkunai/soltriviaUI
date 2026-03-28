@@ -1351,6 +1351,7 @@ export interface CreateCustomGameParams {
   gameDurationMinutes?: number;
   maxWinners?: number;
   creatorDepositLamports?: number;
+  bannerUrl?: string;
 }
 
 export interface CreateCustomGameResponse {
@@ -1410,6 +1411,7 @@ export interface CustomGameData {
   winner_wallets: string[] | null;
   winner_amounts: number[] | null;
   player_has_entered: boolean;
+  banner_url: string | null;
   leaderboard: Array<{
     rank: number;
     wallet_address: string;

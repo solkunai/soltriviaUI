@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { createCustomGame } from '../src/utils/api';
+import { supabase } from '../src/utils/supabase';
 import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import {
   REVENUE_WALLET,
@@ -57,6 +58,8 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   // Settings
   const [gameName, setGameName] = useState('');
   const [customSlug, setCustomSlug] = useState('');
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [questionCount, setQuestionCount] = useState<5 | 10 | 15>(10);
   const [roundCount, setRoundCount] = useState<number>(1);
   const [timeLimit, setTimeLimit] = useState<number>(15);
@@ -266,6 +269,19 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
         }
       }
 
+      // Upload banner if provided
+      if (bannerFile) {
+        try {
+          const ext = bannerFile.name.split('.').pop() || 'png';
+          const path = `${publicKey.toBase58()}/${Date.now()}.${ext}`;
+          const { error: uploadErr } = await supabase.storage.from('game-banners').upload(path, bannerFile, { contentType: bannerFile.type, upsert: false });
+          if (!uploadErr) {
+            const { data: urlData } = supabase.storage.from('game-banners').getPublicUrl(path);
+            if (urlData?.publicUrl) params.bannerUrl = urlData.publicUrl;
+          }
+        } catch (_) { /* banner upload failed silently — game still creates fine */ }
+      }
+
       const result = await createCustomGame(params);
 
       setCreatedSlug(result.slug);
@@ -393,6 +409,48 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   className="flex-1 min-h-[44px] px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-mono text-sm placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
                 />
               </div>
+            </div>
+
+            {/* Banner Image */}
+            <div>
+              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Banner Image (optional)</label>
+              {bannerPreview ? (
+                <div className="relative mb-2">
+                  <img src={bannerPreview} alt="Banner preview" className="w-full h-32 md:h-40 object-cover rounded-xl border border-white/10" />
+                  <button
+                    onClick={() => { setBannerFile(null); setBannerPreview(null); }}
+                    className="absolute top-2 right-2 w-7 h-7 bg-black/70 rounded-full flex items-center justify-center text-white hover:bg-red-600 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center w-full h-28 bg-white/5 border border-dashed border-white/10 rounded-xl cursor-pointer hover:bg-white/[0.07] transition-colors">
+                  <svg className="w-8 h-8 text-zinc-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  <span className="text-zinc-600 text-[10px] font-bold uppercase">Upload banner</span>
+                  <span className="text-zinc-700 text-[9px] mt-0.5">PNG, JPG up to 2MB</span>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 2 * 1024 * 1024) { setError('Banner must be under 2MB'); return; }
+                      setBannerFile(file);
+                      setBannerPreview(URL.createObjectURL(file));
+                    }}
+                  />
+                </label>
+              )}
+              <p className="text-zinc-700 text-[10px] mt-1">Shows on your game lobby and share links</p>
+            </div>
+
+            {/* Content Disclaimer */}
+            <div className="bg-amber-500/5 border border-amber-500/15 rounded-xl p-3">
+              <p className="text-amber-400/80 text-[10px] font-bold leading-relaxed">
+                By creating a game, you agree that any inappropriate, offensive, or disrespectful content violates our Terms of Service. Sol Trivia reserves the right to ban games and creators without notice. Funds associated with banned games may not be recoverable.
+              </p>
             </div>
 
             {/* Question Count */}

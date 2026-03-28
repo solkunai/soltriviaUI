@@ -342,6 +342,13 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           Back
         </button>
 
+        {/* Banner Image */}
+        {gameData.banner_url && (
+          <div className="mb-4 -mx-2 md:mx-0">
+            <img src={gameData.banner_url} alt={gameData.name} className="w-full h-36 md:h-48 object-cover rounded-2xl border border-white/5" />
+          </div>
+        )}
+
         {/* Game Info Card */}
         <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6 md:p-8 mb-6">
           <div className="flex items-center justify-between mb-2">
