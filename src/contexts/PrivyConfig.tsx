@@ -1,8 +1,13 @@
 import React from 'react';
 import { PrivyProvider } from '@privy-io/react-auth';
 import { toSolanaWalletConnectors } from '@privy-io/react-auth/solana';
+import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
+import { getSolanaRpcEndpoint } from '../utils/rpc';
 
 const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID || '';
+const SOLANA_RPC_URL = getSolanaRpcEndpoint();
+const SOLANA_WSS_URL = SOLANA_RPC_URL.replace('https://', 'wss://');
+
 
 const solanaConnectors = toSolanaWalletConnectors();
 
@@ -20,6 +25,14 @@ const PrivyWrapper: React.FC<PrivyWrapperProps> = ({ children }) => {
     <PrivyProvider
       appId={PRIVY_APP_ID}
       config={{
+        solana: {
+          rpcs: {
+            'solana:mainnet': {
+              rpc: createSolanaRpc(SOLANA_RPC_URL),
+              rpcSubscriptions: createSolanaRpcSubscriptions(SOLANA_WSS_URL),
+            },
+          },
+        },
         appearance: {
           theme: 'dark',
           accentColor: '#14F195',
