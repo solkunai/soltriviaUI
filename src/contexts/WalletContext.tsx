@@ -14,7 +14,7 @@ import { getSolanaRpcEndpoint } from '../utils/rpc';
 
 // Privy imports — used for social login (email/Google/X) embedded wallets
 import { usePrivy } from '@privy-io/react-auth';
-import { useWallets as useWalletsFromPrivy, useSignTransaction as useSignTransactionFromPrivy } from '@privy-io/react-auth/solana';
+import { useWallets as useWalletsFromPrivy, useSignAndSendTransaction as useSignAndSendTransactionFromPrivy } from '@privy-io/react-auth/solana';
 
 // Import wallet adapter CSS
 import '@solana/wallet-adapter-react-ui/styles.css';
@@ -67,12 +67,13 @@ export function useWallet() {
   const nativeWallet = useSolanaWallet();
   const privy = usePrivy();
   const { wallets: privyWallets } = useWalletsFromPrivy();
-  const { signTransaction: privySignTransaction } = useSignTransactionFromPrivy();
+  const { signAndSendTransaction: privySignAndSend } = useSignAndSendTransactionFromPrivy();
 
   // Find Privy's embedded Solana wallet (if user logged in via email/Google/X)
   const privySolanaWallet = useMemo(() => {
     if (!privy.authenticated || !privyWallets || privyWallets.length === 0) return null;
-    return privyWallets.find((w: any) => w.type === 'solana') || privyWallets[0] || null;
+    // Prefer the Privy embedded wallet, fallback to first available
+    return privyWallets.find((w: any) => w.standardWallet?.name === 'Privy') || privyWallets[0] || null;
   }, [privy.authenticated, privyWallets]);
 
   // Priority: native wallet takes precedence over Privy
@@ -107,26 +108,18 @@ export function useWallet() {
       return nativeWallet.sendTransaction(transaction, connection);
     }
 
-    if (privySolanaWallet && privySignTransaction) {
-      // Privy: sign the transaction, then send raw
+    if (privySolanaWallet && privySignAndSend) {
+      // Privy: sign and send in one call, returns signature
       const serialized = transaction.serialize();
-      const signResult = await privySignTransaction({
+      const signature = await privySignAndSend({
         transaction: serialized,
         wallet: privySolanaWallet,
       });
-
-      // signResult contains the signed transaction bytes
-      const signedTx = VersionedTransaction.deserialize(
-        typeof signResult === 'string'
-          ? Buffer.from(signResult, 'base64')
-          : new Uint8Array(signResult)
-      );
-      const signature = await connection.sendRawTransaction(signedTx.serialize());
-      return signature;
+      return typeof signature === 'string' ? signature : String(signature);
     }
 
     throw new Error('No wallet connected');
-  }, [useNative, nativeWallet, privySolanaWallet, privySignTransaction]);
+  }, [useNative, nativeWallet, privySolanaWallet, privySignAndSend]);
 
   // Unified signMessage
   const signMessage = useCallback(async (message: Uint8Array): Promise<Uint8Array> => {

@@ -2,7 +2,8 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWallet, useWalletModal } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
-import { useLoginWithOAuth, useLoginWithEmail } from '@privy-io/react-auth';
+import { useLoginWithOAuth, useLoginWithEmail, usePrivy } from '@privy-io/react-auth';
+import { useCreateWallet } from '@privy-io/react-auth/solana';
 
 /**
  * Responsive login button component
@@ -22,6 +23,22 @@ const WalletConnectButton: React.FC = () => {
   const [otp, setOtp] = useState('');
   const [emailStep, setEmailStep] = useState<'email' | 'code'>('email');
   const loginMenuRef = useRef<HTMLDivElement>(null);
+
+  const { authenticated, user } = usePrivy();
+  const { createWallet } = useCreateWallet();
+
+  // After Privy login, create embedded Solana wallet if user doesn't have one
+  useEffect(() => {
+    if (!authenticated || !user) return;
+    const hasSolanaWallet = user.linkedAccounts?.some(
+      (a: any) => (a.type === 'wallet' && a.chainType === 'solana') || a.type === 'solana_wallet'
+    );
+    if (!hasSolanaWallet) {
+      createWallet().catch((err) => {
+        console.warn('Failed to create embedded wallet:', err);
+      });
+    }
+  }, [authenticated, user]);
 
   // Privy OAuth login
   const { initOAuth } = useLoginWithOAuth({
@@ -133,7 +150,7 @@ const WalletConnectButton: React.FC = () => {
 
         {/* Login Options Dropdown */}
         {showLoginMenu && (
-          <div className="absolute top-full right-0 mt-2 w-[280px] bg-[#0D0D0D] border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden z-[200]">
+          <div className="fixed left-4 right-4 top-[120px] md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-[280px] bg-[#0D0D0D] border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden z-[200]">
             <div className="px-4 py-3 border-b border-white/5">
               <span className="text-white font-black text-xs uppercase tracking-wider">Sign In</span>
             </div>
