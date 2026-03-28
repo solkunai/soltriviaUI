@@ -79,7 +79,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ walletAddress }) =>
 
       {/* Dropdown Panel */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-3 w-[320px] md:w-[380px] max-h-[400px] md:max-h-[460px] bg-[#0D0D0D] border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden z-50">
+        <div className="fixed left-3 right-3 top-[100px] md:absolute md:left-auto md:right-0 md:top-full md:mt-3 md:w-[380px] max-h-[400px] md:max-h-[460px] bg-[#0D0D0D] border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden z-[200]">
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/5">
             <span className="text-white font-black text-sm uppercase tracking-wider">Notifications</span>
