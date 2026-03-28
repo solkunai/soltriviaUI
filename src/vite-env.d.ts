@@ -20,6 +20,7 @@ interface ImportMetaEnv {
   readonly VITE_LIVES_PRICE_LAMPORTS?: string;
   readonly VITE_SOLTRIVIA_PROGRAM_ID?: string;
   readonly VITE_JUPITER_API_KEY?: string;
+  readonly VITE_PRIVY_APP_ID?: string;
 }
 
 interface ImportMeta {

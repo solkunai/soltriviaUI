@@ -10,8 +10,13 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@privy-io/react-auth": "^3.18.0",
     "@solana-mobile/wallet-adapter-mobile": "^2.2.5",
     "@solana-mobile/wallet-standard-mobile": "^0.4.4",
+    "@solana-program/memo": "^0.11.0",
+    "@solana-program/system": "^0.12.0",
+    "@solana-program/token": "^0.12.0",
+    "@solana/kit": "^6.5.0",
     "@solana/spl-token": "^0.4.14",
     "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/wallet-adapter-react": "^0.15.35",
