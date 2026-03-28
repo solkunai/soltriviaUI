@@ -72,6 +72,7 @@ import WalletRequiredModal from './components/WalletRequiredModal';
 import LegalDisclaimerModal from './components/LegalDisclaimerModal';
 import WalletConnectButton from './components/WalletConnectButton';
 import PwaInstallPrompt from './components/PwaInstallPrompt';
+import NotificationBell from './components/NotificationBell';
 import AdminRoute from './components/AdminRoute';
 import TermsOfServiceView from './components/TermsOfServiceView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
@@ -2051,6 +2052,9 @@ const App: React.FC = () => {
                 </svg>
               )}
             </button>
+            <div className="ml-1 hidden md:block">
+              <NotificationBell walletAddress={publicKey?.toBase58() ?? null} />
+            </div>
           </div>
         )}
         <div className="flex-1 min-h-0">{renderContent()}</div>

@@ -3034,6 +3034,16 @@ const DuelsAdminView: React.FC = () => {
 
 // ===================== NOTIFICATIONS TAB =====================
 const NotificationsView: React.FC = () => {
+  // In-App Announcements state
+  const [announcementTitle, setAnnouncementTitle] = useState('');
+  const [announcementBody, setAnnouncementBody] = useState('');
+  const [announcementLink, setAnnouncementLink] = useState('');
+  const [postingAnnouncement, setPostingAnnouncement] = useState(false);
+  const [announcementResult, setAnnouncementResult] = useState<string | null>(null);
+  const [announcements, setAnnouncements] = useState<{ id: string; title: string; body: string; link_url: string | null; created_at: string }[]>([]);
+  const [loadingAnnouncements, setLoadingAnnouncements] = useState(false);
+
+  // Push notification state
   const [subs, setSubs] = useState<{ wallet_address: string; subscription_json: any; created_at: string; updated_at: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -3042,7 +3052,68 @@ const NotificationsView: React.FC = () => {
   const [title, setTitle] = useState('Test from SolTrivia');
   const [body, setBody] = useState('If you see this, push notifications are working!');
 
-  useEffect(() => { loadSubs(); }, []);
+  useEffect(() => { loadSubs(); loadAnnouncements(); }, []);
+
+  const loadAnnouncements = async () => {
+    setLoadingAnnouncements(true);
+    try {
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-announcements`, {
+        method: 'POST',
+        headers: getAdminHeaders(),
+        body: JSON.stringify({ action: 'list' }),
+      });
+      const json = await res.json();
+      if (res.ok && json.announcements) setAnnouncements(json.announcements);
+    } catch (err) {
+      console.error('Failed to load announcements:', err);
+    }
+    setLoadingAnnouncements(false);
+  };
+
+  const postAnnouncement = async () => {
+    if (!announcementTitle.trim() || !announcementBody.trim()) return;
+    setPostingAnnouncement(true);
+    setAnnouncementResult(null);
+    try {
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-announcements`, {
+        method: 'POST',
+        headers: getAdminHeaders(),
+        body: JSON.stringify({
+          action: 'post',
+          title: announcementTitle.trim(),
+          body: announcementBody.trim(),
+          link_url: announcementLink.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setAnnouncementResult('Announcement posted!');
+        setAnnouncementTitle('');
+        setAnnouncementBody('');
+        setAnnouncementLink('');
+        loadAnnouncements();
+      } else {
+        setAnnouncementResult(`Error: ${json.error || 'Failed to post'}`);
+      }
+    } catch (err: any) {
+      setAnnouncementResult(`Error: ${err.message}`);
+    }
+    setPostingAnnouncement(false);
+  };
+
+  const deleteAnnouncement = async (id: string) => {
+    if (!confirm('Delete this announcement?')) return;
+    try {
+      await fetch(`${SUPABASE_FUNCTIONS_URL}/manage-announcements`, {
+        method: 'POST',
+        headers: getAdminHeaders(),
+        body: JSON.stringify({ action: 'delete', id }),
+      });
+      setAnnouncements(prev => prev.filter(a => a.id !== id));
+    } catch (err) {
+      console.error('Failed to delete announcement:', err);
+    }
+  };
 
   const loadSubs = async () => {
     setLoading(true);
@@ -3089,6 +3160,72 @@ const NotificationsView: React.FC = () => {
 
   return (
     <div>
+      {/* ── In-App Announcements ── */}
+      <h2 className="text-xl font-black text-white mb-4">In-App Announcements</h2>
+
+      <div className="bg-white/5 rounded-xl p-6 mb-6 border border-white/10">
+        <h3 className="text-lg font-bold text-white mb-3">Post New Announcement</h3>
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Title</label>
+            <input value={announcementTitle} onChange={e => setAnnouncementTitle(e.target.value)}
+              placeholder="e.g. New Feature: SPL Token Duels"
+              className="w-full bg-black/50 border border-white/20 rounded-lg px-3 py-2 text-white text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Body</label>
+            <textarea value={announcementBody} onChange={e => setAnnouncementBody(e.target.value)}
+              placeholder="Write your announcement message here..."
+              rows={3}
+              className="w-full bg-black/50 border border-white/20 rounded-lg px-3 py-2 text-white text-sm resize-none" />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Link URL (optional)</label>
+            <input value={announcementLink} onChange={e => setAnnouncementLink(e.target.value)}
+              placeholder="e.g. https://soltrivia.app/compete"
+              className="w-full bg-black/50 border border-white/20 rounded-lg px-3 py-2 text-white text-sm font-mono" />
+          </div>
+        </div>
+        <button onClick={postAnnouncement} disabled={postingAnnouncement || !announcementTitle.trim() || !announcementBody.trim()}
+          className="px-6 py-2 bg-[#14F195] text-black font-bold rounded-lg disabled:opacity-50">
+          {postingAnnouncement ? 'Posting...' : 'Post Announcement'}
+        </button>
+        {announcementResult && (
+          <div className={`mt-3 p-3 rounded-lg text-sm font-mono ${announcementResult.startsWith('Error') ? 'bg-red-500/20 text-red-300' : 'bg-green-500/20 text-green-300'}`}>
+            {announcementResult}
+          </div>
+        )}
+      </div>
+
+      {/* Past Announcements */}
+      <div className="bg-white/5 rounded-xl p-6 mb-8 border border-white/10">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold text-white">Posted Announcements ({announcements.length})</h3>
+          <button onClick={loadAnnouncements} disabled={loadingAnnouncements} className="text-xs text-zinc-400 hover:text-white">
+            {loadingAnnouncements ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
+        {announcements.length === 0 && !loadingAnnouncements && <p className="text-zinc-500">No announcements yet.</p>}
+        <div className="space-y-3">
+          {announcements.map(a => (
+            <div key={a.id} className="flex items-start justify-between bg-black/30 rounded-lg p-4 border border-white/5">
+              <div className="flex-1 min-w-0">
+                <div className="text-white font-bold text-sm">{a.title}</div>
+                <div className="text-zinc-400 text-xs mt-1">{a.body}</div>
+                {a.link_url && <div className="text-[#38BDF8] text-xs mt-1 truncate">{a.link_url}</div>}
+                <div className="text-zinc-600 text-[10px] mt-2">{new Date(a.created_at).toLocaleString()}</div>
+              </div>
+              <button onClick={() => deleteAnnouncement(a.id)}
+                className="ml-3 px-3 py-1 bg-red-600/50 text-red-300 text-xs font-bold rounded hover:bg-red-600 shrink-0">
+                Delete
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <hr className="border-white/5 mb-6" />
+
       <h2 className="text-xl font-black text-white mb-4">Push Notifications</h2>
 
       {/* Send test notification */}

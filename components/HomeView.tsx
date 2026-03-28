@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import WalletConnectButton from './WalletConnectButton';
 import LanguageSelector from './LanguageSelector';
 import FAQModal from './FAQModal';
+import NotificationBell from './NotificationBell';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { getCurrentRoundKey, getRoundLabel } from '../src/utils/api';
 import { fetchTierRound, contractRoundIdFromDateAndNumber } from '../src/utils/soltriviaContract';
@@ -187,14 +188,11 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
       <div className="sticky top-0 z-30 bg-[#050505]/90 backdrop-blur-md border-b border-white/5">
         <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 lg:px-8 py-3 flex items-center justify-between gap-3">
           {/* Left: Lives */}
-          <button onClick={onOpenBuyLives} className="flex items-center gap-2 active:scale-95 transition-transform">
-            <span className="text-zinc-300 text-[8px] font-black uppercase tracking-widest italic">{t('topBar.lives')}</span>
-            <span className="text-[#FF3131] text-xl font-[1000] italic leading-none tabular-nums" data-lives={lives === null ? 'null' : String(lives)}>
+          <button onClick={onOpenBuyLives} className="flex items-center gap-1.5 active:scale-95 transition-transform">
+            <span className="text-zinc-400 text-[10px] font-black uppercase tracking-wider">{t('topBar.lives')}:</span>
+            <span className="text-white text-sm font-[1000] italic leading-none tabular-nums" data-lives={lives === null ? 'null' : String(lives)}>
               {lives === null ? '—' : Number(lives).toString().padStart(2, '0')}
             </span>
-            <svg className="w-5 h-5 text-[#FF3131] fill-[#FF3131] drop-shadow-[0_0_6px_rgba(255,49,49,0.5)]" viewBox="0 0 24 24">
-              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-            </svg>
           </button>
 
           {/* Right: How to Play, FAQ, Wallet */}
@@ -220,6 +218,9 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
               <span className="text-[9px] font-black uppercase tracking-wider text-zinc-400">{t('topBar.faq')}</span>
             </button>
             <LanguageSelector />
+            <div className="md:hidden">
+              <NotificationBell walletAddress={publicKey?.toBase58() ?? null} />
+            </div>
             <WalletConnectButton />
           </div>
         </div>

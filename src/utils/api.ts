@@ -2290,3 +2290,63 @@ export async function fetchRefundableCustomGames(walletAddress: string): Promise
     expired_at: g.finalized_at,
   }));
 }
+
+// ─── Announcements ───────────────────────────────────────────────────────────
+
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  link_url: string | null;
+  created_at: string;
+  is_read?: boolean;
+}
+
+export async function fetchAnnouncements(walletAddress?: string): Promise<Announcement[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data: announcements, error } = await supabase
+    .from('announcements')
+    .select('id, title, body, link_url, created_at')
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error || !announcements) return [];
+
+  if (!walletAddress) return announcements.map(a => ({ ...a, is_read: false }));
+
+  const { data: reads } = await supabase
+    .from('announcement_reads')
+    .select('announcement_id')
+    .eq('wallet_address', walletAddress);
+
+  const readIds = new Set((reads ?? []).map((r: any) => r.announcement_id));
+  return announcements.map(a => ({ ...a, is_read: readIds.has(a.id) }));
+}
+
+export async function markAnnouncementRead(walletAddress: string, announcementId: string): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  await supabase
+    .from('announcement_reads')
+    .upsert({ wallet_address: walletAddress, announcement_id: announcementId }, { onConflict: 'wallet_address,announcement_id' });
+}
+
+export async function markAllAnnouncementsRead(walletAddress: string, announcementIds: string[]): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  const rows = announcementIds.map(id => ({ wallet_address: walletAddress, announcement_id: id }));
+  await supabase
+    .from('announcement_reads')
+    .upsert(rows, { onConflict: 'wallet_address,announcement_id' });
+}
+
+export async function getUnreadAnnouncementCount(walletAddress: string): Promise<number> {
+  if (!isSupabaseConfigured) return 0;
+  const { count: totalCount } = await supabase
+    .from('announcements')
+    .select('id', { count: 'exact', head: true });
+
+  const { count: readCount } = await supabase
+    .from('announcement_reads')
+    .select('announcement_id', { count: 'exact', head: true })
+    .eq('wallet_address', walletAddress);
+
+  return (totalCount ?? 0) - (readCount ?? 0);
+}
