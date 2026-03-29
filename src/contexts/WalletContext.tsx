@@ -1,4 +1,5 @@
 import { useMemo, useCallback, ReactNode } from 'react';
+import bs58 from 'bs58';
 import {
   ConnectionProvider,
   WalletProvider as SolanaWalletProvider,
@@ -115,13 +116,10 @@ export function useWallet() {
         transaction: serialized,
         wallet: privySolanaWallet,
       });
-      // Extract signature string from result (may be string, object with signature, or buffer)
-      if (typeof result === 'string') return result;
-      if (result?.signature) return String(result.signature);
-      if (result?.hash) return String(result.hash);
-      if (result?.transactionHash) return String(result.transactionHash);
-      // Log to debug if we still can't find it
-      console.log('Privy signAndSend result:', JSON.stringify(result));
+      // Privy React SDK returns { signature: Uint8Array } — encode to base58
+      const sig = result.signature;
+      if (sig instanceof Uint8Array) return bs58.encode(sig);
+      if (typeof sig === 'string') return sig;
       throw new Error('Could not extract transaction signature from Privy response');
     }
 
