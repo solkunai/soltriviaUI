@@ -109,13 +109,20 @@ export function useWallet() {
     }
 
     if (privySolanaWallet && privySignAndSend) {
-      // Privy: sign and send in one call, returns signature
+      // Privy: sign and send in one call
       const serialized = transaction.serialize();
-      const signature = await privySignAndSend({
+      const result = await privySignAndSend({
         transaction: serialized,
         wallet: privySolanaWallet,
       });
-      return typeof signature === 'string' ? signature : String(signature);
+      // Extract signature string from result (may be string, object with signature, or buffer)
+      if (typeof result === 'string') return result;
+      if (result?.signature) return String(result.signature);
+      if (result?.hash) return String(result.hash);
+      if (result?.transactionHash) return String(result.transactionHash);
+      // Log to debug if we still can't find it
+      console.log('Privy signAndSend result:', JSON.stringify(result));
+      throw new Error('Could not extract transaction signature from Privy response');
     }
 
     throw new Error('No wallet connected');
