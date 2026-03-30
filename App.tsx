@@ -90,7 +90,7 @@ import DuelWaitingView from './components/DuelWaitingView';
 import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
 import CompeteLobbyView from './components/CompeteLobbyView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel, type ActiveDuel } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel, type ActiveDuel } from './src/utils/api';
 import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES, getReEntryFeeLamports } from './src/utils/constants';
 import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildExpireDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildFundCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
 
@@ -548,56 +548,15 @@ const App: React.FC = () => {
     const walletAddress = publicKey.toBase58();
 
     try {
-      // First check if profile row exists
-      const { data: existing } = await supabase
-        .from('player_profiles')
-        .select('wallet_address')
-        .eq('wallet_address', walletAddress)
-        .maybeSingle();
+      const result = await updateProfile(walletAddress, {
+        username,
+        avatarUrl: avatar,
+      });
 
-      let saveError: any = null;
-
-      if (existing) {
-        // Row exists — use targeted update (safest, won't touch stats columns)
-        const { error } = await supabase
-          .from('player_profiles')
-          .update({
-            username,
-            avatar_url: avatar,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('wallet_address', walletAddress);
-        saveError = error;
-      } else {
-        // No row yet — insert with defaults
-        const { error } = await supabase
-          .from('player_profiles')
-          .insert({
-            wallet_address: walletAddress,
-            username,
-            avatar_url: avatar,
-            updated_at: new Date().toISOString(),
-          });
-        saveError = error;
-      }
-
-      if (saveError) {
-        console.error('Profile save failed:', saveError);
-        alert('Profile save failed. Please try again.');
-        return;
-      }
-
-      // Verify the save persisted by re-reading
-      const { data: verify } = await supabase
-        .from('player_profiles')
-        .select('username, avatar_url')
-        .eq('wallet_address', walletAddress)
-        .single();
-
-      if (verify) {
+      if (result.success) {
         setProfile({
-          username: verify.username || username,
-          avatar: verify.avatar_url || avatar,
+          username: result.username || username,
+          avatar: result.avatar_url || avatar,
         });
         setProfileCacheBuster(Date.now());
       }

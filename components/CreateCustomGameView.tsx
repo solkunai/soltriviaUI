@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useWallet, useConnection } from '@solana/wallet-adapter-react';
+import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { createCustomGame } from '../src/utils/api';
 import { supabase } from '../src/utils/supabase';

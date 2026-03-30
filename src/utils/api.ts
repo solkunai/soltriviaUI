@@ -493,6 +493,28 @@ export async function registerPlayerProfile(
   }
 }
 
+/** Update player profile via Edge Function (bypasses RLS). */
+export async function updateProfile(
+  walletAddress: string,
+  fields: {
+    username?: string;
+    avatarUrl?: string;
+    useSkrAsDisplay?: boolean;
+    skrDomain?: string;
+  }
+): Promise<{ success: boolean; username?: string; avatar_url?: string; use_skr_as_display?: boolean }> {
+  const response = await fetch(`${FUNCTIONS_URL}/update-profile`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ walletAddress, ...fields }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update profile');
+  }
+  return response.json();
+}
+
 // Quests: fetch definitions and user progress
 export async function fetchQuests(): Promise<Quest[]> {
   const { data, error } = await supabase
@@ -1314,18 +1336,10 @@ export async function getSeekerProfile(walletAddress: string): Promise<SeekerPro
 
 /** Toggle .skr domain as display name on/off. Also updates username so leaderboard reflects the change. */
 export async function toggleSkrDisplay(walletAddress: string, useSkr: boolean, skrDomain?: string): Promise<void> {
-  const update: Record<string, any> = {
-    use_skr_as_display: useSkr,
-    updated_at: new Date().toISOString(),
-  };
-  if (useSkr && skrDomain) {
-    update.username = skrDomain;
-  }
-  const { error } = await supabase
-    .from('player_profiles')
-    .update(update)
-    .eq('wallet_address', walletAddress);
-  if (error) throw new Error(error.message);
+  await updateProfile(walletAddress, {
+    useSkrAsDisplay: useSkr,
+    skrDomain: useSkr ? skrDomain : undefined,
+  });
 }
 
 // ─── Custom Games API ─────────────────────────────────────────────────────
