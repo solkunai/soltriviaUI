@@ -35,7 +35,7 @@ const PrivyWrapper: React.FC<PrivyWrapperProps> = ({ children }) => {
         },
         appearance: {
           theme: 'dark',
-          accentColor: '#14F195',
+          accentColor: '#FFD700',
           walletChainType: 'solana-only',
         },
         loginMethods: ['email', 'google', 'twitter', 'wallet'],

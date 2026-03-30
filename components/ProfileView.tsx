@@ -68,6 +68,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
   const { publicKey, sendTransaction, signMessage, isPrivyUser } = useWallet();
   const { exportWallet } = useExportWallet();
   const [walletCopied, setWalletCopied] = useState(false);
+  const [showExportDisclaimer, setShowExportDisclaimer] = useState(false);
   const { connection } = useConnection();
   const [stats, setStats] = useState<PlayerStats | null>(null);
   const [history, setHistory] = useState<GameHistory[]>([]);
@@ -846,12 +847,48 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                     )}
                   </button>
                   <button
-                    onClick={() => exportWallet()}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#9945FF]/10 border border-[#9945FF]/20 rounded-full hover:bg-[#9945FF]/20 text-[#9945FF] transition-all active:scale-95"
+                    onClick={() => setShowExportDisclaimer(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FFD700]/10 border border-[#FFD700]/20 rounded-full hover:bg-[#FFD700]/20 text-[#FFD700] transition-all active:scale-95"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3m0 0L8 7m4-4l4 4M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17" /></svg>
                     <span className="text-[9px] font-black uppercase tracking-wider">Export Key</span>
                   </button>
+                </div>
+              )}
+
+              {/* Export Key Disclaimer Modal */}
+              {showExportDisclaimer && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowExportDisclaimer(false)}>
+                  <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-sm mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
+                      </div>
+                      <h3 className="text-white font-black text-sm uppercase tracking-wide">Before You Export</h3>
+                    </div>
+                    <div className="space-y-3 mb-5">
+                      <p className="text-zinc-300 text-xs leading-relaxed">Your private key gives <span className="text-white font-bold">full control</span> over your wallet and all funds inside it.</p>
+                      <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 space-y-2">
+                        <p className="text-red-300 text-xs font-bold">Never share your private key with anyone.</p>
+                        <p className="text-red-300/80 text-[11px]">No one from Sol Trivia, Privy, or any legitimate service will ever ask for it. Anyone who has this key can steal your funds.</p>
+                      </div>
+                      <p className="text-zinc-400 text-[11px] leading-relaxed">Write it down and store it somewhere safe. You can import it into Phantom, Solflare, or any Solana wallet for full self-custody.</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setShowExportDisclaimer(false)}
+                        className="flex-1 px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-400 text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => { setShowExportDisclaimer(false); exportWallet(); }}
+                        className="flex-1 px-4 py-2.5 bg-[#FFD700]/15 border border-[#FFD700]/30 rounded-xl text-[#FFD700] text-xs font-bold uppercase tracking-wider hover:bg-[#FFD700]/25 transition-all"
+                      >
+                        I Understand
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
           </div>
