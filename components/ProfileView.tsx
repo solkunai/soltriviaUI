@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { useExportWallet } from '@privy-io/react-auth/solana';
@@ -856,9 +857,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 </div>
               )}
 
-              {/* Export Key Disclaimer Modal */}
-              {showExportDisclaimer && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowExportDisclaimer(false)}>
+              {/* Export Key Disclaimer Modal — rendered via portal to escape stacking context */}
+              {showExportDisclaimer && ReactDOM.createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setShowExportDisclaimer(false)}>
                   <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-sm mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-10 h-10 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center">
@@ -889,7 +890,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       </button>
                     </div>
                   </div>
-                </div>
+                </div>,
+                document.body
+
               )}
           </div>
         </div>
