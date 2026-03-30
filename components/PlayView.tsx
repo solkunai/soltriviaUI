@@ -312,7 +312,7 @@ const PlayView: React.FC<PlayViewProps> = ({ lives, roundEntriesUsed, roundEntri
                 </svg>
               </div>
               <div className="text-left">
-                <span className="text-[#14F195] text-[10px] font-[1000] italic uppercase tracking-tight block">Game Pass — $20</span>
+                <span className="text-[#14F195] text-[10px] font-[1000] italic uppercase tracking-tight block">Game Pass — $10</span>
                 <span className="text-zinc-500 text-[8px] font-bold italic">Unlimited practice + cheap custom games</span>
               </div>
             </div>

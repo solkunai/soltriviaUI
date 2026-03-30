@@ -29,10 +29,10 @@ export const SEEKER_LIVES_TIERS = [
 export type LivesTierId = typeof LIVES_TIERS[number]['id'];
 
 // Game Pass pricing (one-time purchase, all goes to revenue wallet)
-export const GAME_PASS_PRICE_LAMPORTS = 200_000_000; // 0.2 SOL regular
-export const GAME_PASS_PRICE_SOL = 0.2;
-export const SEEKER_GAME_PASS_PRICE_LAMPORTS = 100_000_000; // 0.1 SOL for SGT holders
-export const SEEKER_GAME_PASS_PRICE_SOL = 0.1;
+export const GAME_PASS_PRICE_LAMPORTS = 100_000_000; // 0.1 SOL regular
+export const GAME_PASS_PRICE_SOL = 0.1;
+export const SEEKER_GAME_PASS_PRICE_LAMPORTS = 50_000_000; // 0.05 SOL for SGT holders
+export const SEEKER_GAME_PASS_PRICE_SOL = 0.05;
 
 // ─── Multi-token payment support (SOL / USDC / SKR) ─────────────────────────
 export type PaymentToken = 'SOL' | 'USDC' | 'SKR' | 'NERD';
@@ -59,8 +59,8 @@ export const LIVES_USD_PRICING = {
 
 // USD-based pricing for Game Pass
 export const GAME_PASS_USD_PRICING = {
-  standard: 20,
-  seeker: 10,
+  standard: 10,
+  seeker: 5,
 } as const;
 
 // $NERD token payment discount (10% off when paying with $NERD)
