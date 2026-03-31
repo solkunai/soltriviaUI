@@ -392,7 +392,7 @@ const HomeView: React.FC<HomeViewProps> = ({ lives, onEnterTrivia, onOpenGuide, 
                     <div>
                       <span className="text-white text-xs font-[1000] italic uppercase tracking-tight block">{t('home.gamePassPromo')}</span>
                       <div className="flex items-baseline gap-1">
-                        <span className="text-[#14F195] text-base font-[1000] italic leading-none">${isSeekerVerified ? '10' : '20'}</span>
+                        <span className="text-[#14F195] text-base font-[1000] italic leading-none">${isSeekerVerified ? '5' : '10'}</span>
                         <span className="text-[#14F195] text-[7px] font-black italic uppercase">USD</span>
                         <span className="text-zinc-600 text-[8px] font-bold italic ml-1">{t('home.oneTime')}</span>
                       </div>

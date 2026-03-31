@@ -186,7 +186,7 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
               <div>
                 <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest mb-3 flex items-center gap-3">10.2 Pricing & Payments</h3>
                 <p className="text-white font-medium text-sm leading-relaxed opacity-90">
-                  Game Pass costs $20 USD (or $10 USD for verified Seeker holders). Payment is sent to the Revenue wallet. Game Pass purchases are non-refundable. Token prices are fetched from third-party price APIs and may fluctuate; the price shown at checkout is the price you pay.
+                  Game Pass costs $10 USD (or $5 USD for verified Seeker holders). Payment is sent to the Revenue wallet. Game Pass purchases are non-refundable. Token prices are fetched from third-party price APIs and may fluctuate; the price shown at checkout is the price you pay.
                 </p>
               </div>
               <div>
@@ -270,7 +270,7 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
               <div>
                 <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest mb-3 flex items-center gap-3">13.2 Benefits</h3>
                 <p className="text-white font-medium text-sm leading-relaxed opacity-90">
-                  Verified Seeker holders receive: +25% XP boost on profile total points (applied to profile stats only, not individual game session scores), discounted lives tiers, discounted Game Pass pricing ($10 USD instead of $20 USD), automatic .skr domain detection as optional display name, and a Seeker badge on leaderboards.
+                  Verified Seeker holders receive: +25% XP boost on profile total points (applied to profile stats only, not individual game session scores), discounted lives tiers, discounted Game Pass pricing ($5 USD instead of $10 USD), automatic .skr domain detection as optional display name, and a Seeker badge on leaderboards.
                 </p>
               </div>
             </div>
