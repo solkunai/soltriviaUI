@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getCustomGame, type CustomGameData } from '../src/utils/api';
 import {
   CUSTOM_GAME_MAX_ATTEMPTS,
-  CUSTOM_GAME_MIN_PLAYERS,
   DEFAULT_AVATAR,
   getReEntryFeeLamports,
 } from '../src/utils/constants';
@@ -320,7 +319,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   };
 
   // CTA logic
-  const canCreatorFund = isCreatorFunded && isCreator && gameData.status === 'active' && gameData.player_count >= CUSTOM_GAME_MIN_PLAYERS && !isFunded;
+  const canCreatorFund = isCreatorFunded && isCreator && gameData.status === 'active' && !isFunded;
   const showJoinButton = isPaid && !hasEntered && !isCreator && gameData.status === 'active';
 
   // Duration label
@@ -579,7 +578,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                           onClick={() => onFundAndStart?.(gameData)}
                           className="w-full min-h-[56px] px-6 py-4 bg-amber-500 text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-amber-400 shadow-[0_10px_40px_-10px_rgba(245,158,11,0.3)] transition-all active:scale-[0.98]"
                         >
-                          Fund & Start Game ({creatorDepositSOL} SOL)
+                          Fund Prize Pool ({creatorDepositSOL} SOL)
                         </button>
                       ) : (
                         <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
@@ -664,7 +663,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
               <span className="text-white text-xs font-black italic">{gameData.total_plays}</span>
             </div>
             <div className="text-center">
-              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Expires</span>
+              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Lobby Closes</span>
               <span className="text-yellow-400 text-xs font-black italic">{expiryLabel}</span>
             </div>
           </div>
