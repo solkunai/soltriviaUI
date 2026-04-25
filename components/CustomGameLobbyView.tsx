@@ -320,7 +320,10 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
 
   // CTA logic
   const canCreatorFund = isCreatorFunded && isCreator && gameData.status === 'active' && !isFunded;
-  const showJoinButton = isPaid && !hasEntered && !isCreator && gameData.status === 'active';
+  // Block join on creator-funded games until the creator has funded the prize pool —
+  // protects players from wasting the 0.0025 SOL platform fee on an empty pot.
+  const awaitingCreatorFunding = isCreatorFunded && !isFunded;
+  const showJoinButton = isPaid && !hasEntered && !isCreator && gameData.status === 'active' && !awaitingCreatorFunding;
 
   // Duration label
   const durationLabel = gameData.game_duration_minutes
@@ -532,6 +535,13 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                         </p>
                       )}
                     </>
+                  )}
+
+                  {awaitingCreatorFunding && !isCreator && !hasEntered && (
+                    <div className="w-full min-h-[56px] px-6 py-4 bg-amber-400/10 border border-amber-400/20 rounded-xl text-center">
+                      <span className="text-amber-400 font-[1000] italic uppercase text-base">Awaiting Creator Funding</span>
+                      <p className="text-zinc-400 text-xs font-black mt-1">Once the creator funds the prize pool, players can enter.</p>
+                    </div>
                   )}
 
                   {hasEntered && !isCreator && canPlay && isReEntry && !showReEntryConfirm && (

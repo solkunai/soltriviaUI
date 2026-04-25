@@ -1373,6 +1373,8 @@ export interface CreateCustomGameResponse {
   game_id: string;
   slug: string;
   share_url: string;
+  on_chain_game_id?: number;
+  create_game_tx_signature?: string;
 }
 
 export async function createCustomGame(params: CreateCustomGameParams): Promise<CreateCustomGameResponse> {

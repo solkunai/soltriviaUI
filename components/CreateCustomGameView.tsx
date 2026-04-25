@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
-import { createCustomGame } from '../src/utils/api';
+import { createCustomGame, recordCustomGameFunding } from '../src/utils/api';
+import { buildFundCustomGameIx } from '../src/utils/soltriviaContract';
 import { supabase } from '../src/utils/supabase';
 import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import {
@@ -283,6 +284,47 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
       }
 
       const result = await createCustomGame(params);
+
+      // For creator-funded games, immediately chain the prize-pool deposit so the
+      // game is fully funded as part of creation. Wallet pops up a second time.
+      if (isCreatorFunded && result.on_chain_game_id != null && activeCreatorDeposit > 0) {
+        try {
+          const { blockhash: fundBlockhash } = await getRecentBlockhashWithRetry(connection);
+          const fundIx = buildFundCustomGameIx(publicKey, result.on_chain_game_id, activeCreatorDeposit);
+          const fundMessage = new TransactionMessage({
+            payerKey: publicKey,
+            recentBlockhash: fundBlockhash,
+            instructions: [fundIx],
+          }).compileToV0Message();
+          const fundTx = new VersionedTransaction(fundMessage);
+          const fundSig = await sendTransaction(fundTx, connection);
+
+          await Promise.race([
+            connection.confirmTransaction(fundSig, 'confirmed'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Fund transaction confirmation timeout')), 30000)),
+          ]);
+
+          await recordCustomGameFunding(
+            result.game_id,
+            publicKey.toBase58(),
+            fundSig,
+            activeCreatorDeposit,
+          );
+        } catch (fundErr: any) {
+          console.error('Prize pool funding failed after create:', fundErr);
+          // Game exists in DB and on-chain but is unfunded. Lobby has a recovery
+          // path: creator can re-attempt funding via the Fund Prize Pool button.
+          const userRejected = fundErr.message?.includes('User rejected') || fundErr.message?.includes('user reject');
+          setError(
+            userRejected
+              ? 'Game created, but prize pool funding was cancelled. Open the game lobby to fund it.'
+              : 'Game created, but prize pool funding failed. Open the game lobby to retry funding. Details: ' + (fundErr.message || 'Unknown error'),
+          );
+          // Still surface the success screen so the creator can navigate to the lobby.
+          setCreatedSlug(result.slug);
+          return;
+        }
+      }
 
       setCreatedSlug(result.slug);
     } catch (err: any) {
