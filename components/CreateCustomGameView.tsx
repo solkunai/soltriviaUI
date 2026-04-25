@@ -94,7 +94,8 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   const activeEntryFee = customEntryFee ? Math.round(parseFloat(customEntryFee) * 1_000_000_000) : entryFeeLamports;
   const activeCreatorDeposit = customCreatorDeposit ? Math.round(parseFloat(customCreatorDeposit) * 1_000_000_000) : creatorDepositLamports;
   const estimatedPot = isCreatorFunded ? activeCreatorDeposit : (isPaid ? activeEntryFee * maxPlayers : 0);
-  const platformCut = Math.floor(estimatedPot * CUSTOM_GAME_PLATFORM_CUT_BPS / 10000);
+  // Contract takes 0% from creator-funded games — winners receive the full deposit.
+  const platformCut = isCreatorFunded ? 0 : Math.floor(estimatedPot * CUSTOM_GAME_PLATFORM_CUT_BPS / 10000);
   const prizePot = estimatedPot - platformCut;
   const winnerSplitBps = CUSTOM_GAME_WINNER_SPLITS[maxWinners];
   const winnerAmounts = winnerSplitBps.filter((b: number) => b > 0).map((b: number) => Math.floor(prizePot * b / 10000));
