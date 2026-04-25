@@ -103,7 +103,7 @@ export const TRIVIA_PRIZE_BPS = [5000, 2000, 1500, 1000, 500] as const;
 export const TRIVIA_PRIZE_LABELS = ['50%', '20%', '15%', '10%', '5%'] as const;
 
 // ─── Custom Games ─────────────────────────────────────────────────────────
-export const CUSTOM_GAME_CREATION_FEE_LAMPORTS = ENTRY_FEE_LAMPORTS; // 0.02 SOL (non-pass holders only)
+export const CUSTOM_GAME_CREATION_FEE_LAMPORTS = 5_000_000; // 0.005 SOL (non-pass holders only)
 export const CUSTOM_GAME_PLATFORM_FEE_LAMPORTS = TXN_FEE_LAMPORTS;   // 0.0025 SOL (everyone)
 export const CUSTOM_GAME_QUESTION_COUNTS = [5, 10, 15] as const;
 export const CUSTOM_GAME_ROUND_COUNTS = [1, 3, 5] as const;
