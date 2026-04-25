@@ -518,13 +518,20 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
               {gameData.status === 'active' && (
                 <>
                   {showJoinButton && (
-                    <button
-                      onClick={handleJoin}
-                      disabled={joining}
-                      className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98] disabled:opacity-50"
-                    >
-                      {joining ? 'Joining...' : isCreatorFunded ? 'Join Game (0.0025 SOL)' : `Join Game (${entryFeeSOL} SOL)`}
-                    </button>
+                    <>
+                      <button
+                        onClick={handleJoin}
+                        disabled={joining}
+                        className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98] disabled:opacity-50"
+                      >
+                        {joining ? 'Joining...' : isCreatorFunded ? 'Join Game (0.0025 SOL)' : `Join Game (${entryFeeSOL} SOL)`}
+                      </button>
+                      {isCreatorFunded && (
+                        <p className="text-zinc-500 text-[10px] font-black italic uppercase tracking-wider text-center mt-2">
+                          Free entry — 0.0025 SOL platform fee only
+                        </p>
+                      )}
+                    </>
                   )}
 
                   {hasEntered && !isCreator && canPlay && isReEntry && !showReEntryConfirm && (
