@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWallet } from '../src/contexts/WalletContext';
-import { fetchQuests, fetchUserQuestProgress, subscribeUserQuestProgress, subscribeQuests, submitQuestProof, claimQuestReward, type Quest, type UserQuestProgress } from '../src/utils/api';
+import { fetchQuests, fetchUserQuestProgress, subscribeUserQuestProgress, subscribeQuests, submitQuestProof, claimQuestReward, fetchUserQuestSubmissions, type Quest, type UserQuestProgress, type QuestSubmissionStatus } from '../src/utils/api';
 
 interface QuestsViewProps {
   onGoToProfile?: () => void;
@@ -15,6 +15,7 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
   const { publicKey, connected } = useWallet();
   const [quests, setQuests] = useState<Quest[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, UserQuestProgress>>({});
+  const [submissionStatusMap, setSubmissionStatusMap] = useState<Record<string, QuestSubmissionStatus>>({});
   const [loading, setLoading] = useState(true);
   // Per-quest proof input state (keyed by quest id) so multiple proof-requiring quests
   // can have independent inputs at the same time.
@@ -36,15 +37,25 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
   const loadProgress = useCallback(async () => {
     if (!connected || !publicKey) {
       setProgressMap({});
+      setSubmissionStatusMap({});
       return;
     }
     try {
-      const list = await fetchUserQuestProgress(publicKey.toBase58());
+      const wallet = publicKey.toBase58();
+      const [list, submissions] = await Promise.all([
+        fetchUserQuestProgress(wallet),
+        fetchUserQuestSubmissions(wallet).catch(() => []),
+      ]);
       const map: Record<string, UserQuestProgress> = {};
       list.forEach((p) => { map[p.quest_id] = p; });
       setProgressMap(map);
+      // submissions arrive ordered DESC by created_at — first occurrence is latest per quest
+      const subMap: Record<string, QuestSubmissionStatus> = {};
+      submissions.forEach((s) => { if (!subMap[s.quest_id]) subMap[s.quest_id] = s.status; });
+      setSubmissionStatusMap(subMap);
     } catch {
       setProgressMap({});
+      setSubmissionStatusMap({});
     }
   }, [connected, publicKey]);
 
@@ -184,6 +195,9 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
                     const requiresProof = questRequiresProof(quest);
                     const currentProofUrl = proofUrls[quest.id] || '';
                     const inputOpen = !!showProofInput[quest.id];
+                    const subStatus = submissionStatusMap[quest.id];
+                    const isPendingReview = requiresProof && subStatus === 'pending' && !getClaimed(quest.id);
+                    const isRejected = requiresProof && subStatus === 'rejected' && !getClaimed(quest.id);
                     return (
                     <QuestCard
                       key={quest.id}
@@ -191,11 +205,12 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
                       progress={getProgress(quest.id)}
                       completed={getCompleted(quest.id)}
                       claimed={getClaimed(quest.id)}
-                      showInput={requiresProof && inputOpen && !getClaimed(quest.id)}
+                      submissionStatus={subStatus}
+                      showInput={requiresProof && inputOpen && !getClaimed(quest.id) && !isPendingReview}
                       inputValue={currentProofUrl}
                       onInputChange={(val) => setProofUrl(quest.id, val)}
                       onGoToProfile={quest.slug === 'identity_sync' ? onGoToProfile : undefined}
-                      onRaiderClick={quest.quest_type === 'SOCIAL' && !getClaimed(quest.id) ? () => {
+                      onRaiderClick={quest.quest_type === 'SOCIAL' && !getClaimed(quest.id) && !isPendingReview ? () => {
                         const link = (quest.requirement_config as { link?: string })?.link || (quest.slug === 'true_raider' ? 'https://x.com/soltrivia_app' : '');
                         if (link) window.open(link, '_blank');
                         if (requiresProof) setShowProofInput((prev) => ({ ...prev, [quest.id]: true }));
@@ -252,6 +267,7 @@ interface QuestCardProps {
   progress: number;
   completed: boolean;
   claimed?: boolean;
+  submissionStatus?: QuestSubmissionStatus;
   showInput?: boolean;
   inputValue?: string;
   onInputChange?: (v: string) => void;
@@ -268,6 +284,7 @@ const QuestCard: React.FC<QuestCardProps> = ({
   progress,
   completed,
   claimed = false,
+  submissionStatus,
   showInput,
   inputValue,
   onInputChange,
@@ -296,20 +313,27 @@ const QuestCard: React.FC<QuestCardProps> = ({
     badgeLabel = t('quests.socialMission');
   }
 
-  const isActionableSocial = quest.quest_type === 'SOCIAL' && !!onRaiderClick && !claimed && !isClaimable;
-  const statusText = quest.slug === 'true_raider'
-    ? (claimed ? t('quests.claimedStatus') : t('quests.startRaid'))
+  const isPendingReview = submissionStatus === 'pending' && !claimed;
+  const isRejected = submissionStatus === 'rejected' && !claimed && !isClaimable;
+  const isActionableSocial = quest.quest_type === 'SOCIAL' && !!onRaiderClick && !claimed && !isClaimable && !isPendingReview;
+  const statusText = isPendingReview
+    ? 'Awaiting review'
     : claimed
       ? t('quests.claimedStatus')
       : isClaimable
         ? t('quests.claimStatus')
-        : isActionableSocial
-          ? t('quests.startRaid') // reuse the "Start" CTA copy for any social mission
-          : t('quests.active');
+        : isRejected
+          ? 'Rejected — Resubmit'
+          : isActionableSocial
+            ? t('quests.startRaid') // reuse the "Start" CTA copy for any social mission
+            : quest.slug === 'true_raider'
+              ? t('quests.startRaid')
+              : t('quests.active');
   const rewardLabel = quest.reward_label || `${quest.reward_tp?.toLocaleString() ?? 0} TP`;
 
   const handleAction = async () => {
     if (claimed) return;
+    if (isPendingReview) return;
     if (isClaimable) {
       if (!onClaim) {
         alert(t('quests.connectWalletAlert'));
@@ -382,6 +406,16 @@ const QuestCard: React.FC<QuestCardProps> = ({
             </p>
           )}
         </div>
+      ) : isPendingReview ? (
+        <div className="mb-4 md:mb-8 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-sm">
+          <p className="text-yellow-300 text-[10px] md:text-xs font-black italic uppercase tracking-wider">Proof submitted — admin reviewing</p>
+          <p className="text-yellow-200/70 text-[9px] md:text-[10px] font-bold italic mt-0.5">You'll see a Claim button when approved.</p>
+        </div>
+      ) : isRejected ? (
+        <div className="mb-4 md:mb-8 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-sm">
+          <p className="text-red-400 text-[10px] md:text-xs font-black italic uppercase tracking-wider">Submission rejected</p>
+          <p className="text-red-300/70 text-[9px] md:text-[10px] font-bold italic mt-0.5">Tap Resubmit to try again with a new link.</p>
+        </div>
       ) : (
         <div className="mb-4 md:mb-8">
           <div className="flex justify-between items-end mb-1 md:mb-2">
@@ -405,8 +439,8 @@ const QuestCard: React.FC<QuestCardProps> = ({
         </div>
         <button
           onClick={handleAction}
-          disabled={(isClaimable && claiming) || claimed}
-          className={`px-4 md:px-8 py-2 md:py-3 font-[1000] uppercase text-[9px] md:text-xs italic shadow-lg active:scale-95 transition-all rounded-sm disabled:opacity-70 ${isClaimable ? 'bg-[#14F195] text-black' : claimed ? 'bg-white/5 text-zinc-500 cursor-default' : (quest.slug === 'true_raider' || isActionableSocial) ? 'bg-[#3b82f6] text-white' : 'bg-white/5 text-zinc-600'}`}
+          disabled={(isClaimable && claiming) || claimed || isPendingReview}
+          className={`px-4 md:px-8 py-2 md:py-3 font-[1000] uppercase text-[9px] md:text-xs italic shadow-lg active:scale-95 transition-all rounded-sm disabled:opacity-70 ${isClaimable ? 'bg-[#14F195] text-black' : claimed ? 'bg-white/5 text-zinc-500 cursor-default' : isPendingReview ? 'bg-yellow-500/20 text-yellow-300 cursor-default' : isRejected ? 'bg-red-500/30 text-red-300' : (quest.slug === 'true_raider' || isActionableSocial) ? 'bg-[#3b82f6] text-white' : 'bg-white/5 text-zinc-600'}`}
         >
           {isClaimable && claiming ? '…' : statusText}
         </button>

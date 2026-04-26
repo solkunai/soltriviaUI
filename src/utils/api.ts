@@ -604,7 +604,28 @@ export function subscribeQuests(onQuests: (quests: Quest[]) => void): { unsubscr
   };
 }
 
-/** Submit proof URL for verification quests (e.g. TRUE RAIDER). Admin approves later; then user is rewarded automatically. */
+export type QuestSubmissionStatus = 'pending' | 'approved' | 'rejected';
+export interface QuestSubmission {
+  id: string;
+  quest_id: string;
+  wallet_address: string;
+  status: QuestSubmissionStatus;
+  proof_url: string;
+  created_at: string;
+}
+
+/** Fetch this wallet's proof submissions, keyed by quest_id with the latest row per quest. */
+export async function fetchUserQuestSubmissions(walletAddress: string): Promise<QuestSubmission[]> {
+  const { data, error } = await supabase
+    .from('quest_submissions')
+    .select('id, quest_id, wallet_address, status, proof_url, created_at')
+    .eq('wallet_address', walletAddress)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data || []) as QuestSubmission[];
+}
+
+/** Submit proof URL for any active quest. Admin approves later; user clicks Claim to receive TP. true_raider auto-approves+claims. */
 export async function submitQuestProof(
   walletAddress: string,
   questSlug: string,
