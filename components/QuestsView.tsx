@@ -16,8 +16,10 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
   const [quests, setQuests] = useState<Quest[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, UserQuestProgress>>({});
   const [loading, setLoading] = useState(true);
-  const [raiderUrl, setRaiderUrl] = useState('');
-  const [showRaiderInput, setShowRaiderInput] = useState(false);
+  // Per-quest proof input state (keyed by quest id) so multiple proof-requiring quests
+  // can have independent inputs at the same time.
+  const [proofUrls, setProofUrls] = useState<Record<string, string>>({});
+  const [showProofInput, setShowProofInput] = useState<Record<string, boolean>>({});
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [submitMessage, setSubmitMessage] = useState('');
   const [rewardToast, setRewardToast] = useState<{ tp: number } | null>(null);
@@ -88,6 +90,17 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
   const getProgress = (questId: string) => progressMap[questId]?.progress ?? 0;
   const getCompleted = (questId: string) => progressMap[questId]?.completed_at != null;
   const getClaimed = (questId: string) => progressMap[questId]?.claimed_at != null;
+
+  // A quest needs a proof-link input if its requirement_config has requires_proof: true.
+  // The legacy `true_raider` quest is grandfathered in for backward compat (no DB update needed).
+  const questRequiresProof = (q: Quest): boolean => {
+    const cfg = q.requirement_config as { requires_proof?: boolean } | undefined;
+    return !!cfg?.requires_proof || q.slug === 'true_raider';
+  };
+
+  const setProofUrl = (questId: string, value: string) => {
+    setProofUrls((prev) => ({ ...prev, [questId]: value }));
+  };
 
   const questCategories = React.useMemo(() => {
     const byCategory: Record<string, Quest[]> = {};
@@ -164,32 +177,36 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
                   <div className="h-[1px] w-full bg-gradient-to-r from-white/10 to-transparent"></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-10">
-                  {category.quests.map((quest) => (
+                  {category.quests.map((quest) => {
+                    const requiresProof = questRequiresProof(quest);
+                    const currentProofUrl = proofUrls[quest.id] || '';
+                    const inputOpen = !!showProofInput[quest.id];
+                    return (
                     <QuestCard
                       key={quest.id}
                       quest={quest}
                       progress={getProgress(quest.id)}
                       completed={getCompleted(quest.id)}
                       claimed={getClaimed(quest.id)}
-                      showInput={quest.slug === 'true_raider' && showRaiderInput && !getClaimed(quest.id)}
-                      inputValue={raiderUrl}
-                      onInputChange={setRaiderUrl}
+                      showInput={requiresProof && inputOpen && !getClaimed(quest.id)}
+                      inputValue={currentProofUrl}
+                      onInputChange={(val) => setProofUrl(quest.id, val)}
                       onGoToProfile={quest.slug === 'identity_sync' ? onGoToProfile : undefined}
                       onRaiderClick={quest.quest_type === 'SOCIAL' && !getClaimed(quest.id) ? () => {
                         const link = (quest.requirement_config as { link?: string })?.link || (quest.slug === 'true_raider' ? 'https://x.com/soltrivia_app' : '');
                         if (link) window.open(link, '_blank');
-                        if (quest.slug === 'true_raider') setShowRaiderInput(true);
+                        if (requiresProof) setShowProofInput((prev) => ({ ...prev, [quest.id]: true }));
                       } : undefined}
-                      onVerifyRaider={quest.slug === 'true_raider' ? async () => {
-                        if (!publicKey || !raiderUrl.trim()) return;
+                      onVerifyRaider={requiresProof ? async () => {
+                        if (!publicKey || !currentProofUrl.trim()) return;
                         setSubmitStatus('submitting');
                         setSubmitMessage('');
-                        const { ok, error, message, auto_claimed, reward_tp } = await submitQuestProof(publicKey.toBase58(), 'true_raider', raiderUrl.trim());
+                        const { ok, error, message, auto_claimed, reward_tp } = await submitQuestProof(publicKey.toBase58(), quest.slug, currentProofUrl.trim());
                         if (ok) {
                           setSubmitStatus('success');
                           setSubmitMessage(auto_claimed ? (message || 'Quest completed! Your reward has been added.') : (message || 'Submitted for review. You’ll get TP once approved.'));
-                          setRaiderUrl('');
-                          setShowRaiderInput(false);
+                          setProofUrl(quest.id, '');
+                          setShowProofInput((prev) => ({ ...prev, [quest.id]: false }));
                           loadProgress();
                           if (auto_claimed && reward_tp != null) {
                             setRewardToast({ tp: reward_tp });
@@ -215,7 +232,8 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
                       submitStatus={submitStatus}
                       submitMessage={submitMessage}
                     />
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}
