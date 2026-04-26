@@ -239,6 +239,10 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
                       onClaim={connected && publicKey ? async (q) => {
                         const result = await claimQuestReward(publicKey.toBase58(), q.id);
                         if (result.success) {
+                          // Clear any cached input state so the proof URL field doesn't reappear
+                          // for a quest the user has already claimed.
+                          setShowProofInput((prev) => ({ ...prev, [q.id]: false }));
+                          setProofUrls((prev) => ({ ...prev, [q.id]: '' }));
                           loadProgress();
                           if (result.reward_tp != null) {
                             setRewardToast({ tp: result.reward_tp });
@@ -381,7 +385,15 @@ const QuestCard: React.FC<QuestCardProps> = ({
         </p>
       </div>
 
-      {showInput ? (
+      {claimed ? (
+        <div className="mb-4 md:mb-8 px-3 py-2 bg-[#14F195]/10 border border-[#14F195]/40 rounded-sm flex items-center gap-2">
+          <span className="text-[#14F195] text-base md:text-lg font-[1000] italic leading-none">✓</span>
+          <div>
+            <p className="text-[#14F195] text-[10px] md:text-xs font-black italic uppercase tracking-wider leading-tight">Reward claimed</p>
+            <p className="text-[#14F195]/70 text-[9px] md:text-[10px] font-bold italic mt-0.5 leading-tight">+{(quest.reward_tp ?? 0).toLocaleString()} TP added to your profile.</p>
+          </div>
+        </div>
+      ) : showInput ? (
         <div className="mb-4 md:mb-8 animate-fade-in">
           <label className="text-[8px] md:text-[9px] font-black uppercase tracking-widest text-zinc-500 italic block mb-1 md:mb-2">{t('quests.pastePostUrl')}</label>
           <div className="flex gap-2">
