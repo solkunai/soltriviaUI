@@ -91,11 +91,14 @@ const QuestsView: React.FC<QuestsViewProps> = ({ onGoToProfile, onOpenGuide }) =
   const getCompleted = (questId: string) => progressMap[questId]?.completed_at != null;
   const getClaimed = (questId: string) => progressMap[questId]?.claimed_at != null;
 
-  // A quest needs a proof-link input if its requirement_config has requires_proof: true.
-  // The legacy `true_raider` quest is grandfathered in for backward compat (no DB update needed).
+  // Every SOCIAL quest gets a proof-link input by default — the user clicks the quest's
+  // link, completes the action, then pastes the resulting URL (their tweet, their post,
+  // etc.) for verification. Admin can opt out a specific quest with
+  // `requires_proof: false` in its requirement_config.
   const questRequiresProof = (q: Quest): boolean => {
     const cfg = q.requirement_config as { requires_proof?: boolean } | undefined;
-    return !!cfg?.requires_proof || q.slug === 'true_raider';
+    if (cfg?.requires_proof === false) return false;
+    return q.quest_type === 'SOCIAL' || q.slug === 'true_raider';
   };
 
   const setProofUrl = (questId: string, value: string) => {
