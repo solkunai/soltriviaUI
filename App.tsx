@@ -782,11 +782,17 @@ const App: React.FC = () => {
 
       let instructions;
       if (useContractEntry) {
-        // Ensure program is initialized once (idempotent). Then ensure current round exists on-chain (same date/round as client).
-        await initializeProgram({
-          revenueWallet: REVENUE_WALLET,
-          useDevnet: SOLANA_NETWORK === 'devnet',
-        });
+        // The V2 program has been initialized since Feb 2026. The initialize-program call
+        // is a paranoid no-op — wrap it so a transient failure (CORS cache, RPC blip)
+        // never blocks a real player from entering a round.
+        try {
+          await initializeProgram({
+            revenueWallet: REVENUE_WALLET,
+            useDevnet: SOLANA_NETWORK === 'devnet',
+          });
+        } catch (initErr) {
+          console.warn('initializeProgram failed (non-fatal, program is already initialized):', initErr);
+        }
         await ensureRoundOnChain(
           SOLANA_NETWORK === 'devnet'
             ? { date: today, round_number: roundNumber, tier_index: tierIndex, useDevnet: true }
