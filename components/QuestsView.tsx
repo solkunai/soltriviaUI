@@ -296,7 +296,16 @@ const QuestCard: React.FC<QuestCardProps> = ({
     badgeLabel = t('quests.socialMission');
   }
 
-  const statusText = quest.slug === 'true_raider' ? (claimed ? t('quests.claimedStatus') : t('quests.startRaid')) : (claimed ? t('quests.claimedStatus') : isClaimable ? t('quests.claimStatus') : t('quests.active'));
+  const isActionableSocial = quest.quest_type === 'SOCIAL' && !!onRaiderClick && !claimed && !isClaimable;
+  const statusText = quest.slug === 'true_raider'
+    ? (claimed ? t('quests.claimedStatus') : t('quests.startRaid'))
+    : claimed
+      ? t('quests.claimedStatus')
+      : isClaimable
+        ? t('quests.claimStatus')
+        : isActionableSocial
+          ? t('quests.startRaid') // reuse the "Start" CTA copy for any social mission
+          : t('quests.active');
   const rewardLabel = quest.reward_label || `${quest.reward_tp?.toLocaleString() ?? 0} TP`;
 
   const handleAction = async () => {
@@ -321,7 +330,9 @@ const QuestCard: React.FC<QuestCardProps> = ({
       return;
     }
     if (quest.slug === 'identity_sync') onGoToProfile?.();
-    if (quest.slug === 'true_raider' && !claimed) onRaiderClick?.();
+    // Any quest the parent has wired up onRaiderClick for (every SOCIAL quest by default)
+    // can be "started" from this button — opens the link, surfaces the proof input.
+    if (!claimed && onRaiderClick && quest.slug !== 'identity_sync') onRaiderClick();
   };
 
   return (
@@ -395,7 +406,7 @@ const QuestCard: React.FC<QuestCardProps> = ({
         <button
           onClick={handleAction}
           disabled={(isClaimable && claiming) || claimed}
-          className={`px-4 md:px-8 py-2 md:py-3 font-[1000] uppercase text-[9px] md:text-xs italic shadow-lg active:scale-95 transition-all rounded-sm disabled:opacity-70 ${isClaimable ? 'bg-[#14F195] text-black' : claimed ? 'bg-white/5 text-zinc-500 cursor-default' : quest.slug === 'true_raider' ? 'bg-[#3b82f6] text-white' : 'bg-white/5 text-zinc-600'}`}
+          className={`px-4 md:px-8 py-2 md:py-3 font-[1000] uppercase text-[9px] md:text-xs italic shadow-lg active:scale-95 transition-all rounded-sm disabled:opacity-70 ${isClaimable ? 'bg-[#14F195] text-black' : claimed ? 'bg-white/5 text-zinc-500 cursor-default' : (quest.slug === 'true_raider' || isActionableSocial) ? 'bg-[#3b82f6] text-white' : 'bg-white/5 text-zinc-600'}`}
         >
           {isClaimable && claiming ? '…' : statusText}
         </button>
