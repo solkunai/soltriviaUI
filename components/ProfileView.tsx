@@ -66,7 +66,7 @@ interface PlayedCustomGame {
 
 const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize, onClaimDuelRefund, onClaimCustomPrize, onOpenSwap }) => {
   const { t } = useTranslation();
-  const { publicKey, sendTransaction, signMessage, isPrivyUser } = useWallet();
+  const { publicKey, sendTransaction, signMessage, isPrivyUser, isPhantomConnectUser } = useWallet();
   const { exportWallet } = useExportWallet();
   const [walletCopied, setWalletCopied] = useState(false);
   const [showExportDisclaimer, setShowExportDisclaimer] = useState(false);
@@ -828,8 +828,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                 )}
               </div>
 
-              {/* Wallet Address + Export (Privy users) */}
-              {isPrivyUser && publicKey && (
+              {/* Wallet Address + Export — shown for embedded wallet users (Privy or Phantom Connect) */}
+              {(isPrivyUser || isPhantomConnectUser) && publicKey && (
                 <div className="flex flex-wrap items-center gap-2 mt-3">
                   <button
                     onClick={() => {
@@ -847,13 +847,38 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                       <svg className="w-3 h-3 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>
                     )}
                   </button>
-                  <button
-                    onClick={() => setShowExportDisclaimer(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FFD700]/10 border border-[#FFD700]/20 rounded-full hover:bg-[#FFD700]/20 text-[#FFD700] transition-all active:scale-95"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3m0 0L8 7m4-4l4 4M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17" /></svg>
-                    <span className="text-[9px] font-black uppercase tracking-wider">Export Key</span>
-                  </button>
+                  {isPrivyUser && (
+                    <button
+                      onClick={() => setShowExportDisclaimer(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FFD700]/10 border border-[#FFD700]/20 rounded-full hover:bg-[#FFD700]/20 text-[#FFD700] transition-all active:scale-95"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3m0 0L8 7m4-4l4 4M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17" /></svg>
+                      <span className="text-[9px] font-black uppercase tracking-wider">Export Key</span>
+                    </button>
+                  )}
+                  {isPhantomConnectUser && (
+                    <a
+                      href="https://phantom.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#AB9FF2]/10 border border-[#AB9FF2]/30 rounded-full hover:bg-[#AB9FF2]/20 text-[#AB9FF2] transition-all active:scale-95"
+                    >
+                      <img src="/phantom_logo.png" alt="Phantom" className="w-3 h-3 rounded-full" />
+                      <span className="text-[9px] font-black uppercase tracking-wider">Manage on phantom.com</span>
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Phantom Connect — info card explaining where to export keys */}
+              {isPhantomConnectUser && publicKey && (
+                <div className="mt-3 p-3 bg-[#AB9FF2]/5 border border-[#AB9FF2]/20 rounded-xl">
+                  <p className="text-[#AB9FF2] text-[10px] font-black uppercase tracking-wider mb-1">Self-custody via Phantom</p>
+                  <p className="text-zinc-300 text-[11px] leading-relaxed">
+                    Your wallet is hosted by Phantom. To export your seed phrase or use this wallet in another app, sign in to{' '}
+                    <a href="https://phantom.com" target="_blank" rel="noopener noreferrer" className="text-[#AB9FF2] underline font-semibold">phantom.com</a>{' '}
+                    with the same Google or Apple account you used to log in here.
+                  </p>
                 </div>
               )}
 

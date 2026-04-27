@@ -171,9 +171,7 @@ const WalletConnectButton: React.FC = () => {
                   onClick={handlePhantomConnect}
                   className="w-full flex items-center gap-3 px-4 py-3 bg-[#AB9FF2]/10 hover:bg-[#AB9FF2]/20 border border-[#AB9FF2]/30 rounded-xl transition-all active:scale-[0.98]"
                 >
-                  <div className="w-5 h-5 rounded-full bg-[#AB9FF2] flex items-center justify-center shrink-0">
-                    <span className="text-white font-black text-[11px]">P</span>
-                  </div>
+                  <img src="/phantom_logo.png" alt="Phantom" className="w-5 h-5 shrink-0 rounded-full" />
                   <div className="text-left">
                     <span className="text-white text-xs font-bold block">Continue with Phantom</span>
                     <span className="text-zinc-500 text-[9px]">Extension, mobile app, or social</span>

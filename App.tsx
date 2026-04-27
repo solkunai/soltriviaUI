@@ -63,6 +63,8 @@ import ProfileView from './components/ProfileView';
 import PlayView from './components/PlayView';
 import GuideModal from './components/GuideModal';
 import BuyLivesModal from './components/BuyLivesModal';
+import FirstTimeDepositModal from './components/FirstTimeDepositModal';
+import { getBalanceSafely } from './src/utils/balance';
 import SwapModal from './components/SwapModal';
 import EditProfileModal from './components/EditProfileModal';
 import QuizView from './components/QuizView';
@@ -101,12 +103,13 @@ import { getRecentBlockhashWithRetry } from './src/utils/rpc';
 const App: React.FC = () => {
   // Keep Render free tier service alive (pings every 2 minutes)
   useKeepAlive(true);
-  const { connected, publicKey, sendTransaction } = useWallet();
+  const { connected, publicKey, sendTransaction, isPrivyUser, isPhantomConnectUser } = useWallet();
   const { connection } = useConnection();
   const [currentView, setCurrentView] = useState<View>(viewFromPath);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [nerdMintCopied, setNerdMintCopied] = useState(false);
   const [isBuyLivesOpen, setIsBuyLivesOpen] = useState(false);
+  const [showFirstTimeDeposit, setShowFirstTimeDeposit] = useState(false);
   const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [showWalletRequired, setShowWalletRequired] = useState(false);
@@ -318,6 +321,43 @@ const App: React.FC = () => {
       setShowWalletRequired(false);
     }
   }, [connected, showWalletRequired]);
+
+  // First-time deposit modal — fires once per wallet for embedded-wallet users (Privy or
+  // Phantom Connect) whose balance is below the minimum to play.
+  // Native wallet users (Phantom extension, Solflare, Backpack, MWA) already manage their
+  // own SOL elsewhere, so we don't pester them.
+  useEffect(() => {
+    if (!connected || !publicKey) return;
+    if (!isPrivyUser && !isPhantomConnectUser) return;
+
+    const wallet = publicKey.toBase58();
+    let dismissedKey: string;
+    try {
+      dismissedKey = `soltrivia_deposit_modal_dismissed_${wallet}`;
+      if (localStorage.getItem(dismissedKey) === 'true') return;
+    } catch {
+      return; // localStorage unavailable, skip the modal
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const lamports = await getBalanceSafely(connection, publicKey);
+        if (cancelled || lamports === null) return;
+        const sol = lamports / 1e9;
+        // Trigger if under 0.025 SOL — they can't enter a round at this balance
+        if (sol < 0.025) {
+          setShowFirstTimeDeposit(true);
+        } else {
+          // Funded — mark dismissed so we never bother them again
+          try { localStorage.setItem(dismissedKey, 'true'); } catch { /* noop */ }
+        }
+      } catch {
+        // Network failure — don't block the user
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [connected, publicKey, isPrivyUser, isPhantomConnectUser, connection]);
 
   // Auto-dismiss free-entry notification after 5 seconds
   useEffect(() => {
@@ -2063,6 +2103,20 @@ const App: React.FC = () => {
         onGamePassPurchased={() => setHasGamePass(true)}
       />
       <BuyLivesModal isOpen={isBuyLivesOpen} onClose={() => setIsBuyLivesOpen(false)} onBuySuccess={handleBuyLivesSuccess} isSeekerVerified={isSeekerVerified} />
+      {showFirstTimeDeposit && publicKey && (isPrivyUser || isPhantomConnectUser) && (
+        <FirstTimeDepositModal
+          walletAddress={publicKey.toBase58()}
+          connection={connection}
+          provider={isPhantomConnectUser ? 'phantom-connect' : 'privy'}
+          onClose={() => {
+            setShowFirstTimeDeposit(false);
+            try {
+              localStorage.setItem(`soltrivia_deposit_modal_dismissed_${publicKey.toBase58()}`, 'true');
+            } catch { /* noop */ }
+          }}
+          onGoToProfile={() => setCurrentView(View.PROFILE)}
+        />
+      )}
       <SwapModal isOpen={isSwapOpen} onClose={() => setIsSwapOpen(false)} />
       <EditProfileModal 
         isOpen={isEditProfileOpen} 
