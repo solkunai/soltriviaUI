@@ -17,6 +17,14 @@ import { getSolanaRpcEndpoint } from '../utils/rpc';
 import { usePrivy } from '@privy-io/react-auth';
 import { useWallets as useWalletsFromPrivy, useSignAndSendTransaction as useSignAndSendTransactionFromPrivy } from '@privy-io/react-auth/solana';
 
+// Phantom Connect SDK — used when the user explicitly picks "Continue with Phantom"
+import {
+  usePhantom,
+  useSolana as usePhantomSolana,
+  useDisconnect as usePhantomDisconnect,
+  AddressType,
+} from '@phantom/react-sdk';
+
 // Import wallet adapter CSS
 import '@solana/wallet-adapter-react-ui/styles.css';
 
@@ -61,14 +69,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Unified useWallet hook — bridges native wallet adapter + Privy
-// Priority: native wallet > Privy embedded wallet
+// Unified useWallet hook — bridges native wallet adapter + Phantom Connect + Privy
+// Priority: Phantom Connect (explicit user choice) > native > Privy embedded
 // ═══════════════════════════════════════════════════════════════════
 export function useWallet() {
   const nativeWallet = useSolanaWallet();
   const privy = usePrivy();
   const { wallets: privyWallets } = useWalletsFromPrivy();
   const { signAndSendTransaction: privySignAndSend } = useSignAndSendTransactionFromPrivy();
+
+  // Phantom Connect SDK state (active only when user picks "Continue with Phantom")
+  const phantomState = usePhantom();
+  const { solana: phantomSolana, isAvailable: phantomSolanaAvailable } = usePhantomSolana();
+  const { disconnect: phantomDisconnect } = usePhantomDisconnect();
+
+  // Pull the Solana address out of Phantom's connected addresses array
+  const phantomSolanaAddress = useMemo(() => {
+    if (!phantomState.isConnected || !phantomState.addresses) return null;
+    const addr = phantomState.addresses.find((a) => a.addressType === AddressType.solana);
+    return addr?.address || null;
+  }, [phantomState.isConnected, phantomState.addresses]);
 
   // Find Privy's embedded Solana wallet (if user logged in via email/Google/X)
   const privySolanaWallet = useMemo(() => {
@@ -77,33 +97,45 @@ export function useWallet() {
     return privyWallets.find((w: any) => w.standardWallet?.name === 'Privy') || privyWallets[0] || null;
   }, [privy.authenticated, privyWallets]);
 
-  // Priority: native wallet takes precedence over Privy
-  const useNative = nativeWallet.connected && nativeWallet.publicKey;
+  // Priority order
+  const usePhantomConnect = phantomState.isConnected && !!phantomSolanaAddress;
+  const useNative = !usePhantomConnect && nativeWallet.connected && !!nativeWallet.publicKey;
 
   const publicKey = useMemo(() => {
+    if (usePhantomConnect && phantomSolanaAddress) {
+      try { return new PublicKey(phantomSolanaAddress); } catch { return null; }
+    }
     if (useNative) return nativeWallet.publicKey;
     if (privySolanaWallet?.address) {
       try { return new PublicKey(privySolanaWallet.address); } catch { return null; }
     }
     return null;
-  }, [useNative, nativeWallet.publicKey, privySolanaWallet?.address]);
+  }, [usePhantomConnect, phantomSolanaAddress, useNative, nativeWallet.publicKey, privySolanaWallet?.address]);
 
-  const connected = !!(useNative || privySolanaWallet?.address);
-  const connecting = nativeWallet.connecting;
+  const connected = !!(usePhantomConnect || useNative || privySolanaWallet?.address);
+  const connecting = nativeWallet.connecting || phantomState.isConnecting;
 
   const disconnect = useCallback(async () => {
-    if (useNative) {
+    if (usePhantomConnect) {
+      await phantomDisconnect();
+    } else if (useNative) {
       await nativeWallet.disconnect();
     } else if (privy.authenticated) {
       await privy.logout();
     }
-  }, [useNative, nativeWallet, privy]);
+  }, [usePhantomConnect, useNative, phantomDisconnect, nativeWallet, privy]);
 
-  // Unified sendTransaction — routes to native or Privy
+  // Unified sendTransaction — routes to whichever wallet is active
   const sendTransaction = useCallback(async (
     transaction: VersionedTransaction,
     connection: Connection,
   ): Promise<string> => {
+    if (usePhantomConnect && phantomSolanaAvailable && phantomSolana) {
+      // Phantom Connect: sign and send via SDK
+      const result = await phantomSolana.signAndSendTransaction(transaction);
+      return result.signature;
+    }
+
     if (useNative) {
       // Native wallet adapter handles signing + sending
       return nativeWallet.sendTransaction(transaction, connection);
@@ -124,16 +156,20 @@ export function useWallet() {
     }
 
     throw new Error('No wallet connected');
-  }, [useNative, nativeWallet, privySolanaWallet, privySignAndSend]);
+  }, [usePhantomConnect, phantomSolanaAvailable, phantomSolana, useNative, nativeWallet, privySolanaWallet, privySignAndSend]);
 
   // Unified signMessage
   const signMessage = useCallback(async (message: Uint8Array): Promise<Uint8Array> => {
+    if (usePhantomConnect && phantomSolanaAvailable && phantomSolana) {
+      const result = await phantomSolana.signMessage(message);
+      return result.signature;
+    }
     if (useNative && nativeWallet.signMessage) {
       return nativeWallet.signMessage(message);
     }
     // Privy signMessage can be added later if needed
     throw new Error('signMessage not available');
-  }, [useNative, nativeWallet]);
+  }, [usePhantomConnect, phantomSolanaAvailable, phantomSolana, useNative, nativeWallet]);
 
   return {
     // Core — used by all 13 components
@@ -147,8 +183,9 @@ export function useWallet() {
     wallets: nativeWallet.wallets,
     select: nativeWallet.select,
     wallet: nativeWallet.wallet,
-    // Privy state (for components that need to know which auth path)
-    isPrivyUser: !useNative && !!privySolanaWallet?.address,
+    // Auth path indicators
+    isPrivyUser: !usePhantomConnect && !useNative && !!privySolanaWallet?.address,
+    isPhantomConnectUser: usePhantomConnect,
   };
 }
 

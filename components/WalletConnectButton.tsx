@@ -4,6 +4,7 @@ import { useWallet, useWalletModal } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
 import { useLoginWithOAuth, useLoginWithEmail, usePrivy } from '@privy-io/react-auth';
 import { useCreateWallet } from '@privy-io/react-auth/solana';
+import { useModal as usePhantomModal } from '@phantom/react-sdk';
 
 /**
  * Responsive login button component
@@ -92,6 +93,14 @@ const WalletConnectButton: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showLoginMenu]);
 
+  // Phantom Connect SDK modal — opens Phantom's branded connect flow (extension, social, deeplink)
+  const phantomModal = usePhantomModal();
+  const handlePhantomConnect = useCallback(() => {
+    setShowLoginMenu(false);
+    setConnectError(null);
+    phantomModal.open();
+  }, [phantomModal]);
+
   const handleWalletConnect = useCallback(() => {
     setShowLoginMenu(false);
     if (connecting) return;
@@ -157,7 +166,21 @@ const WalletConnectButton: React.FC = () => {
 
             {!showEmailInput ? (
               <div className="p-3 space-y-2">
-                {/* Connect Wallet */}
+                {/* Continue with Phantom (Phantom Connect SDK) */}
+                <button
+                  onClick={handlePhantomConnect}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-[#AB9FF2]/10 hover:bg-[#AB9FF2]/20 border border-[#AB9FF2]/30 rounded-xl transition-all active:scale-[0.98]"
+                >
+                  <div className="w-5 h-5 rounded-full bg-[#AB9FF2] flex items-center justify-center shrink-0">
+                    <span className="text-white font-black text-[11px]">P</span>
+                  </div>
+                  <div className="text-left">
+                    <span className="text-white text-xs font-bold block">Continue with Phantom</span>
+                    <span className="text-zinc-500 text-[9px]">Extension, mobile app, or social</span>
+                  </div>
+                </button>
+
+                {/* Connect Wallet (other Solana wallets via wallet-adapter) */}
                 <button
                   onClick={handleWalletConnect}
                   className="w-full flex items-center gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all active:scale-[0.98]"
@@ -166,8 +189,8 @@ const WalletConnectButton: React.FC = () => {
                     <path d="M21 18H3V6h18v12zm-2-2V8H5v8h14zM16 11h2v2h-2v-2z" />
                   </svg>
                   <div className="text-left">
-                    <span className="text-white text-xs font-bold block">Connect Wallet</span>
-                    <span className="text-zinc-500 text-[9px]">Phantom, Solflare, Backpack, Seeker</span>
+                    <span className="text-white text-xs font-bold block">Other Wallets</span>
+                    <span className="text-zinc-500 text-[9px]">Solflare, Backpack, Ledger, Seeker</span>
                   </div>
                 </button>
 

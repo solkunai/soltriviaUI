@@ -7,6 +7,7 @@ import App from './App';
 import { WalletProvider } from './src/contexts/WalletContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import PrivyWrapper from './src/contexts/PrivyConfig';
+import PhantomConfig from './src/contexts/PhantomConfig';
 
 // Register Mobile Wallet Adapter as a Wallet Standard wallet (must be called before React renders)
 import {
@@ -66,11 +67,13 @@ try {
   root.render(
     <React.StrictMode>
       <ErrorBoundary>
-        <PrivyWrapper>
-          <WalletProvider>
-            <App />
-          </WalletProvider>
-        </PrivyWrapper>
+        <PhantomConfig>
+          <PrivyWrapper>
+            <WalletProvider>
+              <App />
+            </WalletProvider>
+          </PrivyWrapper>
+        </PhantomConfig>
       </ErrorBoundary>
     </React.StrictMode>
   );
