@@ -759,19 +759,32 @@ const App: React.FC = () => {
         return;
       }
 
-      // Pre-check: verify player has lives or free entries BEFORE sending payment
+      // Pre-check (lives model 2026-04-26): first entry per round is free of life cost.
+      // Only block if the player is RE-entering this round AND has no lives.
       try {
-        const livesData = await getPlayerLives(walletAddr);
-        // Free entries: count game_sessions where life_used = false (2 lifetime free entries)
-        const { count: freeEntriesUsed } = await supabase
-          .from('game_sessions')
-          .select('id', { count: 'exact', head: true })
-          .eq('wallet_address', walletAddr)
-          .eq('life_used', false);
-        const isFreeEntry = (freeEntriesUsed ?? 0) < 2;
-        if (!isFreeEntry && (livesData.lives_count ?? 0) <= 0) {
-          setIsBuyLivesOpen(true);
-          return;
+        const { data: currentRound } = await supabase
+          .from('daily_rounds')
+          .select('id')
+          .eq('date', today)
+          .eq('round_number', roundNumber)
+          .maybeSingle();
+
+        let entriesThisRound = 0;
+        if (currentRound?.id) {
+          const { count } = await supabase
+            .from('game_sessions')
+            .select('id', { count: 'exact', head: true })
+            .eq('wallet_address', walletAddr)
+            .eq('round_id', currentRound.id);
+          entriesThisRound = count ?? 0;
+        }
+
+        if (entriesThisRound > 0) {
+          const livesData = await getPlayerLives(walletAddr);
+          if ((livesData.lives_count ?? 0) <= 0) {
+            setIsBuyLivesOpen(true);
+            return;
+          }
         }
       } catch (livesCheckErr) {
         console.warn('Lives pre-check failed, proceeding anyway:', livesCheckErr);
@@ -869,11 +882,7 @@ const App: React.FC = () => {
       // Optimistically update UI based on whether it was a free or paid entry
       if (gameResult.freeEntry) {
         setRoundEntriesUsed(prev => prev + 1);
-        if (gameResult.freeEntryReason === 'new_user') {
-          setFreeEntryNotification('Welcome! This play is free for new users.');
-        } else if (gameResult.freeEntryReason === 'welcome_bonus') {
-          setFreeEntryNotification(`You have ${gameResult.freeEntriesRemaining ?? 0} free play(s) left.`);
-        }
+        setFreeEntryNotification('Free entry — your first play this round.');
       } else if (!gameResult.resumed) {
         setLives(prev => Math.max(0, (prev ?? 0) - 1));
         setRoundEntriesUsed(prev => prev + 1);

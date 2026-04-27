@@ -25,7 +25,8 @@ Sol Trivia is a competitive trivia game built on Solana where players answer que
 - Top 5 players split the entire prize pool
 - **4 rounds per day** — new round every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
 - Up to 5 entries per round, 20 per day
-- **2 lifetime free entries** per wallet — try it before you buy
+- **First entry every round is free of life cost** — play all 4 rounds daily, no lives required
+- **Lives are for re-entries** — burn a life to retry the same round (4 extra entries possible per round)
 - If fewer than 5 players finish, the round is refunded — no one loses
 
 ### Duels (1v1)
@@ -70,11 +71,13 @@ Sol Trivia integrates the **Bags.fm API** for seamless in-app token swaps:
 
 ## Game Pass & Lives
 
-### Extra Lives
-Run out of free entries? Purchase extra lives to keep playing:
+### Lives (round re-entries)
+Your first entry every round is free of life cost. To re-enter the same round (up to 4 more times), purchase lives:
 - 3 lives — 0.03 SOL
 - 15 lives — 0.10 SOL
 - 35 lives — 0.25 SOL
+
+Lives never expire and roll over across rounds.
 
 ### Seeker Holders (Solana Mobile)
 Solana Seeker (SGT) holders get exclusive perks:

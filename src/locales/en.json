@@ -223,7 +223,7 @@
     "duelPriceRange": "0.01–1 SOL",
     "createCustomGame": "CREATE CUSTOM GAME",
     "createAndShare": "CREATE & SHARE",
-    "infoText": "2 lifetime entries (no lives needed) · Top 5 split prize pool"
+    "infoText": "First entry every round is free · Lives let you re-enter the same round · Top 5 split the pool"
   },
   "results": {
     "triviaFinalized": "TRIVIA FINALIZED",
@@ -255,8 +255,8 @@
     "howToPlay": "HOW TO PLAY",
     "step1Title": "Connect your wallet",
     "step1Desc": "Connect any Solana wallet (Phantom, Backpack, Seed Vault on Seeker) to get started. Your wallet is your identity on SolTrivia.",
-    "step2Title": "2 free entries",
-    "step2Desc": "Every wallet gets 2 lifetime entries without needing lives. Entry fee (0.0225 SOL) still applies. After that, you'll need to purchase lives to keep playing.",
+    "step2Title": "Free first entry every round",
+    "step2Desc": "Every wallet gets one free entry per round (no life consumed). Entry fee (0.0225 SOL) still applies. To re-enter the same round (up to 5 times), you'll need lives.",
     "step3Title": "Buy lives to play more",
     "step3Desc": "Lives let you enter paid rounds. Buy in bulk: 3 for 0.03 SOL, 15 for 0.1 SOL, or 35 for 0.25 SOL. Seeker holders get discounted rates. Lives never expire.",
     "step4Title": "Enter a round",
@@ -302,7 +302,7 @@
     "purchaseFailed": "Failed to purchase lives. Please try again.",
     "pricesNotLoaded": "Prices not loaded yet. Please wait a moment.",
     "walletNotConnected": "Please connect your wallet first",
-    "freeEntriesNote": "Every wallet gets 2 lifetime entries without needing lives. Extra lives are for additional plays beyond that. Entry fee (0.0225 SOL) still applies.",
+    "freeEntriesNote": "Every wallet's first entry per round is free of life cost. Lives are required to re-enter the same round (up to 5 entries per round, 4 rounds per day). Entry fee (0.0225 SOL) still applies.",
     "processing": "PROCESSING...",
     "buyButton": "BUY {{count}} LIVES — {{price}}",
     "securedBySolana": "Secured by Solana Protocol",
@@ -324,7 +324,7 @@
     "q5": "What is Practice Mode?",
     "a5": "Practice mode lets you play trivia for free with no wallet required. You get 5 practice runs per day (unlimited with Game Pass). Practice uses separate questions with a 12-second timer. No prizes or leaderboard ranking.",
     "q6": "What are Lives?",
-    "a6": "Every wallet gets 2 lifetime entries without needing lives (entry fee still applies). Beyond that, you need extra lives. Buy them in 3 tiers: 3 for 0.03 SOL, 15 for 0.1 SOL, or 35 for 0.25 SOL. Purchased lives roll over indefinitely across rounds.",
+    "a6": "Every wallet's first entry per round is free of life cost (entry fee still applies). To re-enter the same round, you need lives. Buy them in 3 tiers: 3 for 0.03 SOL, 15 for 0.1 SOL, or 35 for 0.25 SOL. Purchased lives roll over indefinitely across rounds.",
     "q7": "What is the Game Pass?",
     "a7": "A one-time purchase ($20 USD, or $10 for Seeker holders) that unlocks: unlimited practice plays, all question categories, and free custom game creation. Pay with SOL, USDC, or SKR.",
     "q8": "What are Custom Games?",

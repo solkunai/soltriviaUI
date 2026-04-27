@@ -82,7 +82,7 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
               <div>
                 <h3 className="text-[#14F195] text-sm font-black uppercase italic tracking-widest mb-3 flex items-center gap-3">4.3 Lives System</h3>
                 <p className="text-white font-medium text-sm leading-relaxed opacity-90">
-                  Every wallet receives 2 round entries per round (every 6 hours). Beyond the 2 included round entries, extra lives can be purchased in three tiers: 3 lives for 0.03 SOL, 15 lives for 0.1 SOL, or 35 lives for 0.25 SOL. Purchased extra lives roll over across rounds indefinitely. Lives purchases are non-refundable. Both round entries and extra lives require the standard 0.0225 SOL entry fee each time you play.
+                  Every wallet's first entry per round is free of life cost — you can play all 4 daily rounds without lives. Lives are required to re-enter the same round (up to 5 entries per round, 20 per 24 hours). Lives can be purchased in three tiers: 3 lives for 0.03 SOL, 15 lives for 0.1 SOL, or 35 lives for 0.25 SOL. Seeker (SGT) holders receive discounted pricing. Purchased lives roll over indefinitely across rounds. Lives purchases are non-refundable. Every entry — first or re-entry — requires the standard 0.0225 SOL entry fee.
                 </p>
               </div>
               <div>

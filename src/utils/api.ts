@@ -2229,14 +2229,16 @@ const TIER_FEES = [20_000_000, 100_000_000, 500_000_000, 1_000_000_000];
 export async function fetchRefundableEntries(walletAddress: string): Promise<RefundableEntry[]> {
   if (!isSupabaseConfigured || !walletAddress?.trim()) return [];
 
-  // Get this wallet's paid sessions
+  // Get this wallet's sessions. Under the post-2026-04-26 lives model every entry pays the
+  // 0.02 SOL entry fee (life_used = true for all new entries), so all sessions are refund-eligible
+  // when their round ends in refund mode. Historical rows with life_used = false are kept
+  // out of the filter for backward compatibility — those rounds were settled long ago.
   const { data: sessions, error: sessErr } = await supabase
     .from('game_sessions')
     .select('round_id, tier_index, life_used')
     .eq('wallet_address', walletAddress.trim());
   if (sessErr || !sessions?.length) return [];
 
-  // Only paid entries (life_used !== false)
   const paidSessions = (sessions as { round_id: string; tier_index: number | null; life_used: boolean | null }[])
     .filter(s => s.life_used !== false);
   if (paidSessions.length === 0) return [];
