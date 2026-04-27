@@ -186,7 +186,10 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   }
 
   // ── Expired ──
-  if (gameData.is_expired || gameData.status === 'expired') {
+  // Finalized games (status='finalized') fall through to the main lobby even if their
+  // expires_at has passed — the main lobby renders the winner card + leaderboard so anyone
+  // can come back to see who won and claim prizes.
+  if ((gameData.is_expired || gameData.status === 'expired') && gameData.status !== 'finalized') {
     const isPaidExpired = gameData.prize_model === 'player_funded' && gameData.entry_fee_lamports > 0;
     const canClaimRefund = isPaidExpired && gameData.player_has_entered && gameData.on_chain_game_id != null && onClaimRefund;
     const entryRefundSOL = gameData.entry_fee_lamports / 1e9;
@@ -309,13 +312,15 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     active: 'text-[#38BDF8] bg-[#38BDF8]/10 border-[#38BDF8]/20',
     started: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
     completed: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
-    finalized: 'text-[#38BDF8] bg-[#38BDF8]/10 border-[#38BDF8]/20',
+    finalized: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30',
+    expired: 'text-zinc-400 bg-zinc-700/30 border-zinc-600/30',
   };
   const statusLabels: Record<string, string> = {
     active: 'Lobby Open',
     started: 'In Progress',
     completed: 'Completed',
     finalized: 'Prizes Available',
+    expired: 'Expired',
   };
 
   // CTA logic
@@ -419,6 +424,62 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             </div>
           )}
         </div>
+
+        {/* Winner Hero Card — shown for finalized paid games with at least one winner */}
+        {isPaid && gameData.status === 'finalized' && gameData.winner_wallets && gameData.winner_wallets.length > 0 && (
+          <div className="bg-gradient-to-br from-yellow-500/10 via-amber-500/5 to-transparent border border-yellow-500/30 rounded-2xl p-6 md:p-8 mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-yellow-400 text-2xl">🏆</span>
+              <span className="text-yellow-400 text-[10px] font-black uppercase tracking-[0.4em] italic">
+                {gameData.winner_wallets.length === 1 ? 'Winner' : 'Winners'}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {gameData.winner_wallets.map((winnerWallet, idx) => {
+                const amount = (gameData.winner_amounts?.[idx] ?? 0) / 1e9;
+                const winnerEntry = gameData.leaderboard.find((e) => e.wallet_address === winnerWallet);
+                const winnerName = winnerEntry?.username || `${winnerWallet.slice(0, 6)}...${winnerWallet.slice(-4)}`;
+                const isYou = !!walletAddress && winnerWallet === walletAddress;
+                return (
+                  <div
+                    key={winnerWallet}
+                    className={`flex items-center justify-between gap-3 p-3 rounded-xl ${idx === 0 ? 'bg-yellow-500/15 border border-yellow-400/40' : 'bg-white/[0.03] border border-white/5'}`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className={`text-lg font-[1000] italic ${idx === 0 ? 'text-yellow-400' : 'text-zinc-400'}`}>
+                        #{idx + 1}
+                      </span>
+                      {winnerEntry?.avatar_url && (
+                        <img
+                          src={winnerEntry.avatar_url || DEFAULT_AVATAR}
+                          alt=""
+                          className="w-9 h-9 rounded-full object-cover border border-white/10"
+                          onError={(e) => { e.currentTarget.src = DEFAULT_AVATAR; }}
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-[1000] italic text-base md:text-lg truncate ${idx === 0 ? 'text-white' : 'text-zinc-300'}`}>
+                            {winnerName}
+                          </span>
+                          {isYou && (
+                            <span className="px-2 py-0.5 bg-[#14F195]/15 border border-[#14F195]/30 rounded text-[#14F195] text-[9px] font-black uppercase tracking-wider whitespace-nowrap">You won!</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className={`font-[1000] italic text-base md:text-lg ${idx === 0 ? 'text-yellow-400' : 'text-zinc-300'}`}>
+                        {amount.toFixed(3)}
+                      </span>
+                      <span className="text-zinc-600 text-[9px] font-black uppercase block">SOL</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* CTA — immediately visible */}
         <div className="mb-4">
