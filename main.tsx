@@ -26,7 +26,7 @@ if (typeof window !== 'undefined') {
       icon: '/favicon.png',
     },
     authorizationCache: createDefaultAuthorizationCache(),
-    chains: ['solana:mainnet'],
+    chains: ['solana:mainnet', 'solana:mainnet-beta'],
     chainSelector: createDefaultChainSelector(),
     onWalletNotFound: createDefaultWalletNotFoundHandler(),
   });
