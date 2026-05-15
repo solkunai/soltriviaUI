@@ -13,7 +13,7 @@ import { useModal as usePhantomModal } from '@phantom/react-sdk';
  */
 const WalletConnectButton: React.FC = () => {
   const { t } = useTranslation();
-  const { publicKey, connected, disconnect, connecting, wallets, select, isPrivyUser } = useWallet();
+  const { publicKey, connected, disconnect, connecting, wallets, select, wallet, isPrivyUser } = useWallet();
   const { setVisible } = useWalletModal();
   const [connectError, setConnectError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -80,6 +80,31 @@ const WalletConnectButton: React.FC = () => {
     const timer = setTimeout(() => setConnectError(null), 8000);
     return () => clearTimeout(timer);
   }, [connectError]);
+
+  // Stage A.1: detect silent MWA failures (connecting -> idle, but never connected)
+  const prevConnectingRef = useRef(false);
+  useEffect(() => {
+    const wasConnecting = prevConnectingRef.current;
+    const walletName = wallet?.adapter?.name || 'unknown';
+
+    if (wasConnecting !== connecting) {
+      console.log('[MWA state]', {
+        transition: connecting ? 'idle -> connecting' : 'connecting -> idle',
+        walletName,
+        connected,
+        readyState: wallet?.adapter?.readyState,
+        ts: new Date().toISOString(),
+      });
+    }
+
+    if (wasConnecting && !connecting && !connected && wallet) {
+      const msg = `SILENT_FAILURE: ${walletName} stopped connecting without error (no public key returned)`;
+      console.error('[MWA silent failure]', { walletName, readyState: wallet?.adapter?.readyState });
+      setConnectError(msg);
+    }
+
+    prevConnectingRef.current = connecting;
+  }, [connecting, connected, wallet]);
 
   // Close login menu when clicking outside
   useEffect(() => {

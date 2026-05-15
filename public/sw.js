@@ -1,5 +1,5 @@
 // Service Worker for SOL Trivia PWA
-const CACHE_NAME = 'sol-trivia-v4';
+const CACHE_NAME = 'sol-trivia-v5';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/favicon.png',
