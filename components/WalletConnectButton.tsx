@@ -101,22 +101,29 @@ const WalletConnectButton: React.FC = () => {
     phantomModal.open();
   }, [phantomModal]);
 
-  const handleWalletConnect = useCallback(() => {
+  const handleWalletConnect = useCallback(async () => {
     setShowLoginMenu(false);
     if (connecting) return;
     setConnectError(null);
     const readyWallets = wallets.filter(
       (w) => w.readyState === 'Installed' || w.readyState === 'Loadable'
     );
-    if (readyWallets.length === 1) {
-      select(readyWallets[0].adapter.name);
-    } else if (readyWallets.length > 1) {
-      setVisible(true);
-    } else {
-      setVisible(true);
-      setConnectError(t('wallet.noWalletFound'));
+    try {
+      if (readyWallets.length === 1) {
+        await select(readyWallets[0].adapter.name);
+      } else if (readyWallets.length > 1) {
+        setVisible(true);
+      } else {
+        setVisible(true);
+        setConnectError(t('wallet.noWalletFound'));
+      }
+    } catch (err: any) {
+      const code = err?.cause?.code || err?.code || 'UNKNOWN';
+      const msg = err?.message || 'Wallet connection failed';
+      console.error('[MWA connect error]', { code, message: msg, cause: err?.cause });
+      setConnectError(`${code}: ${msg}`);
     }
-  }, [connecting, wallets, select, setVisible]);
+  }, [connecting, wallets, select, setVisible, t]);
 
   const handleEmailSendCode = async () => {
     if (!email.trim()) return;

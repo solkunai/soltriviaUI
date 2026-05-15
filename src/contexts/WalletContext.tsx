@@ -1,4 +1,4 @@
-import { useMemo, useCallback, ReactNode } from 'react';
+import { useMemo, useCallback, useEffect, ReactNode } from 'react';
 import bs58 from 'bs58';
 import {
   ConnectionProvider,
@@ -170,6 +170,24 @@ export function useWallet() {
     // Privy signMessage can be added later if needed
     throw new Error('signMessage not available');
   }, [usePhantomConnect, phantomSolanaAvailable, phantomSolana, useNative, nativeWallet]);
+
+  // Diagnostic: surface wallet-adapter errors that don't bubble through select()
+  // Captures errors from autoConnect, reauth handshake, and async wallet state changes.
+  useEffect(() => {
+    const adapter = nativeWallet.wallet?.adapter;
+    if (!adapter) return;
+    const handler = (err: any) => {
+      console.error('[wallet-adapter error]', {
+        walletName: adapter.name,
+        code: err?.code || err?.cause?.code,
+        name: err?.name,
+        message: err?.message,
+        stack: err?.stack,
+      });
+    };
+    adapter.on('error', handler);
+    return () => { adapter.off('error', handler); };
+  }, [nativeWallet.wallet]);
 
   return {
     // Core — used by all 13 components
