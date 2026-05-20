@@ -13,7 +13,7 @@ import { useModal as usePhantomModal } from '@phantom/react-sdk';
  */
 const WalletConnectButton: React.FC = () => {
   const { t } = useTranslation();
-  const { publicKey, connected, disconnect, connecting, wallets, select, wallet, isPrivyUser } = useWallet();
+  const { publicKey, connected, disconnect, connecting, wallets, select, connect, wallet, isPrivyUser } = useWallet();
   const { setVisible } = useWalletModal();
   const [connectError, setConnectError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -141,7 +141,15 @@ const WalletConnectButton: React.FC = () => {
     );
     try {
       if (readyWallets.length === 1) {
-        await select(readyWallets[0].adapter.name);
+        // select() is synchronous; sets the chosen wallet on the adapter
+        select(readyWallets[0].adapter.name);
+        // For Seeker TWA: autoConnect is disabled (popup-blocker workaround),
+        // so we MUST call connect() explicitly within the same user-gesture
+        // tick to keep Chrome's pop-up grace window valid for the MWA flow.
+        if (isSeekerTWA) {
+          await connect();
+        }
+        // Non-TWA users still rely on autoConnect={true} from the provider.
       } else if (readyWallets.length > 1) {
         setVisible(true);
       } else {
@@ -154,7 +162,7 @@ const WalletConnectButton: React.FC = () => {
       console.error('[MWA connect error]', { code, message: msg, cause: err?.cause });
       setConnectError(`${code}: ${msg}`);
     }
-  }, [connecting, wallets, select, setVisible, t]);
+  }, [connecting, wallets, select, connect, isSeekerTWA, setVisible, t]);
 
   const handleEmailSendCode = async () => {
     if (!email.trim()) return;

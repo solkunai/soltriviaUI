@@ -209,6 +209,7 @@ export function useWallet() {
     // Pass-through from native adapter (used by WalletConnectButton)
     wallets: nativeWallet.wallets,
     select: nativeWallet.select,
+    connect: nativeWallet.connect,
     wallet: nativeWallet.wallet,
     // Auth path indicators
     isPrivyUser: !usePhantomConnect && !useNative && !!privySolanaWallet?.address,
