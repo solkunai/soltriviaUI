@@ -753,22 +753,24 @@ const GamePassesView: React.FC = () => {
     setGifting(true);
     setGiftMsg(null);
     try {
-      // Check if wallet already has an active pass
-      const { data: existing } = await supabase.from('game_passes').select('wallet_address, is_active').eq('wallet_address', wallet).maybeSingle();
-      if (existing?.is_active) {
-        setGiftMsg({ ok: false, text: `Wallet ${wallet.slice(0, 8)}...${wallet.slice(-4)} already has an active Game Pass` });
+      // Call gift-game-pass EF (service-role write via admin secret).
+      // Direct supabase upsert from the browser is blocked by RLS — must go through EF.
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/gift-game-pass`, {
+        method: 'POST',
+        headers: getAdminHeaders(),
+        body: JSON.stringify({ wallet, gifted_by: 'admin_dashboard' }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // EF returns 409 if wallet already has an active pass — surface a clear message
+        if (res.status === 409) {
+          setGiftMsg({ ok: false, text: `Wallet ${wallet.slice(0, 8)}...${wallet.slice(-4)} already has an active Game Pass` });
+        } else {
+          setGiftMsg({ ok: false, text: json.error || `Failed (${res.status})` });
+        }
         setGifting(false);
         return;
       }
-      // Upsert game pass
-      await supabase.from('game_passes').upsert({
-        wallet_address: wallet,
-        is_active: true,
-        tx_signature: `ADMIN_GIFT_${Date.now()}`,
-        purchased_at: new Date().toISOString(),
-        gifted_by: 'admin',
-        amount_usd: 0,
-      }, { onConflict: 'wallet_address' });
       setGiftMsg({ ok: true, text: `Game Pass gifted to ${wallet.slice(0, 8)}...${wallet.slice(-4)}` });
       setGiftWallet('');
       fetchPasses();
