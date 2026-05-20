@@ -1,5 +1,5 @@
 // Service Worker for SOL Trivia PWA
-const CACHE_NAME = 'sol-trivia-v6';
+const CACHE_NAME = 'sol-trivia-v7';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/favicon.png',
@@ -38,8 +38,17 @@ self.addEventListener('fetch', (e) => {
 
   const url = new URL(request.url);
 
-  // API / Supabase calls: network-only (never cache)
-  if (url.pathname.startsWith('/api/') || url.hostname.includes('supabase')) {
+  // CRITICAL: skip all cross-origin requests entirely.
+  // MWA's permission flow calls fetch('http://localhost') to trigger Chrome's
+  // Local Network Access permission popup. If the SW intercepts, the popup
+  // never fires and Seeker users get stuck. Same goes for Supabase / Helius /
+  // workers.dev / etc — let the browser handle them natively.
+  if (url.origin !== self.location.origin) {
+    return; // do NOT call e.respondWith — browser handles natively
+  }
+
+  // API / Supabase calls: network-only (never cache) — kept for legacy /api paths
+  if (url.pathname.startsWith('/api/')) {
     e.respondWith(fetch(request));
     return;
   }
