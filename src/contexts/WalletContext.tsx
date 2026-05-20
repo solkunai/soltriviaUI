@@ -49,6 +49,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return clusterApiUrl(network);
   }, [network]);
 
+  // Detect Seeker TWA — disable autoConnect to prevent Chrome popup-blocker from killing
+  // MWA's Local Network Access permission flow on page load (no user gesture).
+  // TWA users must tap "Connect Wallet" themselves — that click is the user gesture
+  // Chrome requires to allow the permission popup + wallet ALLOW screen to actually appear.
+  const isSeekerTWA =
+    typeof document !== 'undefined' &&
+    document.referrer.startsWith('android-app://') &&
+    /android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
+
   // Wallet adapters:
   // - BrandedLedgerWalletAdapter: Direct hardware wallet connection via WebHID with proper Ledger branding
   // - MWA is registered via registerMwa() in main.tsx for Solana mobile (Seed Vault, etc.)
@@ -59,7 +68,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <SolanaWalletProvider wallets={wallets} autoConnect={true}>
+      <SolanaWalletProvider wallets={wallets} autoConnect={!isSeekerTWA}>
         <WalletModalProvider>
           {children}
         </WalletModalProvider>
