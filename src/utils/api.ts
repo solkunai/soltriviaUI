@@ -180,6 +180,35 @@ export async function ensureRoundOnChain(options?: { date?: string; round_number
   return response.json();
 }
 
+/** Build an atomic round-entry tx. Returns a partial-signed VersionedTransaction (base64).
+ *  Operator slot is pre-signed if create_tier_round is needed; player slot stays empty for the wallet.
+ *  Operator only pays PDA rent if the user actually signs and the tx confirms. */
+export async function buildRoundEntryTx(
+  wallet: string,
+  options?: { date?: string; round_number?: number; tier_index?: number; useDevnet?: boolean }
+): Promise<{
+  ok: boolean;
+  tx_base64: string;
+  blockhash: string;
+  last_valid_block_height: number;
+  round_id: number;
+  tier_index: number;
+  pda_existed: boolean;
+  includes_create: boolean;
+}> {
+  const body = { wallet, ...options };
+  const response = await fetch(`${FUNCTIONS_URL}/build-round-entry-tx`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to build round entry tx');
+  }
+  return response.json();
+}
+
 /** Refund entry fees for a round with < 5 players. Round must have status 'refund' in daily_rounds. */
 export async function refundRoundOnChain(
   roundId: string,

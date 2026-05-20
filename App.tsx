@@ -92,7 +92,7 @@ import DuelWaitingView from './components/DuelWaitingView';
 import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
 import CompeteLobbyView from './components/CompeteLobbyView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel, type ActiveDuel } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, buildRoundEntryTx, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel, type ActiveDuel } from './src/utils/api';
 import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES, getReEntryFeeLamports } from './src/utils/constants';
 import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildExpireDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildFundCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
 
@@ -831,9 +831,8 @@ const App: React.FC = () => {
       }
 
       const useContractEntry = import.meta.env.VITE_USE_ENTRY_CONTRACT !== 'false';
-      const { blockhash } = await getRecentBlockhashWithRetry(connection);
 
-      let instructions;
+      let transaction: VersionedTransaction;
       if (useContractEntry) {
         // The V2 program has been initialized since Feb 2026. The initialize-program call
         // is a paranoid no-op — wrap it so a transient failure (CORS cache, RPC blip)
@@ -846,24 +845,22 @@ const App: React.FC = () => {
         } catch (initErr) {
           console.warn('initializeProgram failed (non-fatal, program is already initialized):', initErr);
         }
-        await ensureRoundOnChain(
-          SOLANA_NETWORK === 'devnet'
-            ? { date: today, round_number: roundNumber, tier_index: tierIndex, useDevnet: true }
-            : { date: today, round_number: roundNumber, tier_index: tierIndex }
-        );
-        const roundIdU64 = contractRoundIdFromDateAndNumber(today, roundNumber);
-        instructions = [
-          buildEnterTierRoundIx(
-            publicKey,
-            roundIdU64,
-            tierIndex,
-            new PublicKey(REVENUE_WALLET)
-          ),
-        ];
+        // Atomic round entry: EF returns a tx with enter_tier_round (+ create_tier_round
+        // partial-signed by operator if PDA doesn't exist). Operator only pays PDA rent if
+        // the user actually signs and the tx confirms — fixes the "round created, nobody joins" leak.
+        const entryTxResp = await buildRoundEntryTx(publicKey.toBase58(), {
+          date: today,
+          round_number: roundNumber,
+          tier_index: tierIndex,
+          ...(SOLANA_NETWORK === 'devnet' ? { useDevnet: true } : {}),
+        });
+        const txBytes = Uint8Array.from(atob(entryTxResp.tx_base64), c => c.charCodeAt(0));
+        transaction = VersionedTransaction.deserialize(txBytes);
       } else {
         const PRIZE_POOL_WALLET = import.meta.env.VITE_PRIZE_POOL_WALLET || 'C9U6pL7FcroUBcSGQR2iCEGmAydVjzEE7ZYaJuVJuEEo';
         const tierEntryFee = V2_TIER_FEES[tierIndex] ?? ENTRY_FEE_LAMPORTS;
-        instructions = [
+        const { blockhash } = await getRecentBlockhashWithRetry(connection);
+        const instructions = [
           SystemProgram.transfer({
             fromPubkey: publicKey,
             toPubkey: new PublicKey(PRIZE_POOL_WALLET),
@@ -875,15 +872,13 @@ const App: React.FC = () => {
             lamports: TXN_FEE_LAMPORTS,
           }),
         ];
+        const messageV0 = new TransactionMessage({
+          payerKey: publicKey,
+          recentBlockhash: blockhash,
+          instructions,
+        }).compileToV0Message();
+        transaction = new VersionedTransaction(messageV0);
       }
-
-      const messageV0 = new TransactionMessage({
-        payerKey: publicKey,
-        recentBlockhash: blockhash,
-        instructions,
-      }).compileToV0Message();
-
-      const transaction = new VersionedTransaction(messageV0);
 
       // Debug: simulate transaction to get detailed error before wallet sends
       try {
