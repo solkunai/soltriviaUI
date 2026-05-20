@@ -227,17 +227,6 @@ const WalletConnectButton: React.FC = () => {
 
             {!showEmailInput ? (
               <div className="p-3 space-y-2">
-                {isSeekerTWA && (
-                  <div className="px-3 py-2 mb-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                    <span className="text-yellow-400 text-[10px] font-black uppercase tracking-wider block mb-1">
-                      Seeker users - native app coming
-                    </span>
-                    <span className="text-yellow-300/80 text-[10px] block leading-relaxed">
-                      Seed Vault connect is being upgraded. Please use Phantom Connect or social login below.
-                    </span>
-                  </div>
-                )}
-
                 {/* Continue with Phantom (Phantom Connect SDK) */}
                 <button
                   onClick={handlePhantomConnect}
