@@ -3,25 +3,31 @@ import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 
 const getMainnetEndpoints = (): string[] => {
   const endpoints: string[] = [];
-  
-  // Priority 1: Helius (if API key available)
+
+  // Priority 1: Helius via Cloudflare Worker proxy (API key NEVER exposed to browser)
+  const heliusProxy = import.meta.env.VITE_HELIUS_RPC_PROXY_URL;
+  if (heliusProxy) {
+    endpoints.push(heliusProxy);
+  }
+
+  // Priority 2: Legacy direct Helius (kept for transition; remove once proxy verified)
   const heliusKey = import.meta.env.VITE_HELIUS_API_KEY;
-  if (heliusKey) {
+  if (!heliusProxy && heliusKey) {
     endpoints.push(`https://mainnet.helius-rpc.com/?api-key=${heliusKey}`);
   }
-  
-  // Priority 2: Alchemy (if API key available)
+
+  // Priority 3: Alchemy (if API key available)
   const alchemyKey = import.meta.env.VITE_ALCHEMY_API_KEY;
   if (alchemyKey) {
     endpoints.push(`https://solana-mainnet.g.alchemy.com/v2/${alchemyKey}`);
   }
-  
-  // Priority 3: Public endpoints (fallback)
+
+  // Priority 4: Public endpoints (fallback)
   endpoints.push(
     'https://api.mainnet-beta.solana.com',
     'https://rpc.ankr.com/solana'
   );
-  
+
   return endpoints;
 };
 

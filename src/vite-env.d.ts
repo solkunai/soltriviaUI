@@ -8,6 +8,7 @@ declare module '@vitejs/plugin-react' {
 
 interface ImportMetaEnv {
   readonly VITE_HELIUS_API_KEY?: string;
+  readonly VITE_HELIUS_RPC_PROXY_URL?: string;
   readonly VITE_ALCHEMY_API_KEY?: string;
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
