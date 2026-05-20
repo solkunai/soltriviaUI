@@ -16,6 +16,7 @@ const WalletConnectButton: React.FC = () => {
   const { publicKey, connected, disconnect, connecting, wallets, select, connect, wallet, isPrivyUser } = useWallet();
   const { setVisible } = useWalletModal();
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [showRetry, setShowRetry] = useState(false);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [showDisconnect, setShowDisconnect] = useState(false);
   const [showLoginMenu, setShowLoginMenu] = useState(false);
@@ -134,33 +135,47 @@ const WalletConnectButton: React.FC = () => {
 
   const handleWalletConnect = useCallback(async () => {
     setShowLoginMenu(false);
+    setShowRetry(false);
     if (connecting) return;
     setConnectError(null);
     const readyWallets = wallets.filter(
       (w) => w.readyState === 'Installed' || w.readyState === 'Loadable'
     );
+
+    // Multi-wallet or zero-wallet paths — open the modal as before
+    if (readyWallets.length > 1) {
+      setVisible(true);
+      return;
+    }
+    if (readyWallets.length === 0) {
+      setVisible(true);
+      setConnectError(t('wallet.noWalletFound'));
+      return;
+    }
+
+    // Single ready wallet — try to connect.
+    const walletName = readyWallets[0].adapter.name;
     try {
-      if (readyWallets.length === 1) {
-        // select() is synchronous; sets the chosen wallet on the adapter
-        select(readyWallets[0].adapter.name);
-        // For Seeker TWA: autoConnect is disabled (popup-blocker workaround),
-        // so we MUST call connect() explicitly within the same user-gesture
-        // tick to keep Chrome's pop-up grace window valid for the MWA flow.
-        if (isSeekerTWA) {
-          await connect();
-        }
-        // Non-TWA users still rely on autoConnect={true} from the provider.
-      } else if (readyWallets.length > 1) {
-        setVisible(true);
-      } else {
-        setVisible(true);
-        setConnectError(t('wallet.noWalletFound'));
+      // select() is synchronous; sets the chosen wallet on the adapter
+      select(walletName);
+      // For Seeker TWA: autoConnect is disabled (popup-blocker workaround),
+      // so call connect() explicitly within the same user-gesture tick.
+      if (isSeekerTWA) {
+        await connect();
       }
+      // Non-TWA users still rely on autoConnect={true} from the provider.
     } catch (err: any) {
-      const code = err?.cause?.code || err?.code || 'UNKNOWN';
+      const code = err?.cause?.code || err?.code || 'CONNECTION_FAILED';
       const msg = err?.message || 'Wallet connection failed';
       console.error('[MWA connect error]', { code, message: msg, cause: err?.cause });
-      setConnectError(`${code}: ${msg}`);
+      // For Seeker TWA: first attempt often fails due to LNA permission timing.
+      // Show a friendly Try Again prompt instead of the cryptic error.
+      if (isSeekerTWA) {
+        setConnectError('Almost there — permission granted. Tap below to finish connecting.');
+        setShowRetry(true);
+      } else {
+        setConnectError(`${code}: ${msg}`);
+      }
     }
   }, [connecting, wallets, select, connect, isSeekerTWA, setVisible, t]);
 
@@ -349,6 +364,14 @@ const WalletConnectButton: React.FC = () => {
         {connectError && (
           <div className="absolute top-full left-0 right-0 mt-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-[10px] font-bold whitespace-normal z-50 min-w-[200px]">
             {connectError}
+            {showRetry && (
+              <button
+                onClick={handleWalletConnect}
+                className="mt-2 w-full bg-[#14F195] hover:bg-[#14F195]/90 text-black text-[11px] font-black uppercase tracking-wider py-2 rounded-md transition-all active:scale-95"
+              >
+                Try Again
+              </button>
+            )}
           </div>
         )}
       </div>
