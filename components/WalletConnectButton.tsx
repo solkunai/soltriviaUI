@@ -227,7 +227,40 @@ const WalletConnectButton: React.FC = () => {
 
             {!showEmailInput ? (
               <div className="p-3 space-y-2">
-                {/* Continue with Phantom (Phantom Connect SDK) */}
+                {/* Connect Wallet (other Solana wallets via wallet-adapter) — TOP.
+                    On Seeker TWA the button shows Seeker-specific copy + badge so
+                    SeedVault users see a clear CTA. SAME onClick handler — no logic
+                    change to the MWA flow. */}
+                <button
+                  onClick={handleWalletConnect}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all active:scale-[0.98]"
+                >
+                  {isSeekerTWA ? (
+                    <img src="/seeker-badge.png" alt="Seeker" className="w-5 h-5 shrink-0" />
+                  ) : (
+                    <svg className="w-5 h-5 text-[#14F195] shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M21 18H3V6h18v12zm-2-2V8H5v8h14zM16 11h2v2h-2v-2z" />
+                    </svg>
+                  )}
+                  <div className="text-left">
+                    <span className="text-white text-xs font-bold block">
+                      {isSeekerTWA ? "Continue with Seeker" : "Other Wallets"}
+                    </span>
+                    <span className="text-zinc-500 text-[9px]">
+                      {isSeekerTWA
+                        ? "Connect via SeedVault"
+                        : "Solflare, Backpack, Ledger, Seeker"}
+                    </span>
+                  </div>
+                </button>
+
+                <div className="flex items-center gap-3 px-2 py-1">
+                  <div className="flex-1 h-px bg-white/5" />
+                  <span className="text-zinc-600 text-[8px] font-bold uppercase tracking-wider">or</span>
+                  <div className="flex-1 h-px bg-white/5" />
+                </div>
+
+                {/* Continue with Phantom (Phantom Connect SDK) — moved below the divider with the other social signups */}
                 <button
                   onClick={handlePhantomConnect}
                   className="w-full flex items-center gap-3 px-4 py-3 bg-[#AB9FF2]/10 hover:bg-[#AB9FF2]/20 border border-[#AB9FF2]/30 rounded-xl transition-all active:scale-[0.98]"
@@ -238,26 +271,6 @@ const WalletConnectButton: React.FC = () => {
                     <span className="text-zinc-500 text-[9px]">Extension, mobile app, or social</span>
                   </div>
                 </button>
-
-                {/* Connect Wallet (other Solana wallets via wallet-adapter) */}
-                <button
-                  onClick={handleWalletConnect}
-                  className="w-full flex items-center gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all active:scale-[0.98]"
-                >
-                  <svg className="w-5 h-5 text-[#14F195] shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M21 18H3V6h18v12zm-2-2V8H5v8h14zM16 11h2v2h-2v-2z" />
-                  </svg>
-                  <div className="text-left">
-                    <span className="text-white text-xs font-bold block">Other Wallets</span>
-                    <span className="text-zinc-500 text-[9px]">Solflare, Backpack, Ledger, Seeker</span>
-                  </div>
-                </button>
-
-                <div className="flex items-center gap-3 px-2 py-1">
-                  <div className="flex-1 h-px bg-white/5" />
-                  <span className="text-zinc-600 text-[8px] font-bold uppercase tracking-wider">or</span>
-                  <div className="flex-1 h-px bg-white/5" />
-                </div>
 
                 {/* Google */}
                 <button
