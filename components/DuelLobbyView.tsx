@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useConnection } from '../src/contexts/WalletContext';
-import { getOpenDuels, fetchCompletedDuels, fetchMyDuelWins, fetchMyRefundableDuels, fetchMyActiveDuel, updateDuelStatus, type CompletedDuel, type MyDuelWin, type RefundableDuel, type ActiveDuel } from '../src/utils/api';
-import { fetchDuel } from '../src/utils/soltriviaContract';
+import { getOpenDuels, fetchCompletedDuels, fetchMyActiveDuel, type CompletedDuel, type MyDuelWin, type RefundableDuel, type ActiveDuel } from '../src/utils/api';
+import { fetchUnclaimedDuelWins, fetchClaimableRefundDuels } from '../src/utils/claims';
 import { V2_DUEL_FEES, V2_DUEL_LABELS, TXN_FEE_LAMPORTS } from '../src/utils/constants';
 
 interface DuelLobbyViewProps {
@@ -64,37 +64,17 @@ const DuelLobbyView: React.FC<DuelLobbyViewProps> = ({ walletAddress, onCreateDu
   const fetchClaimable = async () => {
     if (!walletAddress) return;
     try {
-      const wins = await fetchMyDuelWins(walletAddress);
-      const unclaimed: MyDuelWin[] = [];
-      for (const dw of wins) {
-        try {
-          const onChain = await fetchDuel(connection, dw.duel_id);
-          if (onChain && !onChain.winnerClaimed) unclaimed.push(dw);
-        } catch { /* skip */ }
-      }
-      setClaimableDuels(unclaimed);
+      setClaimableDuels(await fetchUnclaimedDuelWins(connection, walletAddress));
     } catch { /* non-fatal */ }
   };
 
   const fetchRefundable = async () => {
     if (!walletAddress) return;
     try {
-      const duels = await fetchMyRefundableDuels(walletAddress);
-      // Check on-chain if duel vault still has funds (not already expired/cancelled on-chain)
-      const refundable: RefundableDuel[] = [];
-      for (const d of duels) {
-        try {
-          const onChain = await fetchDuel(connection, d.duel_id);
-          if (onChain && onChain.status === 0) {
-            // Status 0 = waiting, vault has funds, eligible for refund
-            refundable.push(d);
-          } else if (onChain && onChain.status !== 0) {
-            // Already expired/cancelled/resolved on-chain — sync DB so it won't show again
-            updateDuelStatus(d.duel_id, 'expired').catch(() => {});
-          }
-        } catch { /* skip — RPC failure, don't show duel */ }
-      }
-      setRefundableDuels(refundable);
+      // PDA existence check filters out refunds the player already claimed
+      // (the Duel account is closed on cancel/expire refund). DB status sync
+      // is handled server-side by the auto-expire-duels cron.
+      setRefundableDuels(await fetchClaimableRefundDuels(connection, walletAddress));
     } catch { /* non-fatal */ }
   };
 

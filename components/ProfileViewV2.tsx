@@ -21,12 +21,6 @@ import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SOLANA_NETWORK, DEFAULT_AVATAR } from '../src/utils/constants';
 import { supabase } from '../src/utils/supabase';
 import {
-  fetchClaimableRoundPayouts,
-  fetchMyDuelWins,
-  fetchMyCustomGameWins,
-  fetchRefundableEntries,
-  fetchRefundableCustomGames,
-  fetchMyRefundableDuels,
   type ClaimablePayout,
   type MyDuelWin,
   type ClaimableCustomGameWin,
@@ -34,7 +28,14 @@ import {
   type RefundableCustomGame,
   type RefundableDuel,
 } from '../src/utils/api';
-import { fetchDuel, fetchCustomGame } from '../src/utils/soltriviaContract';
+import {
+  fetchUnpaidRoundPayouts,
+  fetchUnclaimedDuelWins,
+  fetchUnclaimedCustomWins,
+  fetchClaimableRefundEntries,
+  fetchClaimableRefundCustoms,
+  fetchClaimableRefundDuels,
+} from '../src/utils/claims';
 import {
   getReferralStats,
   getSeekerProfile,
@@ -468,55 +469,20 @@ const ProfileViewV2: React.FC<Props> = ({
       }
 
       const [rounds, duelCandidates, customCandidates, refRounds, refCustoms, refDuels] = await Promise.all([
-        fetchClaimableRoundPayouts(wallet).catch(() => []),
-        fetchMyDuelWins(wallet).catch(() => []),
-        fetchMyCustomGameWins(wallet).catch(() => []),
-        fetchRefundableEntries(wallet).catch(() => []),
-        fetchRefundableCustomGames(wallet).catch(() => []),
-        fetchMyRefundableDuels(wallet).catch(() => []),
+        fetchUnpaidRoundPayouts(connection, wallet),
+        fetchUnclaimedDuelWins(connection, wallet),
+        fetchUnclaimedCustomWins(connection, wallet),
+        fetchClaimableRefundEntries(connection, wallet),
+        fetchClaimableRefundCustoms(connection, wallet),
+        fetchClaimableRefundDuels(connection, wallet),
       ]);
       if (cancelled) return;
       setRefundRounds(refRounds);
       setRefundCustoms(refCustoms);
       setRefundDuels(refDuels);
-
-      // On-chain filter: drop duels where winnerClaimed === true.
-      // Native does this batched (getMultipleAccounts); web has fetchDuel only,
-      // so loop with concurrency cap so 6+ duels don't blast the RPC.
-      const duelChecks = await Promise.all(
-        duelCandidates.map(async (d) => {
-          try {
-            const onChain = await fetchDuel(connection, d.duel_id);
-            return onChain && !onChain.winnerClaimed ? d : null;
-          } catch {
-            // RPC fail → assume unclaimed and let claim attempt sort it out
-            return d;
-          }
-        })
-      );
-      const unclaimedDuels = duelChecks.filter((d): d is MyDuelWin => d != null);
-
-      // On-chain filter: drop custom games where my winner slot's claimed[idx] === true.
-      const customChecks = await Promise.all(
-        customCandidates.map(async (c) => {
-          try {
-            const onChain = await fetchCustomGame(connection, c.on_chain_game_id);
-            if (!onChain) return c;
-            const alreadyClaimed = onChain.claimed?.[c.winner_index] === true;
-            return alreadyClaimed ? null : c;
-          } catch {
-            return c;
-          }
-        })
-      );
-      const unclaimedCustoms = customChecks.filter(
-        (c): c is ClaimableCustomGameWin => c != null
-      );
-
-      if (cancelled) return;
       setRoundPayouts(rounds);
-      setDuelWins(unclaimedDuels);
-      setCustomWins(unclaimedCustoms);
+      setDuelWins(duelCandidates);
+      setCustomWins(customCandidates);
     })();
     return () => {
       cancelled = true;
