@@ -1,0 +1,973 @@
+/**
+ * HomeViewV2 — web redesign of the Home page per final-handoff 2 W1.
+ *
+ * Renders the body that lives INSIDE WebShell (sidebar + topbar already
+ * provided by the shell). Sections:
+ *   - Brand row: ROUND #N LIVE pill + COMPETE FOR SOL title (gradient SOL)
+ *   - Big green-gradient prize hero with 72px pool number + ENTER button
+ *   - QUICK PLAY 3-tile mosaic: ARENA (wide red) + CUSTOM (blue) + FREE PLAY (green)
+ *   - Gold GAME PASS banner
+ *   - RECENT TOP FINISHES list (top 5 finishers from last finalized round)
+ *
+ * Drop-in: same prop interface as HomeView so App.tsx can swap them
+ * without touching the callers.
+ */
+import React, { useEffect, useMemo, useState } from 'react';
+import { useWallet, useConnection } from '../src/contexts/WalletContext';
+import { getCurrentRoundKey } from '../src/utils/api';
+import {
+  fetchTierRound,
+  contractRoundIdFromDateAndNumber,
+} from '../src/utils/soltriviaContract';
+import { supabase } from '../src/utils/supabase';
+
+interface HomeViewV2Props {
+  lives: number | null;
+  onEnterTrivia: () => void;
+  onOpenGuide: () => void;
+  onOpenBuyLives: () => void;
+  onStartPractice: () => void;
+  practiceRunsLeft: number;
+  hasGamePass?: boolean;
+  isSeekerVerified?: boolean;
+  onBuyGamePass?: () => void;
+  onCreateCustomGame?: () => void;
+  onViewCustomGame?: (slug: string) => void;
+  onEnterDuels?: () => void;
+}
+
+function getCurrentRoundNumber(): number {
+  // 0..3 → 1..4 for display
+  return Math.floor(new Date().getUTCHours() / 6) + 1;
+}
+
+function getNextRoundCountdown(): string {
+  const now = new Date();
+  const currentBlock = Math.floor(now.getUTCHours() / 6);
+  const nextBlockHour = (currentBlock + 1) * 6;
+  const next = new Date(now);
+  if (nextBlockHour >= 24) {
+    next.setUTCDate(next.getUTCDate() + 1);
+    next.setUTCHours(0, 0, 0, 0);
+  } else {
+    next.setUTCHours(nextBlockHour, 0, 0, 0);
+  }
+  const diffMs = Math.max(0, next.getTime() - now.getTime());
+  const totalSec = Math.floor(diffMs / 1000);
+  const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+  const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+  const s = String(totalSec % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+type RecentWinner = {
+  rank: number;
+  wallet: string;
+  username: string | null;
+  score: number;
+  payoutSol: number;
+  whenLabel: string;
+  roundNumber: number;
+};
+
+function shortenWallet(w: string): string {
+  return `${w.slice(0, 4)}…${w.slice(-4)}`;
+}
+
+/**
+ * Right rail: Position + Live Feed + Lives cards. Exported so App.tsx can
+ * pass it to WebShell's rightRail prop alongside the Home body.
+ */
+export function HomeRightRail({
+  lives,
+  onBuyLives,
+}: {
+  lives: number | null;
+  onBuyLives?: () => void;
+}) {
+  const livesCount = lives ?? 0;
+  // Mocked feed for v1. Wire to real ticker_events / recent activity later.
+  const feed = [
+    { text: '@nftking won 0.124 SOL', highlight: true },
+    { text: '@bonkmaxi earned 4,200 XP · Round #14' },
+    { text: '@trivia_king on a 5-streak' },
+    { text: '@anchor_legend cleared Web3' },
+  ];
+  return (
+    <div className="flex flex-col" style={{ gap: 16 }}>
+      {/* Position card */}
+      <div
+        className="rounded-xl"
+        style={{
+          background: '#0a0a0a',
+          border: '1px solid rgba(20,241,149,0.33)',
+          padding: '14px 16px',
+        }}
+      >
+        <div
+          className="font-black italic uppercase"
+          style={{
+            fontSize: 9,
+            color: '#14F195',
+            letterSpacing: '0.18em',
+          }}
+        >
+          ● YOUR LIVE POSITION
+        </div>
+        <div className="flex items-baseline gap-2 mt-2">
+          <span
+            className="font-black italic"
+            style={{
+              fontSize: 36,
+              color: '#14F195',
+              lineHeight: 0.9,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            —
+          </span>
+          <span
+            className="font-black italic uppercase"
+            style={{
+              fontSize: 11,
+              color: '#71717a',
+              letterSpacing: '0.14em',
+            }}
+          >
+            NOT ENTERED
+          </span>
+        </div>
+        <div
+          className="font-black italic uppercase mt-2"
+          style={{
+            fontSize: 9,
+            color: '#71717a',
+            letterSpacing: '0.14em',
+          }}
+        >
+          ENTER A ROUND TO SHOW YOUR RANK + PROJECTED PRIZE
+        </div>
+      </div>
+
+      {/* Live Feed */}
+      <div
+        className="rounded-xl"
+        style={{
+          background: '#0a0a0a',
+          border: '1px solid rgba(255,255,255,0.08)',
+          padding: '12px 14px',
+        }}
+      >
+        <div
+          className="font-black italic uppercase mb-2"
+          style={{
+            fontSize: 9,
+            color: '#52525b',
+            letterSpacing: '0.18em',
+          }}
+        >
+          LIVE FEED
+        </div>
+        {feed.map((f, i) => (
+          <div
+            key={i}
+            className="flex items-start gap-2 py-1.5"
+            style={{
+              borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+            }}
+          >
+            <span
+              className="flex-shrink-0"
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: f.highlight ? '#14F195' : '#52525b',
+                marginTop: 5,
+              }}
+            />
+            <span
+              style={{
+                fontSize: 12,
+                color: f.highlight ? '#fff' : '#a1a1aa',
+                lineHeight: 1.4,
+              }}
+            >
+              {f.text}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Lives card */}
+      <div
+        className="rounded-xl"
+        style={{
+          background: '#0a0a0a',
+          border: '1px solid rgba(255,49,49,0.33)',
+          padding: '14px 16px',
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <span
+            className="font-black italic uppercase"
+            style={{
+              fontSize: 9,
+              color: '#FF3131',
+              letterSpacing: '0.18em',
+            }}
+          >
+            LIVES
+          </span>
+          <span
+            className="font-black italic"
+            style={{
+              fontSize: 16,
+              color: '#fff',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {lives == null ? '—' : String(lives)}
+          </span>
+        </div>
+        <div className="flex gap-1.5 mt-2.5">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <svg
+              key={i}
+              width={22}
+              height={22}
+              viewBox="0 0 24 24"
+              fill={i < Math.min(livesCount, 5) ? '#FF3131' : 'transparent'}
+              stroke={i < Math.min(livesCount, 5) ? '#FF3131' : '#1a1a1a'}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z" />
+            </svg>
+          ))}
+        </div>
+        {onBuyLives ? (
+          <button
+            onClick={onBuyLives}
+            className="w-full rounded-full font-black italic uppercase mt-3 active:opacity-90"
+            style={{
+              background: '#FF3131',
+              color: '#000',
+              padding: '8px 12px',
+              fontSize: 11,
+              letterSpacing: '0.14em',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            BUY MORE
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
+  const {
+    onEnterTrivia,
+    onCreateCustomGame,
+    onEnterDuels,
+    onStartPractice,
+    onBuyGamePass,
+    hasGamePass,
+  } = props;
+
+  const { connection } = useConnection();
+  const { connected } = useWallet();
+
+  const [prizePool, setPrizePool] = useState(0);
+  const [playersEntered, setPlayersEntered] = useState(0);
+  const [activeDuelCount, setActiveDuelCount] = useState(0);
+  const [activeCustomGameCount, setActiveCustomGameCount] = useState(0);
+  const [countdown, setCountdown] = useState(getNextRoundCountdown());
+  const [recentWinners, setRecentWinners] = useState<RecentWinner[]>([]);
+
+  // Live countdown to next 6h block, local-only.
+  useEffect(() => {
+    const tick = () => setCountdown(getNextRoundCountdown());
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Prize pool + players from on-chain tier rounds, every 15s.
+  useEffect(() => {
+    if (!connection) return;
+    let mounted = true;
+    const refresh = async () => {
+      try {
+        const { date, roundNumber } = getCurrentRoundKey();
+        const contractRoundId = contractRoundIdFromDateAndNumber(date, roundNumber);
+        const results = await Promise.allSettled(
+          [0, 1, 2, 3].map((i) => fetchTierRound(connection, contractRoundId, i)),
+        );
+        if (!mounted) return;
+        let totalPot = 0;
+        let totalPlayers = 0;
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value) {
+            totalPot += r.value.totalPot;
+            totalPlayers += r.value.entryCount;
+          }
+        }
+        setPrizePool(totalPot / 1_000_000_000);
+        setPlayersEntered(totalPlayers);
+      } catch {
+        /* non-fatal */
+      }
+    };
+    refresh();
+    const interval = setInterval(refresh, 15_000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [connection]);
+
+  // Active duel + custom game counts.
+  useEffect(() => {
+    const fetchCounts = async () => {
+      try {
+        const now = new Date().toISOString();
+        const [duels, cg] = await Promise.all([
+          supabase
+            .from('duels')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['waiting', 'active'])
+            .gt('expires_at', now),
+          supabase
+            .from('custom_games')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['active', 'started']),
+        ]);
+        setActiveDuelCount(duels.count ?? 0);
+        setActiveCustomGameCount(cg.count ?? 0);
+      } catch {
+        /* non-fatal */
+      }
+    };
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Recent top finishers from the last finalized round, top 5.
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        // Last 3 finalized rounds, top finishers per round.
+        const { data: rounds } = await supabase
+          .from('daily_rounds')
+          .select('id, date, round_number')
+          .eq('status', 'finalized')
+          .order('date', { ascending: false })
+          .order('round_number', { ascending: false })
+          .limit(3);
+        if (!mounted || !rounds?.length) return;
+
+        const roundIds = rounds.map((r: any) => r.id);
+        const { data: payouts } = await supabase
+          .from('round_payouts')
+          .select('round_id, wallet_address, rank, prize_lamports')
+          .in('round_id', roundIds)
+          .eq('rank', 1)
+          .order('rank', { ascending: true });
+        if (!mounted || !payouts?.length) return;
+
+        // Pull usernames
+        const wallets = [...new Set(payouts.map((p: any) => p.wallet_address))];
+        const { data: profiles } = await supabase
+          .from('player_profiles')
+          .select('wallet_address, username')
+          .in('wallet_address', wallets);
+        const usernameByWallet: Record<string, string | null> = {};
+        for (const p of (profiles ?? []) as any[]) {
+          usernameByWallet[p.wallet_address] = p.username ?? null;
+        }
+
+        const roundByIdLocal: Record<string, any> = {};
+        for (const r of rounds as any[]) roundByIdLocal[r.id] = r;
+
+        const winners: RecentWinner[] = payouts
+          .slice(0, 5)
+          .map((p: any) => {
+            const r = roundByIdLocal[p.round_id];
+            return {
+              rank: p.rank,
+              wallet: p.wallet_address,
+              username: usernameByWallet[p.wallet_address] ?? null,
+              score: 0,
+              payoutSol: (p.prize_lamports ?? 0) / 1_000_000_000,
+              whenLabel: r ? `${r.date} R${r.round_number + 1}` : '',
+              roundNumber: r ? r.round_number + 1 : 0,
+            };
+          });
+        if (mounted) setRecentWinners(winners);
+      } catch {
+        /* non-fatal */
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const liveRoundNumber = useMemo(() => getCurrentRoundNumber(), []);
+  const poolDisplay = prizePool >= 1 ? prizePool.toFixed(2) : prizePool.toFixed(4);
+
+  return (
+    <div className="max-w-5xl">
+      {/* Brand row */}
+      <div className="mb-5">
+        <div
+          className="font-black italic uppercase"
+          style={{
+            fontSize: 10,
+            color: '#14F195',
+            letterSpacing: '0.18em',
+          }}
+        >
+          ● ROUND #{liveRoundNumber} LIVE
+        </div>
+        <h1
+          className="font-black italic uppercase mt-1 text-white"
+          style={{ fontSize: 42, lineHeight: 0.95, letterSpacing: '-0.02em' }}
+        >
+          COMPETE FOR{' '}
+          <span
+            style={{
+              background:
+                'linear-gradient(90deg, #14F195 0%, #7C8DFF 50%, #9945FF 100%)',
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
+            SOL
+          </span>
+        </h1>
+        <div
+          className="font-black italic uppercase mt-2"
+          style={{
+            fontSize: 10,
+            color: '#a1a1aa',
+            letterSpacing: '0.16em',
+          }}
+        >
+          EVERY 6H · 10 RANDOM QUESTIONS · TOP 5 SPLIT 90% OF POOL
+        </div>
+      </div>
+
+      {/* Prize hero card */}
+      <button
+        onClick={onEnterTrivia}
+        className="block w-full text-left rounded-2xl mb-5 active:opacity-95"
+        style={{
+          background:
+            'linear-gradient(110deg, #14F195 0%, #00FFA3 60%, #7CD9FF 100%)',
+          padding: '20px 24px',
+          color: '#000',
+          boxShadow: '0 22px 50px -22px rgba(20,241,149,0.6)',
+          border: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        <div className="flex items-end justify-between gap-6">
+          <div className="min-w-0">
+            <div
+              className="font-black italic uppercase"
+              style={{ fontSize: 10, opacity: 0.6, letterSpacing: '0.14em' }}
+            >
+              PRIZE POOL · GROWING
+            </div>
+            <div
+              className="font-black italic mt-1"
+              style={{
+                fontSize: 72,
+                lineHeight: 0.85,
+                letterSpacing: '-0.04em',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {poolDisplay}
+            </div>
+            <div
+              className="font-black italic uppercase mt-2"
+              style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
+            >
+              SOL · {playersEntered} ENTRIES · CLOSES IN{' '}
+              <span
+                style={{
+                  background: 'rgba(0,0,0,0.16)',
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {countdown}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+            <span
+              className="font-black italic uppercase"
+              style={{
+                background: '#000',
+                color: '#14F195',
+                borderRadius: 999,
+                padding: '14px 28px',
+                fontSize: 13,
+                letterSpacing: '0.14em',
+                boxShadow: '0 8px 18px rgba(0,0,0,0.4)',
+                display: 'inline-block',
+              }}
+            >
+              ENTER · 0.02 SOL →
+            </span>
+            <span
+              className="font-black italic uppercase"
+              style={{ fontSize: 9, color: 'rgba(0,0,0,0.6)', letterSpacing: '0.14em' }}
+            >
+              + 0.0025 NETWORK FEE · USES 1 LIFE
+            </span>
+          </div>
+        </div>
+      </button>
+
+      {/* QUICK PLAY label */}
+      <div
+        className="font-black italic uppercase mb-3"
+        style={{ fontSize: 10, color: '#52525b', letterSpacing: '0.18em' }}
+      >
+        QUICK PLAY
+      </div>
+
+      {/* 3-tile mosaic */}
+      <div
+        className="mb-3"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1.4fr 1fr 1fr',
+          gap: 10,
+        }}
+      >
+        {/* ARENA — wide red tile */}
+        <button
+          onClick={onEnterDuels}
+          className="text-left rounded-xl active:opacity-90"
+          style={{
+            background: '#0a0a0a',
+            border: '1.5px solid #FF3131',
+            padding: '14px 16px',
+            color: '#fff',
+            minHeight: 108,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            position: 'relative',
+            cursor: 'pointer',
+          }}
+        >
+          {/* Swords icon top-right */}
+          <svg
+            width={18}
+            height={18}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#FF3131"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ position: 'absolute', top: 10, right: 10, opacity: 0.4 }}
+          >
+            <path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16 22 22M19 13 22 16M2 22h.01M5 22h.01M8 22h.01M11 22h.01M14 22h.01M17 22h.01M20 22h.01M3 21l6-6" />
+          </svg>
+          <div>
+            <div
+              className="font-black italic uppercase"
+              style={{ fontSize: 9, color: '#FF3131', letterSpacing: '0.18em' }}
+            >
+              1V1 · LIVE
+            </div>
+            <div
+              className="font-black italic uppercase mt-1"
+              style={{ fontSize: 22, lineHeight: 0.95, letterSpacing: '-0.02em' }}
+            >
+              ENTER <span style={{ color: '#FF3131' }}>ARENA</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <span
+              className="font-black italic uppercase"
+              style={{
+                fontSize: 9,
+                color: '#a1a1aa',
+                letterSpacing: '0.14em',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {activeDuelCount > 0 ? `${activeDuelCount} OPEN` : 'HOST OR JOIN'} ·
+              0.01–1 SOL
+            </span>
+            <div className="flex-1" />
+            <span
+              className="font-black italic"
+              style={{ fontSize: 14, color: '#FF3131' }}
+            >
+              →
+            </span>
+          </div>
+        </button>
+
+        {/* CUSTOM — stat poster */}
+        <button
+          onClick={onCreateCustomGame}
+          className="text-left rounded-xl active:opacity-90"
+          style={{
+            background: '#0a0a0a',
+            border: '1.5px solid #38BDF8',
+            padding: '14px 16px',
+            color: '#fff',
+            minHeight: 108,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            position: 'relative',
+            cursor: 'pointer',
+          }}
+        >
+          {/* Wand icon top-right */}
+          <svg
+            width={18}
+            height={18}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#38BDF8"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ position: 'absolute', top: 10, right: 10, opacity: 0.4 }}
+          >
+            <path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72ZM14 7l3 3M5 6v4M19 14v4M10 2v2M7 8H3M21 16h-4M11 3H9" />
+          </svg>
+          {activeCustomGameCount > 0 ? (
+            <div
+              className="font-black italic"
+              style={{
+                fontSize: 44,
+                color: '#38BDF8',
+                lineHeight: 0.85,
+                letterSpacing: '-0.04em',
+                opacity: 0.95,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {activeCustomGameCount}
+            </div>
+          ) : (
+            <div style={{ height: 38 }} />
+          )}
+          <div>
+            <div
+              className="font-black italic uppercase"
+              style={{ fontSize: 13, lineHeight: 1 }}
+            >
+              CUSTOM GAMES
+            </div>
+            <div
+              className="font-black italic uppercase mt-1"
+              style={{ fontSize: 8, color: '#38BDF8', letterSpacing: '0.16em' }}
+            >
+              OPEN ROOMS · HOST FREE
+            </div>
+          </div>
+        </button>
+
+        {/* FREE PLAY — streak focus */}
+        <button
+          onClick={onStartPractice}
+          className="text-left rounded-xl active:opacity-90"
+          style={{
+            background: '#0a0a0a',
+            border: '1.5px solid #14F195',
+            padding: '14px 16px',
+            color: '#fff',
+            minHeight: 108,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            position: 'relative',
+            cursor: 'pointer',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: 10,
+              right: 10,
+              textAlign: 'right',
+            }}
+          >
+            <span
+              className="font-black italic"
+              style={{
+                fontSize: 30,
+                color: '#FFD700',
+                lineHeight: 0.85,
+                display: 'block',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              5
+            </span>
+            <span
+              className="font-black italic uppercase"
+              style={{
+                fontSize: 7,
+                color: '#FFD700',
+                display: 'block',
+                marginTop: 1,
+                letterSpacing: '0.14em',
+              }}
+            >
+              🔥 STREAK
+            </span>
+          </div>
+          <div>
+            <div
+              className="font-black italic uppercase"
+              style={{
+                fontSize: 9,
+                color: '#14F195',
+                letterSpacing: '0.18em',
+              }}
+            >
+              NO STAKES
+            </div>
+            <div
+              className="font-black italic uppercase mt-1"
+              style={{ fontSize: 20, lineHeight: 0.95, letterSpacing: '-0.02em' }}
+            >
+              FREE <span style={{ color: '#14F195' }}>PLAY</span>
+            </div>
+          </div>
+          <div
+            className="font-black italic uppercase"
+            style={{
+              fontSize: 8,
+              color: '#71717a',
+              letterSpacing: '0.14em',
+            }}
+          >
+            7 CATEGORIES · UNLIMITED W/ PASS
+          </div>
+        </button>
+      </div>
+
+      {/* GAME PASS gold banner */}
+      {!hasGamePass && (
+        <button
+          onClick={onBuyGamePass}
+          className="w-full text-left rounded-xl mb-5 active:opacity-95 flex items-center gap-3"
+          style={{
+            background:
+              'linear-gradient(110deg, #FFD700 0%, #FFE680 60%, #FFC857 100%)',
+            color: '#000',
+            padding: '10px 16px',
+            boxShadow: '0 14px 30px -16px rgba(255,215,0,0.5)',
+            cursor: 'pointer',
+            border: 'none',
+          }}
+        >
+          <span
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: '#000',
+              color: '#FFD700',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <svg
+              width={18}
+              height={18}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#FFD700"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2ZM13 5v2M13 17v2M13 11v2" />
+            </svg>
+          </span>
+          <div className="flex-1 min-w-0">
+            <div
+              className="font-black italic uppercase"
+              style={{ fontSize: 8, opacity: 0.7, letterSpacing: '0.14em' }}
+            >
+              UNLOCK EVERYTHING
+            </div>
+            <div
+              className="font-black italic uppercase"
+              style={{ fontSize: 15, lineHeight: 1, marginTop: 1 }}
+            >
+              GAME PASS
+            </div>
+            <div
+              className="font-black italic uppercase"
+              style={{
+                fontSize: 8,
+                opacity: 0.65,
+                letterSpacing: '0.14em',
+                marginTop: 2,
+              }}
+            >
+              7 CATEGORIES · +25% XP · -10% LIVES · NON-TRANSFERABLE
+            </div>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <div
+              className="font-black italic"
+              style={{
+                fontSize: 20,
+                lineHeight: 0.95,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              0.0625
+            </div>
+            <div
+              className="font-black italic uppercase"
+              style={{ fontSize: 8, opacity: 0.65, letterSpacing: '0.14em' }}
+            >
+              SOL · ONE-TIME
+            </div>
+          </div>
+          <span
+            className="font-black italic"
+            style={{ fontSize: 18, marginLeft: 4 }}
+          >
+            →
+          </span>
+        </button>
+      )}
+
+      {/* Recent top finishes */}
+      <div
+        className="font-black italic uppercase mb-3"
+        style={{ fontSize: 10, color: '#52525b', letterSpacing: '0.18em' }}
+      >
+        RECENT TOP FINISHES
+      </div>
+      {recentWinners.length === 0 ? (
+        <div
+          className="rounded-xl text-center"
+          style={{
+            background: '#0a0a0a',
+            border: '1px solid rgba(255,255,255,0.08)',
+            padding: '24px 16px',
+            color: '#71717a',
+            fontSize: 12,
+          }}
+        >
+          No finalized rounds yet today. Be the first to print.
+        </div>
+      ) : (
+        <div
+          style={{
+            background: '#0a0a0a',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: 12,
+            overflow: 'hidden',
+          }}
+        >
+          {recentWinners.map((w, i) => (
+            <div
+              key={`${w.wallet}-${w.roundNumber}`}
+              className="flex items-center gap-4 px-4 py-3"
+              style={{
+                borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+              }}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  background: 'rgba(255,215,0,0.15)',
+                  border: '1.5px solid #FFD700',
+                  color: '#FFD700',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 900,
+                  fontSize: 14,
+                }}
+              >
+                🏆
+              </div>
+              <div className="flex-1 min-w-0">
+                <div
+                  className="font-black italic uppercase truncate"
+                  style={{ fontSize: 14, color: '#fff', letterSpacing: '-0.01em' }}
+                >
+                  @{w.username || shortenWallet(w.wallet)}
+                </div>
+                <div
+                  className="font-black italic uppercase mt-0.5"
+                  style={{
+                    fontSize: 9,
+                    color: '#71717a',
+                    letterSpacing: '0.14em',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {w.whenLabel}
+                </div>
+              </div>
+              <span
+                className="font-black italic uppercase"
+                style={{
+                  fontSize: 9,
+                  background: 'rgba(255,215,0,0.15)',
+                  color: '#FFD700',
+                  border: '1px solid rgba(255,215,0,0.4)',
+                  borderRadius: 999,
+                  padding: '3px 8px',
+                  letterSpacing: '0.12em',
+                }}
+              >
+                1ST
+              </span>
+              <span
+                className="font-black italic"
+                style={{
+                  fontSize: 18,
+                  color: '#FFD700',
+                  width: 90,
+                  textAlign: 'right',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                +{w.payoutSol.toFixed(3)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default HomeViewV2;

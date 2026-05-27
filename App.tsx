@@ -21,6 +21,9 @@ const PATH_TO_VIEW: Record<string, View> = {
   '/create-game': View.CUSTOM_GAME_CREATE,
   '/duels': View.DUEL_LOBBY,
   '/compete': View.COMPETE_LOBBY,
+  '/referrals': View.REFERRALS,
+  '/game-pass': View.GAME_PASS,
+  '/lives': View.LIVES,
 };
 function viewFromPath(): View {
   if (typeof window === 'undefined') return View.HOME;
@@ -45,6 +48,9 @@ function pathForView(view: View, customSlug?: string | null, duelShareCode?: str
   }
   if (view === View.COMPETE_LOBBY) return '/compete';
   if (view === View.DUEL_LOBBY) return '/duels';
+  if (view === View.REFERRALS) return '/referrals';
+  if (view === View.GAME_PASS) return '/game-pass';
+  if (view === View.LIVES) return '/lives';
   if ([View.DUEL_WAITING, View.DUEL_PLAY, View.DUEL_RESULTS].includes(view)) {
     if (duelShareCode) return `/duel/${duelShareCode}`;
     const current = window.location.pathname;
@@ -57,9 +63,20 @@ import { useWallet, useConnection } from './src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import Sidebar from './components/Sidebar';
 import HomeView from './components/HomeView';
+import HomeViewV2, { HomeRightRail } from './components/HomeViewV2';
+import RoundsViewV2 from './components/RoundsViewV2';
+import QuestsViewV2 from './components/QuestsViewV2';
+import LeaderboardViewV2 from './components/LeaderboardViewV2';
+import DuelsViewV2 from './components/DuelsViewV2';
+import CustomGamesViewV2 from './components/CustomGamesViewV2';
+import GamePassViewV2 from './components/GamePassViewV2';
+import ReferralsViewV2 from './components/ReferralsViewV2';
+import FreePlayViewV2 from './components/FreePlayViewV2';
+import LivesViewV2 from './components/LivesViewV2';
+import { WebShell } from './components/WebShell';
 import LeaderboardView from './components/LeaderboardView';
 import QuestsView from './components/QuestsView';
-import ProfileView from './components/ProfileView';
+import ProfileViewV2 from './components/ProfileViewV2';
 import PlayView from './components/PlayView';
 import GuideModal from './components/GuideModal';
 import BuyLivesModal from './components/BuyLivesModal';
@@ -1643,117 +1660,268 @@ const App: React.FC = () => {
     switch (currentView) {
       case View.HOME:
         return (
-          <HomeView
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
             lives={livesDisplayReady ? lives : null}
-            onEnterTrivia={() => {
-              if (!connected) {
-                setShowWalletRequired(true);
-              } else {
-                setCurrentView(View.COMPETE_LOBBY);
-              }
-            }}
-            onOpenGuide={() => setIsGuideOpen(true)}
-            onOpenBuyLives={() => {
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
               if (!connected) {
                 setShowWalletRequired(true);
               } else {
                 setIsBuyLivesOpen(true);
               }
             }}
-            onStartPractice={handleStartPractice}
-            practiceRunsLeft={practiceRunsLeft}
-            hasGamePass={hasGamePass}
-            isSeekerVerified={isSeekerVerified}
-            onBuyGamePass={() => setShowCategorySelector(true)}
-            onCreateCustomGame={handleNavigateToCustomGames}
-            onViewCustomGame={handleViewCustomGame}
-            onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)}
-          />
+            rightRail={
+              <HomeRightRail
+                lives={livesDisplayReady ? lives : null}
+                onBuyLives={() => {
+                  if (!connected) {
+                    setShowWalletRequired(true);
+                  } else {
+                    setIsBuyLivesOpen(true);
+                  }
+                }}
+              />
+            }
+          >
+            <HomeViewV2
+              lives={livesDisplayReady ? lives : null}
+              onEnterTrivia={() => {
+                if (!connected) {
+                  setShowWalletRequired(true);
+                } else {
+                  setCurrentView(View.COMPETE_LOBBY);
+                }
+              }}
+              onOpenGuide={() => setIsGuideOpen(true)}
+              onOpenBuyLives={() => {
+                if (!connected) {
+                  setShowWalletRequired(true);
+                } else {
+                  setIsBuyLivesOpen(true);
+                }
+              }}
+              onStartPractice={handleStartPractice}
+              practiceRunsLeft={practiceRunsLeft}
+              hasGamePass={hasGamePass}
+              isSeekerVerified={isSeekerVerified}
+              onBuyGamePass={() => setShowCategorySelector(true)}
+              onCreateCustomGame={handleNavigateToCustomGames}
+              onViewCustomGame={handleViewCustomGame}
+              onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)}
+            />
+          </WebShell>
         );
       case View.LEADERBOARD:
         return (
-          <LeaderboardView
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
             onOpenGuide={() => setIsGuideOpen(true)}
-            profileCacheBuster={profileCacheBuster}
-            currentWallet={publicKey?.toBase58() ?? null}
-            currentUserAvatar={profile.avatar}
-          />
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <LeaderboardViewV2 />
+          </WebShell>
         );
       case View.COMPETE_LOBBY:
         return (
-          <CompeteLobbyView
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
             lives={livesDisplayReady ? lives : null}
-            roundEntriesUsed={roundEntriesUsed}
-            roundEntriesMax={ROUND_ENTRIES_MAX}
-            onStartQuiz={handleStartQuiz}
-            onOpenBuyLives={() => {
-              if (!connected) { setShowWalletRequired(true); } else { setIsBuyLivesOpen(true); }
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
             }}
-            onBack={() => setCurrentView(View.HOME)}
-            onConnectWallet={() => setShowWalletRequired(true)}
-            walletConnected={connected}
-            onStartPractice={handleStartPractice}
-            onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)}
-            onCreateCustomGame={handleNavigateToCustomGames}
-            hasGamePass={hasGamePass}
-          />
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+            rightRail={
+              <HomeRightRail
+                lives={livesDisplayReady ? lives : null}
+                onBuyLives={() => {
+                  if (!connected) setShowWalletRequired(true);
+                  else setIsBuyLivesOpen(true);
+                }}
+              />
+            }
+          >
+            <RoundsViewV2
+              lives={livesDisplayReady ? lives : null}
+              walletConnected={connected}
+              onStartQuiz={handleStartQuiz}
+              onConnectWallet={() => setShowWalletRequired(true)}
+              onOpenBuyLives={() => {
+                if (!connected) setShowWalletRequired(true);
+                else setIsBuyLivesOpen(true);
+              }}
+            />
+          </WebShell>
         );
       case View.PLAY:
-        return <PlayView lives={livesDisplayReady ? lives : null} roundEntriesUsed={roundEntriesUsed} roundEntriesMax={ROUND_ENTRIES_MAX} onStartQuiz={handleStartQuiz} onOpenBuyLives={() => {
-          if (!connected) { setShowWalletRequired(true); } else { setIsBuyLivesOpen(true); }
-        }} onStartPractice={handleStartPractice} practiceRunsLeft={practiceRunsLeft} hasGamePass={hasGamePass} onCreateCustomGame={handleNavigateToCustomGames} onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)}
-          claimableRoundPayouts={claimableRoundPayouts}
-          claimableCustomGames={claimableCustomGames}
-          refundableEntries={refundableEntries}
-          onClaimRoundPrize={handleClaimRoundPrizeFromPlay}
-          onClaimCustomPrize={handleClaimCustomPrize}
-          onClaimRefund={handleClaimRefund}
-          refundableCustomGames={refundableCustomGames}
-          onClaimCGRefund={handleClaimCGRefund}
-          claimingId={claimingId}
-        />;
+        return (
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <FreePlayViewV2
+              hasGamePass={hasGamePass}
+              practiceRunsLeft={practiceRunsLeft}
+              onStartPractice={handleStartPractice}
+              onBuyGamePass={() => setShowCategorySelector(true)}
+            />
+          </WebShell>
+        );
       case View.QUESTS:
-        return <QuestsView onGoToProfile={() => setCurrentView(View.PROFILE)} onOpenGuide={() => setIsGuideOpen(true)} />;
+        return (
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <QuestsViewV2 />
+          </WebShell>
+        );
       case View.PROFILE:
-        if (!connected) {
-          return (
-            <div className="flex-1 flex items-center justify-center p-6">
-              <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-8 md:p-10 max-w-md w-full text-center">
-                <div className="flex justify-center mb-6">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#9945FF]/20 to-[#14F195]/20 flex items-center justify-center border border-[#9945FF]/30">
-                    <svg className="w-8 h-8 text-[#14F195]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        return (
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            {!connected ? (
+              <div className="flex items-center justify-center" style={{ minHeight: '60vh' }}>
+                <div
+                  className="text-center"
+                  style={{
+                    background: '#0a0a0a',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 16,
+                    padding: '40px 32px',
+                    maxWidth: 440,
+                  }}
+                >
+                  <div
+                    className="mx-auto mb-5 flex items-center justify-center rounded-full"
+                    style={{
+                      width: 64,
+                      height: 64,
+                      background:
+                        'linear-gradient(135deg, rgba(153,69,255,0.2), rgba(20,241,149,0.2))',
+                      border: '1px solid rgba(153,69,255,0.3)',
+                    }}
+                  >
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#14F195" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                   </div>
-                </div>
-                <h3 className="text-xl font-[1000] italic uppercase tracking-tighter text-white mb-2">Connect Your Wallet</h3>
-                <p className="text-zinc-400 text-sm mb-6">Connect your Solana wallet to view your profile, stats, and game history.</p>
-                <div className="flex justify-center">
-                  <WalletConnectButton />
+                  <h3
+                    className="font-black italic uppercase mb-2 text-white"
+                    style={{ fontSize: 22, letterSpacing: '-0.02em' }}
+                  >
+                    Connect Your Wallet
+                  </h3>
+                  <p style={{ fontSize: 13, color: '#a1a1aa', marginBottom: 20 }}>
+                    Connect your Solana wallet to view your profile, stats, and game history.
+                  </p>
+                  <button
+                    onClick={() => setShowWalletRequired(true)}
+                    className="font-black italic uppercase rounded-full active:opacity-90"
+                    style={{
+                      background: '#14F195',
+                      color: '#000',
+                      padding: '12px 28px',
+                      fontSize: 12,
+                      letterSpacing: '0.14em',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    CONNECT WALLET →
+                  </button>
                 </div>
               </div>
-            </div>
-          );
-        }
+            ) : (
+              <ProfileViewV2
+                username={profile.username}
+                avatar={profile.avatar}
+                lives={livesDisplayReady ? lives : null}
+                hasGamePass={hasGamePass}
+                onEdit={() => setIsEditProfileOpen(true)}
+                onBuyLives={() => setIsBuyLivesOpen(true)}
+                onOpenGamePass={() => setCurrentView(View.GAME_PASS)}
+                onOpenSwap={() => setIsSwapOpen(true)}
+                onOpenReferrals={() => setCurrentView(View.REFERRALS)}
+                onClaimRoundPrize={handleClaimRoundPrizeFromPlay}
+                onClaimDuelPrize={handleClaimDuelPrize}
+                onClaimCustomPrize={handleClaimCustomPrize}
+                onClaimRoundRefund={handleClaimRefund}
+                onClaimCustomRefund={handleClaimCGRefundById}
+                onClaimDuelRefund={handleClaimDuelRefund}
+                onAvatarUpdated={(url: string) => {
+                  setProfile((prev) => ({ ...prev, avatar: url }));
+                  setProfileCacheBuster(Date.now());
+                  refetchProfile();
+                }}
+                onSeekerVerified={(verified: boolean) => setIsSeekerVerified(verified)}
+              />
+            )}
+          </WebShell>
+        );
+      case View.LIVES:
         return (
-          <ProfileView
-            username={profile.username}
-            avatar={profile.avatar}
-            profileCacheBuster={profileCacheBuster}
-            onEdit={() => setIsEditProfileOpen(true)}
-            onOpenGuide={() => setIsGuideOpen(true)}
-            onAvatarUpdated={(url: string) => {
-              setProfile((prev) => ({ ...prev, avatar: url }));
-              setProfileCacheBuster(Date.now());
-              refetchProfile();
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
             }}
-            onSeekerVerified={(verified: boolean) => setIsSeekerVerified(verified)}
-            onViewCustomGame={handleViewCustomGame}
-            onClaimDuelPrize={handleClaimDuelPrize}
-            onClaimDuelRefund={handleClaimDuelRefund}
-            onClaimCustomPrize={handleClaimCustomPrize}
-            onOpenSwap={() => setIsSwapOpen(true)}
-          />
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <LivesViewV2
+              livesCount={livesDisplayReady ? lives : null}
+              walletConnected={connected}
+              isSeekerVerified={isSeekerVerified}
+              onConnect={() => setShowWalletRequired(true)}
+              onBuyTier={() => {
+                if (!connected) setShowWalletRequired(true);
+                else setIsBuyLivesOpen(true);
+              }}
+            />
+          </WebShell>
         );
       case View.QUIZ:
         return connected ? (
@@ -1782,15 +1950,28 @@ const App: React.FC = () => {
         ) : null;
       case View.RESULTS:
         return connected && lastGameResults ? (
-          <ResultsView
-            results={lastGameResults}
+          <WebShell
+            activeView={View.COMPETE_LOBBY}
+            onNav={(v) => setCurrentView(v)}
             lives={livesDisplayReady ? lives : null}
-            roundEntriesLeft={Math.max(0, ROUND_ENTRIES_MAX - roundEntriesUsed)}
-            roundEntriesMax={ROUND_ENTRIES_MAX}
-            onRestart={() => handleStartQuiz()}
-            onGoHome={() => setCurrentView(View.HOME)}
-            onBuyLives={() => setIsBuyLivesOpen(true)}
-          />
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <ResultsView
+              results={lastGameResults}
+              lives={livesDisplayReady ? lives : null}
+              roundEntriesLeft={Math.max(0, ROUND_ENTRIES_MAX - roundEntriesUsed)}
+              roundEntriesMax={ROUND_ENTRIES_MAX}
+              onRestart={() => handleStartQuiz()}
+              onGoHome={() => setCurrentView(View.HOME)}
+              onBuyLives={() => setIsBuyLivesOpen(true)}
+            />
+          </WebShell>
         ) : null;
       case View.PRACTICE:
         return practiceQuestionIds ? (
@@ -1807,29 +1988,42 @@ const App: React.FC = () => {
         ) : null;
       case View.PRACTICE_RESULTS:
         return practiceResults ? (
-          <PracticeResultsView
-            score={practiceResults.score}
-            totalQuestions={10}
-            points={practiceResults.points}
-            totalTime={practiceResults.time}
-            onPlayForReal={() => {
-              setPracticeResults(null);
-              setCurrentView(View.PLAY);
-              if (connected) {
-                handleStartQuiz();
-              } else {
-                setShowWalletRequired(true);
-              }
+          <WebShell
+            activeView={View.PLAY}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
             }}
-            onTryAgain={() => {
-              setPracticeResults(null);
-              handleStartPractice();
-            }}
-            onBackToHome={() => {
-              setPracticeResults(null);
-              setCurrentView(View.HOME);
-            }}
-          />
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <PracticeResultsView
+              score={practiceResults.score}
+              totalQuestions={10}
+              points={practiceResults.points}
+              totalTime={practiceResults.time}
+              onPlayForReal={() => {
+                setPracticeResults(null);
+                setCurrentView(View.PLAY);
+                if (connected) {
+                  handleStartQuiz();
+                } else {
+                  setShowWalletRequired(true);
+                }
+              }}
+              onTryAgain={() => {
+                setPracticeResults(null);
+                handleStartPractice();
+              }}
+              onBackToHome={() => {
+                setPracticeResults(null);
+                setCurrentView(View.HOME);
+              }}
+            />
+          </WebShell>
         ) : null;
       case View.TERMS:
         return <TermsOfServiceView onBack={() => setCurrentView(View.HOME)} />;
@@ -1841,37 +2035,114 @@ const App: React.FC = () => {
         return <ContractTestView />;
       case View.CUSTOM_GAMES_HUB:
         return (
-          <CustomGamesHubView
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
             walletAddress={publicKey?.toBase58() ?? null}
-            hasGamePass={hasGamePass}
-            onCreateGame={handleNavigateToCreateGame}
-            onViewGame={handleViewCustomGame}
-            onBack={() => setCurrentView(View.HOME)}
-          />
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+            topbarMode="search"
+          >
+            <CustomGamesViewV2
+              onCreate={handleNavigateToCreateGame}
+              onView={handleViewCustomGame}
+            />
+          </WebShell>
         );
       case View.CUSTOM_GAME_CREATE:
-        return connected ? (
-          <CreateCustomGameView
-            hasGamePass={hasGamePass}
-            onGameCreated={handleCustomGameCreated}
-            onBack={() => setCurrentView(View.PLAY)}
-          />
-        ) : null;
+        return (
+          <WebShell
+            activeView={View.CUSTOM_GAMES_HUB}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            {connected ? (
+              <CreateCustomGameView
+                hasGamePass={hasGamePass}
+                onGameCreated={handleCustomGameCreated}
+                onBack={() => setCurrentView(View.PLAY)}
+              />
+            ) : (
+              <div className="flex items-center justify-center" style={{ minHeight: '60vh' }}>
+                <div
+                  className="text-center"
+                  style={{
+                    background: '#0a0a0a',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 16,
+                    padding: '32px',
+                    maxWidth: 440,
+                  }}
+                >
+                  <h3
+                    className="font-black italic uppercase mb-2 text-white"
+                    style={{ fontSize: 22, letterSpacing: '-0.02em' }}
+                  >
+                    Connect to Host
+                  </h3>
+                  <p style={{ fontSize: 13, color: '#a1a1aa', marginBottom: 20 }}>
+                    Connect your Solana wallet to create a custom game room.
+                  </p>
+                  <button
+                    onClick={() => setShowWalletRequired(true)}
+                    className="font-black italic uppercase rounded-full active:opacity-90"
+                    style={{
+                      background: '#38BDF8',
+                      color: '#000',
+                      padding: '12px 28px',
+                      fontSize: 12,
+                      letterSpacing: '0.14em',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    CONNECT WALLET →
+                  </button>
+                </div>
+              </div>
+            )}
+          </WebShell>
+        );
       case View.CUSTOM_GAME_LOBBY:
         return customGameSlug ? (
-          <CustomGameLobbyView
-            slug={customGameSlug}
+          <WebShell
+            activeView={View.CUSTOM_GAMES_HUB}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
             walletAddress={publicKey?.toBase58() ?? null}
-            onStartGame={handleStartCustomGame}
-            onJoinGame={handleJoinCustomGame}
-            onStartTimer={handleStartCustomGameTimer}
-            onFundAndStart={handleFundAndStartRequest}
-            onEndGame={handleEndCustomGame}
-            onClaimPrize={handleClaimCustomPrize}
-            onClaimRefund={handleClaimCGRefundById}
-            onBack={() => setCurrentView(View.HOME)}
-            onConnectWallet={() => setShowWalletRequired(true)}
-          />
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <CustomGameLobbyView
+              slug={customGameSlug}
+              walletAddress={publicKey?.toBase58() ?? null}
+              onStartGame={handleStartCustomGame}
+              onJoinGame={handleJoinCustomGame}
+              onStartTimer={handleStartCustomGameTimer}
+              onFundAndStart={handleFundAndStartRequest}
+              onEndGame={handleEndCustomGame}
+              onClaimPrize={handleClaimCustomPrize}
+              onClaimRefund={handleClaimCGRefundById}
+              onBack={() => setCurrentView(View.HOME)}
+              onConnectWallet={() => setShowWalletRequired(true)}
+            />
+          </WebShell>
         ) : null;
       case View.CUSTOM_GAME_PLAY:
         return connected && customGameSessionId && customGameData ? (
@@ -1892,53 +2163,86 @@ const App: React.FC = () => {
         ) : null;
       case View.CUSTOM_GAME_RESULTS:
         return customGameResults ? (
-          <CustomGameResultsView
-            results={customGameResults}
-            attemptsUsed={customGameAttemptsUsed}
-            maxAttempts={CUSTOM_GAME_MAX_ATTEMPTS}
-            isPaidGame={customGameResults.isPaidGame}
-            isCreatorFunded={customGameResults.isCreatorFunded}
-            prizePotSol={customGameResults.prizePotSol}
-            entryFeeLamports={customGameResults.entryFeeLamports}
-            onPlayAgain={handleCustomGamePlayAgain}
-            onViewLeaderboard={() => {
-              if (customGameSlug) setCurrentView(View.CUSTOM_GAME_LOBBY);
+          <WebShell
+            activeView={View.CUSTOM_GAMES_HUB}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
             }}
-            onBackToHome={() => {
-              setCustomGameResults(null);
-              setCurrentView(View.HOME);
-            }}
-          />
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <CustomGameResultsView
+              results={customGameResults}
+              attemptsUsed={customGameAttemptsUsed}
+              maxAttempts={CUSTOM_GAME_MAX_ATTEMPTS}
+              isPaidGame={customGameResults.isPaidGame}
+              isCreatorFunded={customGameResults.isCreatorFunded}
+              prizePotSol={customGameResults.prizePotSol}
+              entryFeeLamports={customGameResults.entryFeeLamports}
+              onPlayAgain={handleCustomGamePlayAgain}
+              onViewLeaderboard={() => {
+                if (customGameSlug) setCurrentView(View.CUSTOM_GAME_LOBBY);
+              }}
+              onBackToHome={() => {
+                setCustomGameResults(null);
+                setCurrentView(View.HOME);
+              }}
+            />
+          </WebShell>
         ) : null;
       case View.DUEL_LOBBY:
         return (
-          <DuelLobbyView
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
             walletAddress={publicKey?.toBase58() ?? null}
-            onCreateDuel={handleCreateDuel}
-            onJoinDuel={handleJoinDuel}
-            onJoinByCode={handleJoinByShareCode}
-            onConnectWallet={() => setShowWalletRequired(true)}
-            onBack={() => setCurrentView(View.HOME)}
-            onClaimDuelPrize={handleClaimDuelPrize}
-            onClaimDuelRefund={handleClaimDuelRefund}
-            onResumeDuel={handleResumeDuel}
-          />
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+            topbarMode="search"
+          >
+            <DuelsViewV2
+              walletConnected={connected}
+              onCreateDuel={(w) => handleCreateDuel(w * 1_000_000_000, true)}
+            />
+          </WebShell>
         );
       case View.DUEL_WAITING:
         return duelId != null && dbDuelId && duelShareCode ? (
-          <DuelWaitingView
-            duelId={duelId}
-            dbDuelId={dbDuelId}
-            shareCode={duelShareCode}
-            entryFee={duelEntryFee}
-            isPublic={duelIsPublic}
-            expiresAt={duelExpiresAt}
-            walletAddress={publicKey!.toBase58()}
-            onDuelJoined={handleDuelJoined}
-            onCancel={handleCancelDuel}
-            onClaimRefund={handleClaimDuelRefund}
-            onBack={() => setCurrentView(View.DUEL_LOBBY)}
-          />
+          <WebShell
+            activeView={View.DUEL_LOBBY}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <DuelWaitingView
+              duelId={duelId}
+              dbDuelId={dbDuelId}
+              shareCode={duelShareCode}
+              entryFee={duelEntryFee}
+              isPublic={duelIsPublic}
+              expiresAt={duelExpiresAt}
+              walletAddress={publicKey!.toBase58()}
+              onDuelJoined={handleDuelJoined}
+              onCancel={handleCancelDuel}
+              onClaimRefund={handleClaimDuelRefund}
+              onBack={() => setCurrentView(View.DUEL_LOBBY)}
+            />
+          </WebShell>
         ) : null;
       case View.DUEL_PLAY:
         return connected && dbDuelId && duelId != null && duelOpponent ? (
@@ -1956,27 +2260,78 @@ const App: React.FC = () => {
         ) : null;
       case View.DUEL_RESULTS:
         return connected && duelResults && duelId != null ? (
-          <DuelResultsView
-            duelId={duelId}
-            dbDuelId={dbDuelId!}
-            myWallet={publicKey!.toBase58()}
-            myScore={duelResults.myScore}
-            myCorrect={duelResults.myCorrect}
-            opponentWallet={duelOpponent?.wallet ?? ''}
-            opponentUsername={duelOpponent?.username ?? null}
-            opponentAvatar={duelOpponent?.avatar ?? null}
-            opponentScore={duelResults.opponentScore}
-            opponentCorrect={duelResults.opponentCorrect}
-            winnerWallet={duelResults.winner}
-            entryFee={duelEntryFee}
-            totalPot={duelResults.totalPot}
-            duelComplete={duelResults.duelComplete}
-            isPlayer1={duelIsPlayer1}
-            onClaimPrize={handleClaimDuelPrize}
-            onPlayAgain={() => setCurrentView(View.DUEL_LOBBY)}
-            onBackToLobby={() => setCurrentView(View.DUEL_LOBBY)}
-          />
+          <WebShell
+            activeView={View.DUEL_LOBBY}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <DuelResultsView
+              duelId={duelId}
+              dbDuelId={dbDuelId!}
+              myWallet={publicKey!.toBase58()}
+              myScore={duelResults.myScore}
+              myCorrect={duelResults.myCorrect}
+              opponentWallet={duelOpponent?.wallet ?? ''}
+              opponentUsername={duelOpponent?.username ?? null}
+              opponentAvatar={duelOpponent?.avatar ?? null}
+              opponentScore={duelResults.opponentScore}
+              opponentCorrect={duelResults.opponentCorrect}
+              winnerWallet={duelResults.winner}
+              entryFee={duelEntryFee}
+              totalPot={duelResults.totalPot}
+              duelComplete={duelResults.duelComplete}
+              isPlayer1={duelIsPlayer1}
+              onClaimPrize={handleClaimDuelPrize}
+              onPlayAgain={() => setCurrentView(View.DUEL_LOBBY)}
+              onBackToLobby={() => setCurrentView(View.DUEL_LOBBY)}
+            />
+          </WebShell>
         ) : null;
+      case View.REFERRALS:
+        return (
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <ReferralsViewV2 />
+          </WebShell>
+        );
+      case View.GAME_PASS:
+        return (
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <GamePassViewV2
+              hasGamePass={hasGamePass}
+              isSeekerVerified={isSeekerVerified}
+              onBuyGamePass={() => setShowCategorySelector(true)}
+            />
+          </WebShell>
+        );
       default:
         return (
           <HomeView
@@ -2008,8 +2363,14 @@ const App: React.FC = () => {
     }
   };
 
-  // Hide sidebar during active quiz or legal full-page views
-  const hideSidebar = currentView === View.QUIZ || currentView === View.TERMS || currentView === View.PRIVACY || currentView === View.CUSTOM_GAME_PLAY || currentView === View.DUEL_PLAY;
+  // V2 shell-enabled views: render WebShell + V2 page body. Old chrome
+  // (Sidebar + NERD banner + mobile help button) hides for these so the new
+  // shell isn't doubled up. Add a view here when its V2 port lands.
+  const v2ShellViews: View[] = [View.HOME, View.COMPETE_LOBBY, View.QUESTS, View.LEADERBOARD, View.DUEL_LOBBY, View.CUSTOM_GAMES_HUB, View.REFERRALS, View.GAME_PASS, View.PLAY, View.PROFILE, View.LIVES, View.CUSTOM_GAME_CREATE, View.CUSTOM_GAME_LOBBY, View.DUEL_WAITING, View.RESULTS, View.PRACTICE_RESULTS, View.CUSTOM_GAME_RESULTS, View.DUEL_RESULTS];
+  const isV2Shell = v2ShellViews.includes(currentView);
+
+  // Hide sidebar during active quiz, legal full-page views, OR any V2-shell view.
+  const hideSidebar = isV2Shell || currentView === View.QUIZ || currentView === View.TERMS || currentView === View.PRIVACY || currentView === View.CUSTOM_GAME_PLAY || currentView === View.DUEL_PLAY;
 
   // Footer removed – Terms & Privacy links are in the How to Play modal
 
