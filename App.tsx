@@ -92,9 +92,10 @@ import DuelWaitingView from './components/DuelWaitingView';
 import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
 import CompeteLobbyView from './components/CompeteLobbyView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, buildRoundEntryTx, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, fetchClaimableRoundPayouts, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel, type ActiveDuel } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, buildRoundEntryTx, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type ActiveDuel } from './src/utils/api';
+import { fetchUnpaidRoundPayouts, fetchUnclaimedCustomWins, fetchClaimableRefundEntries, fetchClaimableRefundCustoms } from './src/utils/claims';
 import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES, getReEntryFeeLamports } from './src/utils/constants';
-import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildExpireDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildFundCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
+import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildExpireDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildFundCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig } from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
 import { useKeepAlive } from './src/hooks/useKeepAlive';
@@ -388,38 +389,20 @@ const App: React.FC = () => {
         }
       })
       .catch(() => {});
-    // Fetch claimable data for PlayView
-    fetchClaimableRoundPayouts(walletAddr).then(setClaimableRoundPayouts).catch(() => {});
-    fetchMyCustomGameWins(walletAddr).then(async (wins) => {
-      // Filter to only unclaimed on-chain
-      const unclaimed: ClaimableCustomGameWin[] = [];
-      for (const cg of wins) {
-        try {
-          const onChain = await fetchCustomGameOnChain(connection, cg.on_chain_game_id);
-          if (onChain && !onChain.claimed[cg.winner_index]) unclaimed.push(cg);
-        } catch { /* skip */ }
-      }
-      if (currentWalletRef.current === walletAddr) setClaimableCustomGames(unclaimed);
+    // Fetch claim/refund data via on-chain-truth wrappers (claims.ts).
+    // Each wrapper combines the DB fetch with a per-player on-chain filter
+    // so ghost / already-claimed rows are dropped before they reach state.
+    fetchUnpaidRoundPayouts(connection, walletAddr).then((p) => {
+      if (currentWalletRef.current === walletAddr) setClaimableRoundPayouts(p);
     }).catch(() => {});
-    fetchRefundableEntries(walletAddr).then(async (entries) => {
-      const verified: RefundableEntry[] = [];
-      for (const re of entries) {
-        try {
-          const onChain = await fetchTierRound(connection, re.contract_round_id, re.tier_index);
-          if (onChain && onChain.refundMode) verified.push(re);
-        } catch { /* skip */ }
-      }
-      if (currentWalletRef.current === walletAddr) setRefundableEntries(verified);
+    fetchUnclaimedCustomWins(connection, walletAddr).then((c) => {
+      if (currentWalletRef.current === walletAddr) setClaimableCustomGames(c);
     }).catch(() => {});
-    fetchRefundableCustomGames(walletAddr).then(async (games) => {
-      const verified: RefundableCustomGame[] = [];
-      for (const cg of games) {
-        try {
-          const onChain = await fetchCustomGameOnChain(connection, cg.on_chain_game_id);
-          if (onChain && onChain.status === 3) verified.push(cg); // status 3 = expired
-        } catch { /* skip */ }
-      }
-      if (currentWalletRef.current === walletAddr) setRefundableCustomGames(verified);
+    fetchClaimableRefundEntries(connection, walletAddr).then((e) => {
+      if (currentWalletRef.current === walletAddr) setRefundableEntries(e);
+    }).catch(() => {});
+    fetchClaimableRefundCustoms(connection, walletAddr).then((c) => {
+      if (currentWalletRef.current === walletAddr) setRefundableCustomGames(c);
     }).catch(() => {});
   }, [connected, publicKey]);
 
