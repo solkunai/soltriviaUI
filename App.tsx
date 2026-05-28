@@ -24,6 +24,7 @@ const PATH_TO_VIEW: Record<string, View> = {
   '/referrals': View.REFERRALS,
   '/game-pass': View.GAME_PASS,
   '/lives': View.LIVES,
+  '/mint': View.MINT,
 };
 function viewFromPath(): View {
   if (typeof window === 'undefined') return View.HOME;
@@ -51,6 +52,7 @@ function pathForView(view: View, customSlug?: string | null, duelShareCode?: str
   if (view === View.REFERRALS) return '/referrals';
   if (view === View.GAME_PASS) return '/game-pass';
   if (view === View.LIVES) return '/lives';
+  if (view === View.MINT) return '/mint';
   if ([View.DUEL_WAITING, View.DUEL_PLAY, View.DUEL_RESULTS].includes(view)) {
     if (duelShareCode) return `/duel/${duelShareCode}`;
     const current = window.location.pathname;
@@ -71,6 +73,7 @@ import DuelsViewV2 from './components/DuelsViewV2';
 import CustomGamesViewV2 from './components/CustomGamesViewV2';
 import GamePassViewV2 from './components/GamePassViewV2';
 import ReferralsViewV2 from './components/ReferralsViewV2';
+import MintViewV2 from './components/MintViewV2';
 import FreePlayViewV2 from './components/FreePlayViewV2';
 import LivesViewV2 from './components/LivesViewV2';
 import { WebShell } from './components/WebShell';
@@ -1710,6 +1713,7 @@ const App: React.FC = () => {
               onCreateCustomGame={handleNavigateToCustomGames}
               onViewCustomGame={handleViewCustomGame}
               onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)}
+              onMint={() => setCurrentView(View.MINT)}
             />
           </WebShell>
         );
@@ -2333,6 +2337,28 @@ const App: React.FC = () => {
             />
           </WebShell>
         );
+      case View.MINT:
+        return (
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+          >
+            <MintViewV2
+              walletAddress={publicKey?.toBase58() ?? null}
+              hasGamePass={hasGamePass}
+              isSeekerVerified={isSeekerVerified}
+              onPlay={() => setCurrentView(View.COMPETE_LOBBY)}
+            />
+          </WebShell>
+        );
       default:
         return (
           <HomeView
@@ -2367,7 +2393,7 @@ const App: React.FC = () => {
   // V2 shell-enabled views: render WebShell + V2 page body. Old chrome
   // (Sidebar + NERD banner + mobile help button) hides for these so the new
   // shell isn't doubled up. Add a view here when its V2 port lands.
-  const v2ShellViews: View[] = [View.HOME, View.COMPETE_LOBBY, View.QUESTS, View.LEADERBOARD, View.DUEL_LOBBY, View.CUSTOM_GAMES_HUB, View.REFERRALS, View.GAME_PASS, View.PLAY, View.PROFILE, View.LIVES, View.CUSTOM_GAME_CREATE, View.CUSTOM_GAME_LOBBY, View.DUEL_WAITING, View.RESULTS, View.PRACTICE_RESULTS, View.CUSTOM_GAME_RESULTS, View.DUEL_RESULTS];
+  const v2ShellViews: View[] = [View.HOME, View.COMPETE_LOBBY, View.QUESTS, View.LEADERBOARD, View.DUEL_LOBBY, View.CUSTOM_GAMES_HUB, View.REFERRALS, View.GAME_PASS, View.MINT, View.PLAY, View.PROFILE, View.LIVES, View.CUSTOM_GAME_CREATE, View.CUSTOM_GAME_LOBBY, View.DUEL_WAITING, View.RESULTS, View.PRACTICE_RESULTS, View.CUSTOM_GAME_RESULTS, View.DUEL_RESULTS];
   const isV2Shell = v2ShellViews.includes(currentView);
 
   // Hide sidebar during active quiz, legal full-page views, OR any V2-shell view.

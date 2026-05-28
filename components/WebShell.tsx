@@ -427,6 +427,7 @@ export function WebShell({
 
   const accountItems: NavItem[] = [
     { id: 'pass', label: 'GAME PASS', view: View.GAME_PASS, iconPath: 'ticket' },
+    { id: 'mint', label: 'MINT NFT', view: View.MINT, iconPath: 'sparkles', sub: 'SOON' },
     {
       id: 'lives',
       label: 'LIVES',

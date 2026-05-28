@@ -35,6 +35,7 @@ interface HomeViewV2Props {
   onCreateCustomGame?: () => void;
   onViewCustomGame?: (slug: string) => void;
   onEnterDuels?: () => void;
+  onMint?: () => void;
 }
 
 function getCurrentRoundNumber(): number {
@@ -297,6 +298,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
     onStartPractice,
     onBuyGamePass,
     hasGamePass,
+    onMint,
   } = props;
 
   const { connection } = useConnection();
@@ -583,6 +585,46 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           </div>
         </div>
       </button>
+
+      {/* MINT CTA — commemorative NFT mint banner */}
+      {onMint && (
+        <button
+          onClick={onMint}
+          className="w-full rounded-xl mb-3 active:opacity-90 overflow-hidden flex items-center gap-3"
+          style={{ background: 'linear-gradient(90deg,#070F26,#0E1A3D,#0A1432)', border: '1.5px solid #FBBF2466', padding: 14, cursor: 'pointer' }}
+        >
+          {/* Fanned mystery cards */}
+          <div className="relative flex-shrink-0" style={{ width: 86, height: 76 }}>
+            {[
+              { img: '/mint/nft-genius.png', rot: -18, x: -22, z: 1 },
+              { img: '/mint/nft-competitor.png', rot: -6, x: -7, z: 2 },
+              { img: '/mint/nft-scholar.png', rot: 6, x: 8, z: 3 },
+              { img: '/mint/nft-champion.png', rot: 18, x: 23, z: 2 },
+            ].map((c, i) => (
+              <div key={i} className="absolute rounded overflow-hidden" style={{ left: '50%', top: '50%', width: 34, height: 52, marginLeft: -17, marginTop: -26, zIndex: c.z, transform: `translateX(${c.x}px) rotate(${c.rot}deg)`, border: '1.5px solid #FBBF2488' }}>
+                <img src={c.img} alt="" style={{ width: '100%', height: '130%', objectFit: 'cover', filter: 'blur(3px)' }} />
+                <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(7,15,38,0.55)' }}>
+                  <span className="font-black italic text-white" style={{ fontSize: 20 }}>?</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Copy */}
+          <div className="flex-1 min-w-0 text-left">
+            <div className="font-black italic uppercase flex items-center gap-1.5" style={{ fontSize: 8, color: '#FBBF24', letterSpacing: '0.16em' }}>
+              <img src="/mint/mint-icon.png" alt="" style={{ width: 10, height: 10, filter: 'brightness(0) invert(1)' }} /> MINT TO REVEAL
+            </div>
+            <div className="font-black italic uppercase text-white" style={{ fontSize: 18, marginTop: 3 }}>
+              WHICH <span style={{ color: '#FBBF24' }}>NERD</span> ARE YOU?
+            </div>
+            <div style={{ fontSize: 10, color: '#cbd5e1', marginTop: 4 }}>
+              1 of 4 random archetypes · <span style={{ color: '#FBBF24', fontWeight: 900 }}>0.02 SOL</span>
+            </div>
+          </div>
+          {/* Arrow chip */}
+          <div className="rounded-full flex items-center justify-center flex-shrink-0 font-black italic" style={{ width: 34, height: 34, background: 'linear-gradient(135deg,#FBBF24,#E89F0F)', color: '#070F26', fontSize: 18 }}>→</div>
+        </button>
+      )}
 
       {/* QUICK PLAY label */}
       <div

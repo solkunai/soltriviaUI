@@ -26,7 +26,8 @@ export enum View {
   COMPETE_LOBBY = 'COMPETE_LOBBY',
   REFERRALS = 'REFERRALS',
   GAME_PASS = 'GAME_PASS',
-  LIVES = 'LIVES'
+  LIVES = 'LIVES',
+  MINT = 'MINT'
 }
 
 export interface Player {
