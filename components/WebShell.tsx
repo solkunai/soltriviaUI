@@ -14,6 +14,23 @@
 import React from 'react';
 import { View } from '../types';
 
+/**
+ * Mobile breakpoint hook. < 768px = phone/PWA layout (bottom tab bar, no
+ * sidebar), matching the native dApp's bottom-nav feel. Listens to resize so
+ * rotating / resizing updates live.
+ */
+function useIsMobile(breakpoint = 768): boolean {
+  const [isMobile, setIsMobile] = React.useState(
+    typeof window !== 'undefined' ? window.innerWidth < breakpoint : false,
+  );
+  React.useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 type NavItem = {
   id: string;
   label: string;
@@ -315,6 +332,183 @@ export function WebShell({
   const walletShort = walletAddress
     ? `${walletAddress.slice(0, 4)}…${walletAddress.slice(-4)}`
     : null;
+
+  const isMobile = useIsMobile();
+
+  // Mobile bottom-tab destinations, mirroring the native dApp's bottom nav
+  // (Home · Quests · Play · Leaderboard · Profile). Play is the elevated
+  // center action that routes to the Compete hub.
+  const bottomNavItems: NavItem[] = [
+    { id: 'home', label: 'HOME', view: View.HOME, iconPath: 'home' },
+    { id: 'quests', label: 'QUESTS', view: View.QUESTS, iconPath: 'bullseye' },
+    { id: 'play', label: 'PLAY', view: View.COMPETE_LOBBY, iconPath: 'swords' },
+    { id: 'ranks', label: 'RANKS', view: View.LEADERBOARD, iconPath: 'podium' },
+    { id: 'profile', label: 'PROFILE', view: View.PROFILE, iconPath: 'user-circle' },
+  ];
+
+  // ─── MOBILE LAYOUT ─── full-width content + fixed bottom tab bar, no sidebar.
+  if (isMobile) {
+    return (
+      <div
+        className="min-h-screen flex flex-col"
+        style={{ background: '#020202', color: '#fff' }}
+      >
+        {/* Slim mobile topbar: brand + lives + connect */}
+        <div
+          className="sticky top-0 z-20 flex items-center gap-2 px-4 py-2.5"
+          style={{
+            background: 'rgba(2,2,2,0.9)',
+            backdropFilter: 'blur(12px)',
+            borderBottom: '1px solid rgba(255,255,255,0.1)',
+          }}
+        >
+          <button
+            onClick={() => onNav(View.HOME)}
+            className="flex items-center gap-1.5"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+          >
+            <span
+              className="font-black italic"
+              style={{ fontSize: 17, lineHeight: 0.95, letterSpacing: '-0.02em' }}
+            >
+              <span style={{ color: '#fff' }}>SOL </span>
+              <span
+                style={{
+                  background:
+                    'linear-gradient(90deg, #14F195 0%, #7C8DFF 50%, #9945FF 100%)',
+                  WebkitBackgroundClip: 'text',
+                  backgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  color: 'transparent',
+                }}
+              >
+                TRIVIA
+              </span>
+            </span>
+          </button>
+          <div className="flex-1" />
+          <span
+            className="inline-flex items-center gap-1 rounded-full"
+            style={{
+              background: '#0a0a0a',
+              border: '1px solid rgba(255,255,255,0.1)',
+              padding: '5px 10px',
+            }}
+          >
+            <Icon name="heart" size={11} color="#FF3131" />
+            <span
+              className="font-black italic"
+              style={{ fontSize: 10, fontVariantNumeric: 'tabular-nums' }}
+            >
+              {lives == null ? '—' : String(lives)}
+            </span>
+          </span>
+          {walletShort ? (
+            <span
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: '50%',
+                background: accent,
+                color: '#000',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 12,
+                fontWeight: 900,
+              }}
+            >
+              {walletShort[0].toUpperCase()}
+            </span>
+          ) : (
+            <button
+              onClick={onConnect}
+              className="font-black italic uppercase rounded-full active:opacity-90"
+              style={{
+                background: accent,
+                color: '#000',
+                padding: '6px 12px',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              CONNECT
+            </button>
+          )}
+        </div>
+
+        {/* Full-width page body. Extra bottom padding clears the fixed nav.
+            Right rail is intentionally dropped on mobile (supplementary). */}
+        <main className="flex-1 min-w-0 px-4 pt-4" style={{ paddingBottom: 84 }}>
+          {children}
+        </main>
+
+        {/* Fixed bottom tab bar */}
+        <nav
+          className="fixed bottom-0 left-0 right-0 z-30 flex items-stretch"
+          style={{
+            background: 'rgba(5,5,5,0.96)',
+            backdropFilter: 'blur(12px)',
+            borderTop: '1px solid rgba(255,255,255,0.1)',
+            paddingBottom: 'env(safe-area-inset-bottom)',
+          }}
+        >
+          {bottomNavItems.map((it) => {
+            const active = isActive(it);
+            const isPlay = it.id === 'play';
+            return (
+              <button
+                key={it.id}
+                onClick={() => handleNav(it)}
+                className="flex-1 flex flex-col items-center justify-center gap-1"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  paddingTop: 9,
+                  paddingBottom: 9,
+                }}
+              >
+                <span
+                  className="inline-flex items-center justify-center"
+                  style={
+                    isPlay
+                      ? {
+                          width: 40,
+                          height: 40,
+                          borderRadius: '50%',
+                          background: accent,
+                          marginTop: -18,
+                          border: '3px solid #050505',
+                        }
+                      : undefined
+                  }
+                >
+                  <Icon
+                    name={it.iconPath as keyof typeof ICON_PATHS | 'bullseye'}
+                    size={isPlay ? 20 : 19}
+                    color={isPlay ? '#000' : active ? accent : '#71717a'}
+                  />
+                </span>
+                <span
+                  className="font-black italic uppercase"
+                  style={{
+                    fontSize: 8,
+                    letterSpacing: '0.1em',
+                    color: active ? accent : '#71717a',
+                  }}
+                >
+                  {it.label}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex" style={{ background: '#020202', color: '#fff' }}>
