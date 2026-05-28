@@ -51,12 +51,6 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
 
   return (
     <div className="min-h-full flex flex-col items-center justify-center p-6 md:p-12 relative overflow-hidden bg-[#050505]">
-      {/* Background Decor */}
-      <div className="absolute inset-0 pointer-events-none opacity-20">
-         <div className="scan-line"></div>
-         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-[#00FFA3]/5 rounded-full blur-[160px]"></div>
-      </div>
-
       <div className="relative z-10 w-full max-w-2xl bg-[#0D0D0D] border border-white/10 shadow-[0_0_100px_rgba(0,0,0,1)] overflow-hidden rounded-3xl animate-fade-in flex flex-col">
         {/* Accent Strip */}
         <div className="h-2 w-full bg-gradient-to-r from-[#a855f7] via-[#3b82f6] to-[#00FFA3]"></div>

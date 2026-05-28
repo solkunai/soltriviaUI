@@ -340,7 +340,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   if (createdSlug) {
     const shareUrl = `${window.location.origin}/game/${createdSlug}`;
     return (
-      <div className="min-h-full flex items-center justify-center p-6 bg-[#050505]">
+      <div className="flex items-center justify-center py-12">
         <div className="text-center max-w-md w-full">
           <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-[#38BDF8]/10 border border-[#38BDF8]/20 flex items-center justify-center">
             <svg className="w-10 h-10 text-[#38BDF8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -390,11 +390,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   }
 
   return (
-    <div className="min-h-full flex flex-col bg-[#050505] p-4 sm:p-6 md:p-12 pb-32 md:pb-12 relative overflow-y-auto">
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="scan-line opacity-10"></div>
-      </div>
-
+    <div className="flex flex-col relative">
       <div className="relative z-10 w-full max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

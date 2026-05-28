@@ -63,12 +63,7 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
   };
 
   return (
-    <div className="min-h-full flex flex-col items-center justify-center p-6 md:p-12 relative overflow-hidden">
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="scan-line opacity-10"></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#38BDF8]/5 rounded-full blur-[120px]"></div>
-      </div>
-
+    <div className="flex flex-col items-center justify-center py-10 relative overflow-hidden">
       <div className="relative z-10 w-full max-w-md">
         {/* Game Name */}
         <p className={`text-[10px] font-black uppercase tracking-[0.4em] text-center mb-2 ${isCreatorFunded ? 'text-amber-400' : 'text-[#38BDF8]'}`}>
