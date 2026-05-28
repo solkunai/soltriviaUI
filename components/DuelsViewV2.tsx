@@ -1,10 +1,13 @@
 /**
  * DuelsViewV2 — web W4. Editorial header + red CREATE gradient hero with
- * inline wager picker + 2-col (open duels list + recent duels). Mock data
- * for v1; wire real fetches in follow-up.
+ * inline wager picker + 2-col (open duels list + recent duels). Real data
+ * via getOpenDuels + fetchCompletedDuels, polled every 10s.
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useIsMobile } from '../src/hooks/useIsMobile';
+import { useWallet } from '../src/contexts/WalletContext';
+import { supabase } from '../src/utils/supabase';
+import { getOpenDuels, fetchCompletedDuels } from '../src/utils/api';
 
 interface Props {
   walletConnected: boolean;
@@ -12,25 +15,117 @@ interface Props {
   onJoinDuel?: (duelId: number) => void;
 }
 
-const MOCK_OPEN = [
-  { user: '@nftking', wager: 0.1, cat: 'CRYPTO', win: 62, expires: '10:00', avatar: '#FFC857' },
-  { user: '@bonkmaxi', wager: 0.05, cat: 'GENERAL', win: 48, expires: '05:00', avatar: '#FF8C42' },
-  { user: '@anchor_legend', wager: 0.5, cat: 'HISTORY', win: 71, expires: '03:00', avatar: '#A78BFA' },
-  { user: '@seeker_pro', wager: 0.02, cat: 'SCI & TECH', win: 55, expires: '08:14', avatar: '#22D3EE' },
-  { user: '@trivia_king', wager: 0.25, cat: 'GEOGRAPHY', win: 78, expires: '06:30', avatar: '#FACC15', hot: true },
-];
+const SOL = 1_000_000_000;
+const AVATAR_COLORS = ['#FFC857', '#FF8C42', '#A78BFA', '#22D3EE', '#FACC15', '#F472B6', '#14F195'];
 
-const MOCK_RECENT = [
-  { winner: '@solana_sage', loser: '@bonkmaxi', pot: 0.2, when: '2h ago' },
-  { winner: '@anchor_legend', loser: '@degenmaxi', pot: 0.1, when: '4h ago' },
-  { winner: '@nftking', loser: '@apemaxi', pot: 0.5, when: '6h ago' },
-];
+type OpenRow = { duelId: number; user: string; wager: number; expires: string; avatar: string; hot?: boolean };
+type RecentRow = { winner: string; loser: string; pot: number; when: string };
+
+function shortWallet(w: string): string {
+  return `${w.slice(0, 4)}…${w.slice(-4)}`;
+}
+function colorFor(w: string): string {
+  let h = 0;
+  for (let i = 0; i < w.length; i++) h = (h * 31 + w.charCodeAt(i)) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[h];
+}
+function countdown(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return 'EXPIRED';
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+function relativeAgo(iso: string | null): string {
+  if (!iso) return '';
+  const delta = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(delta / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
 
 const WAGER_PRESETS = [0.01, 0.05, 0.1, 0.25, 0.5, 1];
 
-const DuelsViewV2: React.FC<Props> = ({ onCreateDuel }) => {
+const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
   const [wager, setWager] = useState(0.1);
   const isMobile = useIsMobile();
+  const { publicKey } = useWallet();
+  const walletAddress = publicKey?.toBase58() ?? null;
+
+  const [openRows, setOpenRows] = useState<OpenRow[]>([]);
+  const [recentRows, setRecentRows] = useState<RecentRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const [open, completed] = await Promise.all([
+          getOpenDuels().catch(() => []),
+          fetchCompletedDuels(10).catch(() => ({ duels: [], totalCount: 0 })),
+        ]);
+        if (!mounted) return;
+
+        // Open duels: hide my own (can't duel yourself). Resolve player1 usernames.
+        const others = open.filter((d) => d.player1_wallet !== walletAddress);
+        const wallets = [...new Set(others.map((d) => d.player1_wallet))];
+        let nameByWallet: Record<string, string | null> = {};
+        if (wallets.length > 0) {
+          const { data } = await supabase
+            .from('player_profiles')
+            .select('wallet_address, username')
+            .in('wallet_address', wallets);
+          nameByWallet = Object.fromEntries((data ?? []).map((p: any) => [p.wallet_address, p.username]));
+        }
+        if (!mounted) return;
+        setOpenRows(
+          others.map((d) => ({
+            duelId: d.duel_id,
+            user: nameByWallet[d.player1_wallet] || shortWallet(d.player1_wallet),
+            wager: (d.entry_fee_lamports ?? 0) / SOL,
+            expires: countdown(d.expires_at),
+            avatar: colorFor(d.player1_wallet),
+            hot: (d.entry_fee_lamports ?? 0) / SOL >= 0.25,
+          })),
+        );
+
+        setRecentRows(
+          completed.duels
+            .filter((d) => d.winner_wallet)
+            .map((d) => {
+              const winW = d.winner_wallet as string;
+              const loseW = winW === d.player1_wallet ? d.player2_wallet : d.player1_wallet;
+              const winName =
+                winW === d.player1_wallet ? d.player1_username : d.player2_username;
+              const loseName =
+                winW === d.player1_wallet ? d.player2_username : d.player1_username;
+              return {
+                winner: winName || shortWallet(winW),
+                loser: loseW ? loseName || shortWallet(loseW) : 'no-show',
+                pot: (d.total_pot_lamports ?? 0) / SOL,
+                when: relativeAgo(d.resolved_at ?? d.created_at),
+              };
+            }),
+        );
+      } catch (err) {
+        console.error('Failed to load duels:', err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    const id = window.setInterval(load, 10000);
+    return () => {
+      mounted = false;
+      window.clearInterval(id);
+    };
+  }, [walletAddress]);
   return (
     <div className="max-w-5xl">
       {/* Header */}
@@ -162,94 +257,108 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel }) => {
               border: '1px solid rgba(255,255,255,0.08)',
             }}
           >
-            {MOCK_OPEN.map((o, i) => (
+            {loading ? (
               <div
-                key={i}
-                className="flex items-center gap-3 px-4 py-3"
-                style={{
-                  borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
-                }}
+                className="font-black italic uppercase"
+                style={{ fontSize: 10, color: '#52525b', letterSpacing: '0.18em', padding: '24px 16px', textAlign: 'center' }}
               >
-                {/* Placeholder avatar — circular gradient + username initial.
-                    Swap to real player PFP URL once available from the duels
-                    fetch (currently mock). */}
+                LOADING OPEN DUELS…
+              </div>
+            ) : openRows.length === 0 ? (
+              <div
+                className="font-black italic uppercase"
+                style={{ fontSize: 11, color: '#71717a', letterSpacing: '0.06em', padding: '28px 16px', textAlign: 'center' }}
+              >
+                NO OPEN DUELS · CREATE ONE ABOVE
+              </div>
+            ) : (
+              openRows.map((o, i) => (
                 <div
-                  className="rounded-full flex items-center justify-center font-black italic"
+                  key={o.duelId}
+                  className="flex items-center gap-3 px-4 py-3"
                   style={{
-                    width: 36,
-                    height: 36,
-                    background: `linear-gradient(135deg, ${o.avatar}, ${o.avatar}77)`,
-                    border: `1.5px solid ${o.hot ? '#FF3131' : 'rgba(255,255,255,0.2)'}`,
-                    color: '#000',
-                    fontSize: 15,
-                    flexShrink: 0,
+                    borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
                   }}
                 >
-                  {o.user[1]?.toUpperCase() ?? '?'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className="font-black italic text-white truncate"
-                      style={{ fontSize: 15, letterSpacing: '-0.01em' }}
-                    >
-                      {o.user}
-                    </span>
-                    {o.hot ? (
-                      <span
-                        className="font-black italic uppercase rounded-full"
-                        style={{
-                          fontSize: 7,
-                          color: '#FF3131',
-                          background: 'rgba(255,49,49,0.18)',
-                          border: '1px solid rgba(255,49,49,0.4)',
-                          padding: '2px 6px',
-                          letterSpacing: '0.14em',
-                        }}
-                      >
-                        HOT
-                      </span>
-                    ) : null}
-                  </div>
                   <div
-                    className="font-black italic uppercase mt-0.5"
+                    className="rounded-full flex items-center justify-center font-black italic"
                     style={{
-                      fontSize: 9,
-                      color: '#71717a',
-                      letterSpacing: '0.14em',
-                      fontVariantNumeric: 'tabular-nums',
+                      width: 36,
+                      height: 36,
+                      background: `linear-gradient(135deg, ${o.avatar}, ${o.avatar}77)`,
+                      border: `1.5px solid ${o.hot ? '#FF3131' : 'rgba(255,255,255,0.2)'}`,
+                      color: '#000',
+                      fontSize: 15,
+                      flexShrink: 0,
                     }}
                   >
-                    {o.cat} · {o.win}% WIN RATE · EXPIRES {o.expires}
+                    {o.user.replace('@', '')[0]?.toUpperCase() ?? '?'}
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="font-black italic text-white truncate"
+                        style={{ fontSize: 15, letterSpacing: '-0.01em' }}
+                      >
+                        {o.user}
+                      </span>
+                      {o.hot ? (
+                        <span
+                          className="font-black italic uppercase rounded-full"
+                          style={{
+                            fontSize: 7,
+                            color: '#FF3131',
+                            background: 'rgba(255,49,49,0.18)',
+                            border: '1px solid rgba(255,49,49,0.4)',
+                            padding: '2px 6px',
+                            letterSpacing: '0.14em',
+                          }}
+                        >
+                          HOT
+                        </span>
+                      ) : null}
+                    </div>
+                    <div
+                      className="font-black italic uppercase mt-0.5"
+                      style={{
+                        fontSize: 9,
+                        color: '#71717a',
+                        letterSpacing: '0.14em',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      EXPIRES {o.expires}
+                    </div>
+                  </div>
+                  <span
+                    className="font-black italic"
+                    style={{
+                      fontSize: 16,
+                      color: '#FFD700',
+                      fontVariantNumeric: 'tabular-nums',
+                      letterSpacing: '-0.02em',
+                    }}
+                  >
+                    {o.wager.toFixed(2)} SOL
+                  </span>
+                  <button
+                    onClick={() => onJoinDuel?.(o.duelId)}
+                    className="font-black italic uppercase rounded-full active:opacity-90"
+                    style={{
+                      background: '#FF3131',
+                      color: '#000',
+                      padding: '8px 16px',
+                      fontSize: 11,
+                      letterSpacing: '0.14em',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    JOIN
+                  </button>
                 </div>
-                <span
-                  className="font-black italic"
-                  style={{
-                    fontSize: 16,
-                    color: '#FFD700',
-                    fontVariantNumeric: 'tabular-nums',
-                    letterSpacing: '-0.02em',
-                  }}
-                >
-                  {o.wager.toFixed(2)} SOL
-                </span>
-                <button
-                  className="font-black italic uppercase rounded-full active:opacity-90"
-                  style={{
-                    background: '#FF3131',
-                    color: '#000',
-                    padding: '8px 16px',
-                    fontSize: 11,
-                    letterSpacing: '0.14em',
-                    border: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  JOIN
-                </button>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -267,53 +376,62 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel }) => {
               border: '1px solid rgba(255,255,255,0.08)',
             }}
           >
-            {MOCK_RECENT.map((r, i) => (
+            {recentRows.length === 0 ? (
               <div
-                key={i}
-                className="px-4 py-3"
-                style={{
-                  borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
-                }}
+                className="font-black italic uppercase"
+                style={{ fontSize: 10, color: '#71717a', letterSpacing: '0.06em', padding: '24px 16px', textAlign: 'center' }}
               >
-                <div className="flex items-baseline gap-2">
-                  <span
-                    className="font-black italic uppercase"
-                    style={{ fontSize: 11, color: '#fff', letterSpacing: '-0.01em' }}
-                  >
-                    {r.winner}
-                  </span>
-                  <span
-                    className="font-black italic uppercase"
-                    style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.14em' }}
-                  >
-                    BEAT {r.loser}
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between mt-1">
-                  <span
-                    className="font-black italic uppercase"
-                    style={{
-                      fontSize: 9,
-                      color: '#52525b',
-                      letterSpacing: '0.14em',
-                    }}
-                  >
-                    {r.when}
-                  </span>
-                  <span
-                    className="font-black italic"
-                    style={{
-                      fontSize: 13,
-                      color: '#FFD700',
-                      fontVariantNumeric: 'tabular-nums',
-                      letterSpacing: '-0.02em',
-                    }}
-                  >
-                    +{r.pot.toFixed(3)} SOL
-                  </span>
-                </div>
+                NO RECENT DUELS YET
               </div>
-            ))}
+            ) : (
+              recentRows.map((r, i) => (
+                <div
+                  key={i}
+                  className="px-4 py-3"
+                  style={{
+                    borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                  }}
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span
+                      className="font-black italic uppercase truncate"
+                      style={{ fontSize: 11, color: '#fff', letterSpacing: '-0.01em', maxWidth: 110 }}
+                    >
+                      {r.winner}
+                    </span>
+                    <span
+                      className="font-black italic uppercase truncate"
+                      style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.14em' }}
+                    >
+                      BEAT {r.loser}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between mt-1">
+                    <span
+                      className="font-black italic uppercase"
+                      style={{
+                        fontSize: 9,
+                        color: '#52525b',
+                        letterSpacing: '0.14em',
+                      }}
+                    >
+                      {r.when}
+                    </span>
+                    <span
+                      className="font-black italic"
+                      style={{
+                        fontSize: 13,
+                        color: '#FFD700',
+                        fontVariantNumeric: 'tabular-nums',
+                        letterSpacing: '-0.02em',
+                      }}
+                    >
+                      +{r.pot.toFixed(3)} SOL
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

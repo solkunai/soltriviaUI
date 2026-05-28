@@ -2034,6 +2034,7 @@ const App: React.FC = () => {
             <CustomGamesViewV2
               onCreate={handleNavigateToCreateGame}
               onView={handleViewCustomGame}
+              onJoinByCode={(code) => handleViewCustomGame(code.trim().toLowerCase())}
             />
           </WebShell>
         );
