@@ -1706,7 +1706,7 @@ const App: React.FC = () => {
               practiceRunsLeft={practiceRunsLeft}
               hasGamePass={hasGamePass}
               isSeekerVerified={isSeekerVerified}
-              onBuyGamePass={() => setShowCategorySelector(true)}
+              onBuyGamePass={() => setCurrentView(View.GAME_PASS)}
               onCreateCustomGame={handleNavigateToCustomGames}
               onViewCustomGame={handleViewCustomGame}
               onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)}
@@ -1783,7 +1783,7 @@ const App: React.FC = () => {
               hasGamePass={hasGamePass}
               practiceRunsLeft={practiceRunsLeft}
               onStartCategory={handleCategorySelected}
-              onBuyGamePass={() => setShowCategorySelector(true)}
+              onBuyGamePass={() => setCurrentView(View.GAME_PASS)}
             />
           </WebShell>
         );
@@ -2329,7 +2329,7 @@ const App: React.FC = () => {
             <GamePassViewV2
               hasGamePass={hasGamePass}
               isSeekerVerified={isSeekerVerified}
-              onBuyGamePass={() => setShowCategorySelector(true)}
+              onPurchased={() => setHasGamePass(true)}
             />
           </WebShell>
         );
@@ -2356,7 +2356,7 @@ const App: React.FC = () => {
             practiceRunsLeft={practiceRunsLeft}
             hasGamePass={hasGamePass}
             isSeekerVerified={isSeekerVerified}
-            onBuyGamePass={() => setShowCategorySelector(true)}
+            onBuyGamePass={() => setCurrentView(View.GAME_PASS)}
             onCreateCustomGame={handleNavigateToCreateGame}
             onEnterDuels={() => setCurrentView(View.DUEL_LOBBY)}
           />
