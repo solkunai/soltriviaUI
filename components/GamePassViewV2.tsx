@@ -33,7 +33,7 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, onBuyGamePass }) => {
           className="font-black italic uppercase"
           style={{ fontSize: 10, color: '#71717a', letterSpacing: '0.18em' }}
         >
-          ONE-TIME UNLOCK · NON-TRANSFERABLE
+          MONTHLY OR ANNUAL · NON-TRANSFERABLE
         </div>
         <h1
           className="font-black italic uppercase mt-1 text-white"
@@ -153,20 +153,23 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, onBuyGamePass }) => {
                   letterSpacing: '-0.02em',
                 }}
               >
-                0.0625 <span style={{ fontSize: 13 }}>SOL</span>
+                $10 <span style={{ fontSize: 13 }}>/MO</span>
               </div>
             </div>
-            <span
-              className="font-black italic uppercase"
-              style={{
-                fontSize: 10,
-                opacity: 0.6,
-                letterSpacing: '0.14em',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              ≈ $10 USD
-            </span>
+            <div className="text-right">
+              <span
+                className="font-black italic uppercase block"
+                style={{ fontSize: 12, letterSpacing: '0.06em', fontVariantNumeric: 'tabular-nums' }}
+              >
+                OR $85 / YR
+              </span>
+              <span
+                className="font-black italic uppercase block mt-0.5"
+                style={{ fontSize: 8, opacity: 0.6, letterSpacing: '0.12em' }}
+              >
+                SEEKER $5/MO · $50/YR
+              </span>
+            </div>
           </div>
         </div>
 

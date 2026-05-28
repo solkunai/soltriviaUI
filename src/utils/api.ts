@@ -1435,19 +1435,23 @@ export interface GamePassStatus {
   has_pass: boolean;
   is_active: boolean;
   purchased_at: string | null;
+  expires_at?: string | null;
 }
+
+export type GamePassPlan = 'monthly' | 'annual';
 
 /** Purchase a game pass (unlocks premium categories + unlimited practice). */
 export async function purchaseGamePass(
   walletAddress: string,
   txSignature: string,
   paymentToken?: string,
-  amountUsd?: number
+  amountUsd?: number,
+  plan: GamePassPlan = 'monthly'
 ): Promise<GamePassResponse> {
   const response = await fetch(`${FUNCTIONS_URL}/purchase-game-pass`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ walletAddress, txSignature, paymentToken, amountUsd }),
+    body: JSON.stringify({ walletAddress, txSignature, paymentToken, amountUsd, plan }),
   });
 
   const body = await response.json().catch(() => ({}));
@@ -1458,22 +1462,42 @@ export async function purchaseGamePass(
   return body as GamePassResponse;
 }
 
-/** Check if a wallet has an active game pass. Direct Supabase read. */
+/**
+ * Check if a wallet has an active game pass. Direct Supabase read.
+ * Monthly model: a pass is active only if not expired. `expires_at` NULL means
+ * a grandfathered lifetime (one-time) pass. Falls back to the legacy select if
+ * the expires_at column doesn't exist yet (pre-migration), so it never breaks.
+ */
 export async function checkGamePass(walletAddress: string): Promise<GamePassStatus> {
-  const empty: GamePassStatus = { has_pass: false, is_active: false, purchased_at: null };
+  const empty: GamePassStatus = { has_pass: false, is_active: false, purchased_at: null, expires_at: null };
   if (!isSupabaseConfigured || !walletAddress?.trim()) return empty;
+  const wallet = walletAddress.trim();
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('game_passes')
-    .select('is_active, purchased_at')
-    .eq('wallet_address', walletAddress.trim())
+    .select('is_active, purchased_at, expires_at')
+    .eq('wallet_address', wallet)
     .maybeSingle();
 
+  // Pre-migration fallback: column missing -> retry without expires_at.
+  if (error) {
+    const legacy = await supabase
+      .from('game_passes')
+      .select('is_active, purchased_at')
+      .eq('wallet_address', wallet)
+      .maybeSingle();
+    data = legacy.data as typeof data;
+    error = legacy.error;
+  }
+
   if (error || !data) return empty;
+  const expiresAt = (data as { expires_at?: string | null }).expires_at ?? null;
+  const expired = expiresAt != null && new Date(expiresAt).getTime() <= Date.now();
   return {
     has_pass: true,
-    is_active: data.is_active === true,
+    is_active: data.is_active === true && !expired,
     purchased_at: data.purchased_at ?? null,
+    expires_at: expiresAt,
   };
 }
 

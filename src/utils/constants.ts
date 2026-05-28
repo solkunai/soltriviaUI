@@ -57,11 +57,14 @@ export const LIVES_USD_PRICING = {
   bulk:   { lives: 35, standard: 20, seeker: 15 },
 } as const;
 
-// USD-based pricing for Game Pass
+// Monthly + annual Game Pass pricing (USD). Seeker holders get the lower tier.
 export const GAME_PASS_USD_PRICING = {
-  standard: 10,
-  seeker: 5,
+  monthly: { standard: 10, seeker: 5 },
+  annual: { standard: 85, seeker: 50 },
 } as const;
+
+export type GamePassPlan = 'monthly' | 'annual';
+export const GAME_PASS_PLAN_DAYS: Record<GamePassPlan, number> = { monthly: 30, annual: 365 };
 
 // $NERD token payment discount (10% off when paying with $NERD)
 export const NERD_PAYMENT_DISCOUNT = 0.10;

@@ -16,6 +16,7 @@ import {
   fetchUserQuestSubmissions,
   claimQuestReward,
   submitQuestProof,
+  updateQuestProgress,
   type Quest,
   type QuestSubmissionStatus,
 } from '../src/utils/api';
@@ -341,15 +342,26 @@ const QuestsViewV2: React.FC = () => {
     }
   };
 
-  const handleStart = (q: Quest) => {
+  const handleStart = async (q: Quest) => {
     const link = q.requirement_config?.link || (q.slug === 'true_raider' ? 'https://x.com/soltrivia_app' : '');
     if (link) window.open(link, '_blank', 'noopener,noreferrer');
     if (requiresProof(q)) {
+      // Proof quests (links/screenshots) go to admin review — no auto-approve.
       setShowProof((prev) => ({ ...prev, [q.id]: true }));
       return;
     }
-    // Simple follow/join — mark claimable locally; user still taps CLAIM to award XP.
-    setProgressMap((prev) => ({ ...prev, [q.id]: { progress: maxOf(q), claimed: false } }));
+    // Simple follow/join — honor-system tap-to-claim. update-quest-progress
+    // auto-awards TP once progress hits max (no proof, no admin review).
+    if (!wallet || busyKey) return;
+    setBusyKey(q.id);
+    try {
+      await updateQuestProgress(wallet, q.slug, maxOf(q));
+      await loadData();
+    } catch {
+      /* ignore — user can retry */
+    } finally {
+      setBusyKey(null);
+    }
   };
 
   const handleVerify = async (q: Quest) => {

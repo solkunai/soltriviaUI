@@ -1811,10 +1811,10 @@ const QuestsManagementView: React.FC = () => {
         </div>
       )}
 
-      {/* Pending submissions (manual-review quests only; TRUE RAIDER is auto-approved) */}
+      {/* Pending submissions — every link/screenshot proof requires manual review here. */}
       <section className="pt-6 border-t border-white/10">
         <h3 className="text-lg font-black text-white mb-1">Pending proof submissions</h3>
-        <p className="text-zinc-500 text-sm mb-4">Quests that require manual review (e.g. custom proof quests). TRUE RAIDER is auto-approved when users submit, so it won’t appear here.</p>
+        <p className="text-zinc-500 text-sm mb-4">Every quest that submits a link or screenshot lands here for your review. Nothing is auto-approved. Simple follow/join quests are honor-system and never appear here.</p>
         {submissionsLoading ? (
           <p className="text-zinc-500 text-sm">Loading...</p>
         ) : submissions.length === 0 ? (

@@ -12,6 +12,7 @@ import {
   NERD_PAYMENT_DISCOUNT,
   PracticeCategory,
   type PaymentToken,
+  type GamePassPlan,
 } from '../src/utils/constants';
 import { fetchTokenPrices, calculateTokenAmount, formatTokenAmount, type TokenPrices } from '../src/utils/tokenPrices';
 import { buildSplTransferInstructions, getSplTokenBalance } from '../src/utils/splTransfer';
@@ -59,9 +60,10 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
   // Saved tx signature for retry after backend failure (payment was already sent)
   const [failedTxSignature, setFailedTxSignature] = useState<string | null>(null);
   const [prices, setPrices] = useState<TokenPrices | null>(null);
+  const [plan, setPlan] = useState<GamePassPlan>('monthly');
 
-  // USD-based pricing (NERD payment = 10% discount, stacks with Seeker)
-  let usdPrice: number = isSeekerVerified ? GAME_PASS_USD_PRICING.seeker : GAME_PASS_USD_PRICING.standard;
+  // USD-based pricing by plan (Seeker tier + NERD payment 10% discount stack).
+  let usdPrice: number = GAME_PASS_USD_PRICING[plan][isSeekerVerified ? 'seeker' : 'standard'];
   if (selectedToken === 'NERD') {
     usdPrice = +(usdPrice * (1 - NERD_PAYMENT_DISCOUNT)).toFixed(2);
   }
@@ -161,7 +163,7 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
       setFailedTxSignature(signatureToVerify);
 
       // Register with backend (pass token info) — works for both fresh and retry
-      await purchaseGamePass(publicKey.toBase58(), signatureToVerify, selectedToken, usdPrice);
+      await purchaseGamePass(publicKey.toBase58(), signatureToVerify, selectedToken, usdPrice, plan);
       setFailedTxSignature(null);
       onGamePassPurchased();
     } catch (err: any) {
@@ -294,6 +296,29 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
                     <span className="text-zinc-300 text-[10px] font-bold leading-snug">{benefit}</span>
                   </div>
                 ))}
+              </div>
+
+              {/* Plan Selector */}
+              <span className="text-zinc-400 text-[10px] font-black italic uppercase tracking-wider block mb-2">Plan</span>
+              <div className="flex gap-2 mb-3">
+                {(['monthly', 'annual'] as GamePassPlan[]).map((p) => {
+                  const isActive = plan === p;
+                  const price = GAME_PASS_USD_PRICING[p][isSeekerVerified ? 'seeker' : 'standard'];
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => { setPlan(p); setPurchaseError(null); }}
+                      disabled={purchasing}
+                      className={`flex-1 py-2 rounded-lg text-[10px] font-black italic uppercase tracking-wider transition-all border-2 ${
+                        isActive
+                          ? 'border-[#14F195] bg-[#14F195]/10 text-white'
+                          : 'border-white/5 bg-white/[0.02] text-zinc-500 hover:border-white/10 hover:text-zinc-300'
+                      } ${purchasing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {p === 'monthly' ? `Monthly · $${price}/mo` : `Annual · $${price}/yr`}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Token Selector */}
