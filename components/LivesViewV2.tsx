@@ -5,6 +5,7 @@
  * "Connect Wallet to Buy Lives" instead of the price.
  */
 import React, { useState } from 'react';
+import { useIsMobile } from '../src/hooks/useIsMobile';
 
 interface Props {
   livesCount: number | null;
@@ -48,6 +49,7 @@ const LivesViewV2: React.FC<Props> = ({
   const tiers = isSeekerVerified ? SEEKER_TIERS : TIERS;
   const [selected, setSelected] = useState<TierId>('value');
   const [token, setToken] = useState<PaymentToken>('SOL');
+  const isMobile = useIsMobile();
   const selectedTier = tiers.find((t) => t.id === selected) ?? tiers[1];
 
   return (
@@ -85,7 +87,7 @@ const LivesViewV2: React.FC<Props> = ({
       {/* Tier cards: 3-up grid */}
       <div
         className="mb-5"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}
+        style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 12 }}
       >
         {tiers.map((tier) => {
           const isSelected = selected === tier.id;

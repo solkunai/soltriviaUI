@@ -3,6 +3,7 @@
  * perks right) + NERD callout + sticky CTA.
  */
 import React, { useState } from 'react';
+import { useIsMobile } from '../src/hooks/useIsMobile';
 
 type PaymentToken = 'SOL' | 'USDC' | 'SKR' | 'NERD';
 const TOKEN_CHIPS: PaymentToken[] = ['SOL', 'USDC', 'SKR', 'NERD'];
@@ -24,6 +25,7 @@ const PERKS = [
 
 const GamePassViewV2: React.FC<Props> = ({ hasGamePass, onBuyGamePass }) => {
   const [token, setToken] = useState<PaymentToken>('SOL');
+  const isMobile = useIsMobile();
   return (
     <div className="max-w-5xl">
       {/* Header */}
@@ -55,7 +57,7 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, onBuyGamePass }) => {
       {/* 2-col layout */}
       <div
         className="mb-5"
-        style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 20 }}
+        style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 1fr', gap: 20 }}
       >
         {/* NFT ticket hero */}
         <div

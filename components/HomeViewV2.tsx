@@ -14,6 +14,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
+import { useIsMobile } from '../src/hooks/useIsMobile';
 import { getCurrentRoundKey } from '../src/utils/api';
 import {
   fetchTierRound,
@@ -281,6 +282,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
 
   const { connection } = useConnection();
   const { connected } = useWallet();
+  const isMobile = useIsMobile();
 
   const [prizePool, setPrizePool] = useState(0);
   const [playersEntered, setPlayersEntered] = useState(0);
@@ -549,12 +551,12 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
         QUICK PLAY
       </div>
 
-      {/* 3-tile mosaic */}
+      {/* 3-tile mosaic — stacks to single column on mobile */}
       <div
         className="mb-3"
         style={{
           display: 'grid',
-          gridTemplateColumns: '1.4fr 1fr 1fr',
+          gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr 1fr',
           gap: 10,
         }}
       >

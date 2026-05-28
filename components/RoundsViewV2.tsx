@@ -5,6 +5,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useConnection } from '../src/contexts/WalletContext';
+import { useIsMobile } from '../src/hooks/useIsMobile';
 import { getCurrentRoundKey } from '../src/utils/api';
 import {
   fetchTierRound,
@@ -65,6 +66,7 @@ const RoundsViewV2: React.FC<Props> = ({
   onOpenBuyLives,
 }) => {
   const { connection } = useConnection();
+  const isMobile = useIsMobile();
   const [pool, setPool] = useState(0);
   const [players, setPlayers] = useState(0);
   const [countdown, setCountdown] = useState(getNextRoundCountdown());
@@ -210,7 +212,7 @@ const RoundsViewV2: React.FC<Props> = ({
       {/* 2-col: Prize split + How it works */}
       <div
         className="mb-5"
-        style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 18 }}
+        style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 1fr', gap: 18 }}
       >
         {/* Prize split */}
         <div

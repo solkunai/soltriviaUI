@@ -4,6 +4,7 @@
  * for v1; wire real fetches in follow-up.
  */
 import React, { useState } from 'react';
+import { useIsMobile } from '../src/hooks/useIsMobile';
 
 interface Props {
   walletConnected: boolean;
@@ -29,6 +30,7 @@ const WAGER_PRESETS = [0.01, 0.05, 0.1, 0.25, 0.5, 1];
 
 const DuelsViewV2: React.FC<Props> = ({ onCreateDuel }) => {
   const [wager, setWager] = useState(0.1);
+  const isMobile = useIsMobile();
   return (
     <div className="max-w-5xl">
       {/* Header */}
@@ -96,7 +98,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel }) => {
         </div>
         <div
           className="mt-2"
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}
+          style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(4, 1fr)' : 'repeat(7, 1fr)', gap: 8 }}
         >
           {WAGER_PRESETS.map((w) => {
             const on = wager === w;
@@ -137,7 +139,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel }) => {
       </div>
 
       {/* 2-col: Open duels + Recent */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr', gap: 18 }}>
         <div>
           <div className="flex items-center justify-between mb-2">
             <span

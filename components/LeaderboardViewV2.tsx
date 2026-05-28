@@ -4,6 +4,7 @@
  * Mock data for v1.
  */
 import React, { useState } from 'react';
+import { useIsMobile } from '../src/hooks/useIsMobile';
 
 type Player = {
   rank: number;
@@ -136,6 +137,9 @@ function PodiumColumn({ player }: { player: Player }) {
 
 const LeaderboardViewV2: React.FC = () => {
   const [tab, setTab] = useState<(typeof TABS)[number]>('ALL-TIME');
+  const isMobile = useIsMobile();
+  // Mobile drops the SOL EARNED + GAMES columns so the row fits a phone.
+  const listCols = isMobile ? '24px 30px 1fr 64px' : '30px 36px 1fr 100px 120px 80px';
 
   const podiumOrder = [5, 3, 1, 2, 4];
   const podiumOrdered = podiumOrder
@@ -245,7 +249,7 @@ const LeaderboardViewV2: React.FC = () => {
           className="font-black italic uppercase"
           style={{
             display: 'grid',
-            gridTemplateColumns: '30px 36px 1fr 100px 120px 80px',
+            gridTemplateColumns: listCols,
             gap: 14,
             alignItems: 'center',
             padding: '10px 18px',
@@ -259,15 +263,15 @@ const LeaderboardViewV2: React.FC = () => {
           <span />
           <span>PLAYER</span>
           <span style={{ textAlign: 'right' }}>XP</span>
-          <span style={{ textAlign: 'right' }}>SOL EARNED</span>
-          <span style={{ textAlign: 'right' }}>GAMES</span>
+          {!isMobile && <span style={{ textAlign: 'right' }}>SOL EARNED</span>}
+          {!isMobile && <span style={{ textAlign: 'right' }}>GAMES</span>}
         </div>
         {LIST_BELOW.map((r, i) => (
           <div
             key={r.rank}
             style={{
               display: 'grid',
-              gridTemplateColumns: '30px 36px 1fr 100px 120px 80px',
+              gridTemplateColumns: listCols,
               gap: 14,
               alignItems: 'center',
               padding: '12px 18px',
@@ -312,29 +316,33 @@ const LeaderboardViewV2: React.FC = () => {
             >
               {r.xp.toLocaleString()}
             </span>
-            <span
-              className="font-black italic"
-              style={{
-                fontSize: 14,
-                color: '#FFD700',
-                textAlign: 'right',
-                fontVariantNumeric: 'tabular-nums',
-                letterSpacing: '-0.02em',
-              }}
-            >
-              {r.sol.toFixed(3)}
-            </span>
-            <span
-              className="font-black italic"
-              style={{
-                fontSize: 12,
-                color: '#71717a',
-                textAlign: 'right',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {r.games}
-            </span>
+            {!isMobile && (
+              <span
+                className="font-black italic"
+                style={{
+                  fontSize: 14,
+                  color: '#FFD700',
+                  textAlign: 'right',
+                  fontVariantNumeric: 'tabular-nums',
+                  letterSpacing: '-0.02em',
+                }}
+              >
+                {r.sol.toFixed(3)}
+              </span>
+            )}
+            {!isMobile && (
+              <span
+                className="font-black italic"
+                style={{
+                  fontSize: 12,
+                  color: '#71717a',
+                  textAlign: 'right',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {r.games}
+              </span>
+            )}
           </div>
         ))}
       </div>

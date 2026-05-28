@@ -4,6 +4,7 @@
  * + share-on-X + referrals list + how-it-works.
  */
 import React, { useState } from 'react';
+import { useIsMobile } from '../src/hooks/useIsMobile';
 
 const MOCK = {
   code: 'YOU-AB12',
@@ -23,6 +24,7 @@ const MOCK = {
 const ReferralsViewV2: React.FC = () => {
   const [codeCopied, setCodeCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const isMobile = useIsMobile();
   const claimedSol = MOCK.lifetimeSol - MOCK.claimableSol;
   const canClaim = MOCK.claimableSol > 0;
 
@@ -164,7 +166,7 @@ const ReferralsViewV2: React.FC = () => {
       {/* 2-col: code + recent referrals */}
       <div
         className="mb-5"
-        style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}
+        style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 18 }}
       >
         {/* Code + share */}
         <div className="flex flex-col gap-3">

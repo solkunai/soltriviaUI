@@ -4,6 +4,7 @@
  * + 3-col room grid. Mock data for v1.
  */
 import React, { useState } from 'react';
+import { useIsMobile } from '../src/hooks/useIsMobile';
 
 interface Props {
   onCreate?: () => void;
@@ -32,6 +33,7 @@ const JOIN_ROOMS = [
 const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) => {
   const [tab, setTab] = useState<Tab>('JOIN');
   const [joinCode, setJoinCode] = useState('');
+  const isMobile = useIsMobile();
 
   const handleJoin = () => {
     if (joinCode.trim().length >= 3) {
@@ -60,7 +62,7 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
       {/* 2-col: CREATE hero + JOIN code */}
       <div
         className="mb-5"
-        style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 14 }}
+        style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr', gap: 14 }}
       >
         <button
           onClick={onCreate}
@@ -153,7 +155,7 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
           <span>★</span> OFFICIAL · ALWAYS ON · @SOLTRIVIA_APP
         </div>
         <div
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}
+          style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10 }}
         >
           {OFFICIAL_ROOMS.map((r) => (
             <button
@@ -227,7 +229,7 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
       </div>
 
       {/* 3-col grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3,1fr)', gap: 12 }}>
         {JOIN_ROOMS.map((r) => (
           <div
             key={r.slug}

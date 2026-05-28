@@ -18,6 +18,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
+import { useIsMobile } from '../src/hooks/useIsMobile';
 import { SOLANA_NETWORK, DEFAULT_AVATAR } from '../src/utils/constants';
 import { supabase } from '../src/utils/supabase';
 import {
@@ -201,6 +202,7 @@ const ProfileViewV2: React.FC<Props> = ({
 }) => {
   const { publicKey, signMessage } = useWallet();
   const { connection } = useConnection();
+  const isMobile = useIsMobile();
   const walletShort = publicKey
     ? `${publicKey.toBase58().slice(0, 6)}…${publicKey.toBase58().slice(-4)}`
     : '—';
@@ -1286,11 +1288,12 @@ const ProfileViewV2: React.FC<Props> = ({
         );
       })()}
 
-      {/* 3. Big colored stats — solid colored backgrounds, no borders */}
+      {/* 3. Big colored stats — solid colored backgrounds, no borders.
+          5-up on desktop, 2-up on mobile so the numbers stay legible. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(5, 1fr)',
+          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)',
           gap: 10,
           marginBottom: 18,
         }}
@@ -1508,7 +1511,7 @@ const ProfileViewV2: React.FC<Props> = ({
       </div>
 
       {/* 5. Two-col body */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.2fr', gap: 18 }}>
         {/* Left: ACCOUNT cards */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ ...baseLabel, fontSize: 10, color: C.textMuted, letterSpacing: '0.18em' }}>

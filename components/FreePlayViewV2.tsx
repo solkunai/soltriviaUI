@@ -5,6 +5,7 @@
  * free games + Mixed only.
  */
 import React, { useState } from 'react';
+import { useIsMobile } from '../src/hooks/useIsMobile';
 
 interface Props {
   hasGamePass?: boolean;
@@ -45,6 +46,7 @@ const FreePlayViewV2: React.FC<Props> = ({
   onBuyGamePass,
 }) => {
   const [pick, setPick] = useState<string>('mixed');
+  const isMobile = useIsMobile();
   const weakest = getWeakest();
   const freeGamesRemaining = hasGamePass
     ? Infinity
@@ -227,7 +229,7 @@ const FreePlayViewV2: React.FC<Props> = ({
       </div>
       <div
         className="mb-3"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}
+        style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10 }}
       >
         {CATEGORIES.map((c) => {
           const sel = pick === c.id;
