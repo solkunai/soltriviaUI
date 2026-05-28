@@ -105,15 +105,14 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, onBuyGamePass }) => {
               SOL TRIVIA
             </span>
             <span
-              className="font-black italic"
+              className="font-black italic uppercase"
               style={{
                 fontSize: 10,
                 opacity: 0.7,
                 letterSpacing: '0.14em',
-                fontVariantNumeric: 'tabular-nums',
               }}
             >
-              #04217
+              {hasGamePass ? 'ACTIVE' : 'OFFICIAL'}
             </span>
           </div>
 

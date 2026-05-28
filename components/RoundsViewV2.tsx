@@ -11,6 +11,7 @@ import {
   fetchTierRound,
   contractRoundIdFromDateAndNumber,
 } from '../src/utils/soltriviaContract';
+import { TRIVIA_PRIZE_BPS } from '../src/utils/constants';
 
 interface Props {
   lives: number | null;
@@ -43,13 +44,14 @@ function getCurrentRoundNumber(): number {
   return Math.floor(new Date().getUTCHours() / 6) + 1;
 }
 
-const PRIZE_SPLITS = [
-  { rank: 1, pct: 50, emoji: '🥇' },
-  { rank: 2, pct: 25, emoji: '🥈' },
-  { rank: 3, pct: 15, emoji: '🥉' },
-  { rank: 4, pct: 7, emoji: null },
-  { rank: 5, pct: 3, emoji: null },
-];
+// Derived from the canonical on-chain split (TRIVIA_PRIZE_BPS) so the display
+// can never drift out of sync with the contract: 50 / 20 / 15 / 10 / 5.
+const PRIZE_EMOJI = ['🥇', '🥈', '🥉', null, null];
+const PRIZE_SPLITS = TRIVIA_PRIZE_BPS.map((bps, i) => ({
+  rank: i + 1,
+  pct: bps / 100,
+  emoji: PRIZE_EMOJI[i],
+}));
 
 const HOW_STEPS = [
   { t: 'Pay 0.02 SOL to enter', d: 'Your fee stacks into the pool' },

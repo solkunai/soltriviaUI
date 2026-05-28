@@ -25,8 +25,8 @@ type SocialKind = 'x' | 'discord' | 'telegram';
 
 const KIND_COLOR = {
   daily: '#14F195',
-  weekly: '#FFD700',
-  social: '#a855f7',
+  weekly: '#14F195',
+  social: '#3b82f6',
 } as const;
 
 type Kind = keyof typeof KIND_COLOR;
@@ -136,7 +136,7 @@ function QuestRow({ q, progress, claimed, submission, busy, proofUrl, showProof,
       className="rounded-xl"
       style={{
         background: '#0c0c0c',
-        border: `1px solid ${big ? '#FFD700' : 'rgba(255,255,255,0.08)'}`,
+        border: `1px solid ${big ? '#14F195' : 'rgba(255,255,255,0.08)'}`,
         padding: '14px 16px',
         opacity: claimed ? 0.6 : 1,
       }}
@@ -146,13 +146,13 @@ function QuestRow({ q, progress, claimed, submission, busy, proofUrl, showProof,
           <div className="flex items-center gap-1.5 mb-1.5">
             <Tag color={tagColor}>{kind.toUpperCase()}</Tag>
             {social ? <SocialBadge kind={social} /> : null}
-            {big ? <Tag color="#FFD700">BIG REWARD</Tag> : null}
+            {big ? <Tag color="#14F195">BIG REWARD</Tag> : null}
             {pending ? <Tag color="#FFD700">IN REVIEW</Tag> : null}
           </div>
           <div className="font-black italic uppercase text-white" style={{ fontSize: 15, lineHeight: 1, letterSpacing: '-0.01em' }}>
             {q.title}
           </div>
-          <div className="font-black italic uppercase mt-1" style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.14em' }}>
+          <div className="font-black italic uppercase mt-1" style={{ fontSize: 10, color: '#e4e4e7', letterSpacing: '0.12em' }}>
             {q.description}
           </div>
           {max > 1 && !claimed ? (

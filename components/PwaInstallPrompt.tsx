@@ -1,80 +1,30 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
+import { isStandalonePWA, markA2HSDismissed } from '../src/utils/pwa';
 
-const STORAGE_KEY = 'soltrivia-pwa-prompt-dismissed';
-const DISMISS_DAYS = 7;
-const PROMPT_DELAY_MS = 20 * 1000; // 20 seconds
-
-function isStandalone(): boolean {
-  if (typeof window === 'undefined') return false;
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    (window.navigator as Navigator & { standalone?: boolean }).standalone === true
-  );
+interface PwaInstallPromptProps {
+  /** App decides when to show this: a fresh signup/login on mobile web. */
+  open: boolean;
+  onClose: () => void;
 }
 
-function isMobile(): boolean {
-  if (typeof window === 'undefined') return false;
-  // Allow testing on localhost desktop (development mode)
-  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  return isMobileDevice || isLocalhost;
-}
-
-function wasDismissedRecently(): boolean {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return false;
-    const t = parseInt(raw, 10);
-    if (Number.isNaN(t)) return false;
-    return Date.now() - t < DISMISS_DAYS * 24 * 60 * 60 * 1000;
-  } catch {
-    return false;
-  }
-}
-
-function setDismissed(): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, String(Date.now()));
-  } catch {
-    // ignore
-  }
-}
-
-const PwaInstallPrompt: React.FC = () => {
+const PwaInstallPrompt: React.FC<PwaInstallPromptProps> = ({ open, onClose }) => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [visible, setVisible] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
 
+  // Capture the beforeinstallprompt event whenever it fires (Android/Chrome)
+  // + detect iOS. This runs regardless of `open` so the event isn't missed.
   useEffect(() => {
-    // Only show on mobile devices
-    if (!isMobile()) return;
-    // Don't show if already installed
-    if (isStandalone()) return;
-    // Don't show if dismissed recently
-    if (wasDismissedRecently()) return;
-
-    const isIPhoneOrIPad = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-    setIsIOS(isIPhoneOrIPad);
-
-    // Store the beforeinstallprompt event when it fires (Android/Chrome)
+    if (typeof navigator !== 'undefined') {
+      setIsIOS(/iPhone|iPad|iPod/i.test(navigator.userAgent));
+    }
     const onBeforeInstall = (e: BeforeInstallPromptEvent) => {
       e.preventDefault();
       setDeferredPrompt(e);
     };
-
     window.addEventListener('beforeinstallprompt', onBeforeInstall);
-
-    // Show popup after 1 minute for both Android and iOS
-    const timer = setTimeout(() => {
-      setVisible(true);
-    }, PROMPT_DELAY_MS);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
-      clearTimeout(timer);
-    };
+    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstall);
   }, []);
 
   const handleInstall = async () => {
@@ -84,8 +34,8 @@ const PwaInstallPrompt: React.FC = () => {
         await deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
         if (outcome === 'accepted') {
-          setVisible(false);
-          setDismissed(); // Mark as dismissed since they installed
+          markA2HSDismissed();
+          onClose();
         }
       } finally {
         setInstalling(false);
@@ -94,11 +44,12 @@ const PwaInstallPrompt: React.FC = () => {
   };
 
   const handleDismiss = () => {
-    setVisible(false);
-    setDismissed();
+    markA2HSDismissed();
+    onClose();
   };
 
-  if (!visible) return null;
+  // Defensive: never render if not requested or already installed.
+  if (!open || isStandalonePWA()) return null;
 
   return (
     <>

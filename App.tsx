@@ -82,6 +82,7 @@ import GuideModal from './components/GuideModal';
 import BuyLivesModal from './components/BuyLivesModal';
 import FirstTimeDepositModal from './components/FirstTimeDepositModal';
 import { getBalanceSafely } from './src/utils/balance';
+import { isMobileDevice, isStandalonePWA, isInTWA, a2hsDismissedRecently, isFreshWalletOnThisDevice } from './src/utils/pwa';
 import SwapModal from './components/SwapModal';
 import EditProfileModal from './components/EditProfileModal';
 import QuizView from './components/QuizView';
@@ -121,13 +122,14 @@ import { getRecentBlockhashWithRetry } from './src/utils/rpc';
 const App: React.FC = () => {
   // Keep Render free tier service alive (pings every 2 minutes)
   useKeepAlive(true);
-  const { connected, publicKey, sendTransaction, isPrivyUser, isPhantomConnectUser } = useWallet();
+  const { connected, publicKey, sendTransaction, isPrivyUser } = useWallet();
   const { connection } = useConnection();
   const [currentView, setCurrentView] = useState<View>(viewFromPath);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [nerdMintCopied, setNerdMintCopied] = useState(false);
   const [isBuyLivesOpen, setIsBuyLivesOpen] = useState(false);
   const [showFirstTimeDeposit, setShowFirstTimeDeposit] = useState(false);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [showWalletRequired, setShowWalletRequired] = useState(false);
@@ -346,7 +348,10 @@ const App: React.FC = () => {
   // own SOL elsewhere, so we don't pester them.
   useEffect(() => {
     if (!connected || !publicKey) return;
-    if (!isPrivyUser && !isPhantomConnectUser) return;
+    // Privy-only: embedded signup wallets start empty with no external funding
+    // UI. Phantom-Connect + external/MWA wallets manage their own SOL, so we
+    // never show them the fund-your-wallet modal.
+    if (!isPrivyUser) return;
 
     const wallet = publicKey.toBase58();
     let dismissedKey: string;
@@ -375,7 +380,19 @@ const App: React.FC = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [connected, publicKey, isPrivyUser, isPhantomConnectUser, connection]);
+  }, [connected, publicKey, isPrivyUser, connection]);
+
+  // Add-to-Homescreen prompt: only at a fresh signup/login (first time this
+  // wallet connects on this device), and only on real mobile web — never on
+  // desktop, never when already installed, and never inside the Seeker TWA
+  // (those users installed from the dApp store).
+  useEffect(() => {
+    if (!connected || !publicKey) return;
+    if (!isMobileDevice() || isStandalonePWA() || isInTWA()) return;
+    if (a2hsDismissedRecently()) return;
+    if (!isFreshWalletOnThisDevice(publicKey.toBase58())) return;
+    setShowInstallPrompt(true);
+  }, [connected, publicKey]);
 
   // Auto-dismiss free-entry notification after 5 seconds
   useEffect(() => {
@@ -1765,7 +1782,7 @@ const App: React.FC = () => {
             <FreePlayViewV2
               hasGamePass={hasGamePass}
               practiceRunsLeft={practiceRunsLeft}
-              onStartPractice={handleStartPractice}
+              onStartCategory={handleCategorySelected}
               onBuyGamePass={() => setShowCategorySelector(true)}
             />
           </WebShell>
@@ -2443,11 +2460,11 @@ const App: React.FC = () => {
         onGamePassPurchased={() => setHasGamePass(true)}
       />
       <BuyLivesModal isOpen={isBuyLivesOpen} onClose={() => setIsBuyLivesOpen(false)} onBuySuccess={handleBuyLivesSuccess} isSeekerVerified={isSeekerVerified} />
-      {showFirstTimeDeposit && publicKey && (isPrivyUser || isPhantomConnectUser) && (
+      {showFirstTimeDeposit && publicKey && isPrivyUser && (
         <FirstTimeDepositModal
           walletAddress={publicKey.toBase58()}
           connection={connection}
-          provider={isPhantomConnectUser ? 'phantom-connect' : 'privy'}
+          provider="privy"
           onClose={() => {
             setShowFirstTimeDeposit(false);
             try {
@@ -2515,7 +2532,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <PwaInstallPrompt />
+      <PwaInstallPrompt open={showInstallPrompt} onClose={() => setShowInstallPrompt(false)} />
       {!hasAcceptedTerms && currentView !== View.TERMS && currentView !== View.PRIVACY && (
         <LegalDisclaimerModal
           onAccept={() => {

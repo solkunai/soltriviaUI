@@ -300,7 +300,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
   } = props;
 
   const { connection } = useConnection();
-  const { connected } = useWallet();
+  const { connected, publicKey } = useWallet();
   const isMobile = useIsMobile();
 
   const [prizePool, setPrizePool] = useState(0);
@@ -309,6 +309,28 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
   const [activeCustomGameCount, setActiveCustomGameCount] = useState(0);
   const [countdown, setCountdown] = useState(getNextRoundCountdown());
   const [recentWinners, setRecentWinners] = useState<RecentWinner[]>([]);
+  const [streak, setStreak] = useState(0);
+
+  // Real daily streak for the Free Play tile badge.
+  useEffect(() => {
+    const wallet = publicKey?.toBase58();
+    if (!wallet) {
+      setStreak(0);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('player_profiles')
+      .select('current_streak')
+      .eq('wallet_address', wallet)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setStreak(Number((data as { current_streak?: number } | null)?.current_streak ?? 0) || 0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [publicKey]);
 
   // Live countdown to next 6h block, local-only.
   useEffect(() => {
@@ -608,7 +630,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             strokeLinejoin="round"
             style={{ position: 'absolute', top: 10, right: 10, opacity: 0.4 }}
           >
-            <path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16 22 22M19 13 22 16M2 22h.01M5 22h.01M8 22h.01M11 22h.01M14 22h.01M17 22h.01M20 22h.01M3 21l6-6" />
+            <path d="M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5L18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2" />
           </svg>
           <div>
             <div
@@ -728,39 +750,41 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             cursor: 'pointer',
           }}
         >
-          <div
-            style={{
-              position: 'absolute',
-              top: 10,
-              right: 10,
-              textAlign: 'right',
-            }}
-          >
-            <span
-              className="font-black italic"
+          {streak > 0 && (
+            <div
               style={{
-                fontSize: 30,
-                color: '#FFD700',
-                lineHeight: 0.85,
-                display: 'block',
-                fontVariantNumeric: 'tabular-nums',
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                textAlign: 'right',
               }}
             >
-              5
-            </span>
-            <span
-              className="font-black italic uppercase"
-              style={{
-                fontSize: 7,
-                color: '#FFD700',
-                display: 'block',
-                marginTop: 1,
-                letterSpacing: '0.14em',
-              }}
-            >
-              🔥 STREAK
-            </span>
-          </div>
+              <span
+                className="font-black italic"
+                style={{
+                  fontSize: 30,
+                  color: '#FFD700',
+                  lineHeight: 0.85,
+                  display: 'block',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {streak}
+              </span>
+              <span
+                className="font-black italic uppercase"
+                style={{
+                  fontSize: 7,
+                  color: '#FFD700',
+                  display: 'block',
+                  marginTop: 1,
+                  letterSpacing: '0.14em',
+                }}
+              >
+                🔥 STREAK
+              </span>
+            </div>
+          )}
           <div>
             <div
               className="font-black italic uppercase"

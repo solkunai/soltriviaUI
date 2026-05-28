@@ -16,11 +16,14 @@ interface Props {
 
 type Tab = 'JOIN' | 'MY GAMES' | 'ENDED';
 
-const OFFICIAL_ROOMS = [
-  { slug: 'official-degen-ct', name: 'Degen Crypto CT', blurb: 'KOL drama, meme coins, lore', plays: 1247 },
-  { slug: 'official-current-events', name: 'Current Events', blurb: 'Biggest crypto + tech news', plays: 892 },
-  { slug: 'official-nft-topic', name: 'NFT Topic', blurb: 'Floor moves, mint mechanics', plays: 634 },
-  { slug: 'official-sports', name: 'Sports', blurb: 'Broad sports trivia, weekly', plays: 1089 },
+// Canonical free always-on official games. Slugs match the custom_games rows
+// created server-side; total_plays + clickability come from real data.
+const OFFICIAL_TOPICS = [
+  { slug: 'official-current-events', name: 'Current Events', blurb: 'Biggest crypto + tech news' },
+  { slug: 'official-sports', name: 'Sports', blurb: 'Broad sports trivia' },
+  { slug: 'official-ct-lore', name: 'CT Lore', blurb: 'Crypto Twitter drama + legends' },
+  { slug: 'official-memecoins', name: 'Memecoins', blurb: 'Tickers, launches, degen lore' },
+  { slug: 'official-nfts', name: 'NFTs', blurb: 'Collections, floors, mint mechanics' },
 ];
 
 // Display shape the room grid renders. Mapped from custom_games rows.
@@ -63,6 +66,8 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
   const [joinable, setJoinable] = useState<RoomRow[]>([]);
   const [myGames, setMyGames] = useState<RoomRow[]>([]);
   const [ended, setEnded] = useState<RoomRow[]>([]);
+  // Real official games keyed by slug → { plays, exists }. Drives the strip.
+  const [officialBySlug, setOfficialBySlug] = useState<Record<string, { plays: number }>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -71,7 +76,7 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
       setLoading(true);
       try {
         const nowIso = new Date().toISOString();
-        const [activeRes, endedRes] = await Promise.all([
+        const [activeRes, endedRes, officialRes] = await Promise.all([
           supabase
             .from('custom_games')
             .select(
@@ -89,8 +94,18 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
             .in('status', ['completed', 'finalized', 'expired'])
             .order('expires_at', { ascending: false })
             .limit(20),
+          supabase
+            .from('custom_games')
+            .select('slug, total_plays')
+            .in('slug', OFFICIAL_TOPICS.map((t) => t.slug)),
         ]);
         if (!mounted) return;
+
+        const officialMap: Record<string, { plays: number }> = {};
+        for (const g of (officialRes.data ?? []) as any[]) {
+          officialMap[g.slug] = { plays: g.total_plays ?? 0 };
+        }
+        setOfficialBySlug(officialMap);
 
         const toRoom = (g: any, isEnded = false): RoomRow => ({
           slug: g.slug ?? '',
@@ -105,18 +120,23 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
           ended: isEnded,
         });
 
-        const active = (activeRes.data ?? []).map((g) => toRoom(g));
+        // Official games live in the FEATURED strip only — keep them out of
+        // the community JOIN / MY GAMES / ENDED lists.
+        const isOfficial = (g: any) => String(g.slug ?? '').startsWith('official-');
+        const activeRows = (activeRes.data ?? []).filter((g: any) => !isOfficial(g));
+        const endedRows = (endedRes.data ?? []).filter((g: any) => !isOfficial(g));
+
         setJoinable(
           walletAddress
-            ? active.filter((_, i) => (activeRes.data ?? [])[i].creator_wallet !== walletAddress)
-            : active,
+            ? activeRows.filter((g: any) => g.creator_wallet !== walletAddress).map((g) => toRoom(g))
+            : activeRows.map((g) => toRoom(g)),
         );
         setMyGames(
           walletAddress
-            ? active.filter((_, i) => (activeRes.data ?? [])[i].creator_wallet === walletAddress)
+            ? activeRows.filter((g: any) => g.creator_wallet === walletAddress).map((g) => toRoom(g))
             : [],
         );
-        setEnded((endedRes.data ?? []).map((g) => toRoom(g, true)));
+        setEnded(endedRows.map((g) => toRoom(g, true)));
       } catch (err) {
         console.error('Failed to fetch custom games:', err);
       } finally {
@@ -145,7 +165,7 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
           className="font-black italic uppercase"
           style={{ fontSize: 11, color: '#38BDF8', letterSpacing: '0.18em' }}
         >
-          ● 12 ACTIVE · COMMUNITY HOSTED
+          ● {joinable.length + myGames.length} ACTIVE · COMMUNITY HOSTED
         </div>
         <h1
           className="font-black italic uppercase mt-1 text-white"
@@ -242,60 +262,56 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
         </div>
       </div>
 
-      {/* OFFICIAL strip */}
+      {/* FEATURED strip — free always-on official games */}
       <div className="mb-5">
         <div
           className="font-black italic uppercase mb-2 flex items-center gap-2"
           style={{ fontSize: 10, color: '#FFD700', letterSpacing: '0.18em' }}
         >
-          <span>★</span> OFFICIAL · ALWAYS ON · @SOLTRIVIA_APP
+          <span>★</span> FEATURED · BY SOL TRIVIA
         </div>
         <div
-          style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10 }}
+          style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(5,1fr)', gap: 10 }}
         >
-          {OFFICIAL_ROOMS.map((r) => (
-            <button
-              key={r.slug}
-              onClick={() => onView?.(r.slug)}
-              className="rounded-xl text-left active:opacity-90"
-              style={{
-                background: 'rgba(255,215,0,0.06)',
-                border: '1.5px solid rgba(255,215,0,0.4)',
-                padding: '12px 14px',
-                cursor: 'pointer',
-                color: '#fff',
-              }}
-            >
-              <div
-                className="font-black italic uppercase flex items-center gap-1"
-                style={{ fontSize: 8, color: '#FFD700', letterSpacing: '0.18em' }}
-              >
-                ★ ALWAYS ON
-              </div>
-              <div
-                className="font-black italic uppercase mt-2"
-                style={{ fontSize: 14, letterSpacing: '-0.01em' }}
-              >
-                {r.name}
-              </div>
-              <div
-                style={{ fontSize: 10, color: '#a1a1aa', marginTop: 4, lineHeight: 1.3 }}
-              >
-                {r.blurb}
-              </div>
-              <div
-                className="font-black italic uppercase mt-3"
+          {OFFICIAL_TOPICS.map((r) => {
+            const live = officialBySlug[r.slug];
+            const exists = !!live;
+            return (
+              <button
+                key={r.slug}
+                onClick={() => exists && onView?.(r.slug)}
+                disabled={!exists}
+                className="rounded-xl text-left active:opacity-90"
                 style={{
-                  fontSize: 9,
-                  color: '#71717a',
-                  letterSpacing: '0.14em',
-                  fontVariantNumeric: 'tabular-nums',
+                  background: 'rgba(255,215,0,0.06)',
+                  border: '1.5px solid rgba(255,215,0,0.4)',
+                  padding: '12px 14px',
+                  cursor: exists ? 'pointer' : 'default',
+                  color: '#fff',
+                  opacity: exists ? 1 : 0.55,
                 }}
               >
-                {r.plays.toLocaleString()} PLAYS
-              </div>
-            </button>
-          ))}
+                <div
+                  className="font-black italic uppercase flex items-center gap-1"
+                  style={{ fontSize: 8, color: '#FFD700', letterSpacing: '0.18em' }}
+                >
+                  ★ {exists ? 'FREE' : 'SOON'}
+                </div>
+                <div className="font-black italic uppercase mt-2" style={{ fontSize: 14, letterSpacing: '-0.01em' }}>
+                  {r.name}
+                </div>
+                <div style={{ fontSize: 10, color: '#d4d4d8', marginTop: 4, lineHeight: 1.3 }}>
+                  {r.blurb}
+                </div>
+                <div
+                  className="font-black italic uppercase mt-3"
+                  style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.14em', fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {exists ? `${live.plays.toLocaleString()} PLAYS` : 'COMING SOON'}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 

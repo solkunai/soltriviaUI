@@ -11,8 +11,10 @@
  *   - No em dashes anywhere (feedback_no_em_dashes)
  *   - No pulse animations on dots/badges (feedback_no_pulse_animations)
  */
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View } from '../types';
+import { useWallet } from '../src/contexts/WalletContext';
+import { supabase } from '../src/utils/supabase';
 
 /**
  * Mobile breakpoint hook. < 768px = phone/PWA layout (bottom tab bar, no
@@ -47,6 +49,7 @@ type NavItem = {
 // string (SVG handles multiple M commands in one path correctly).
 const ICON_PATHS = {
   home: 'm3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM9 22V12h6v10',
+  play: 'M6 3.5v17a1 1 0 0 0 1.54.84l13-8.5a1 1 0 0 0 0-1.68l-13-8.5A1 1 0 0 0 6 3.5z',
   trophy:
     'M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22M18 2H6v7a6 6 0 0 0 12 0V2Z',
   swords:
@@ -58,7 +61,7 @@ const ICON_PATHS = {
   crown:
     'M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294L11.562 3.266zM5 21h14',
   podium:
-    'M9 11h6v11h-6zM2 14h6v8H2zM16 17h6v5h-6zM12 1l1.18 2.39l2.64.38l-1.91 1.86l.45 2.63L12 7.02L9.64 8.26l.45-2.63L8.18 3.77l2.64-.38z',
+    'M9 11h6v11h-6zM2 14h6v8H2zM16 14h6v8h-6zM12 1l1.18 2.39l2.64.38l-1.91 1.86l.45 2.63L12 7.02L9.64 8.26l.45-2.63L8.18 3.77l2.64-.38z',
   target:
     'M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0M6 12a6 6 0 1 0 12 0a6 6 0 1 0 -12 0M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0',
   'user-plus':
@@ -249,6 +252,117 @@ const SOCIAL_LINKS = {
   telegram: 'https://t.me/Sol_Trivia',
 };
 
+/**
+ * Connected-wallet pill in the topbar. Tap to reveal a Disconnect popover.
+ * Available to every connected user regardless of wallet provider.
+ */
+function WalletPill({
+  handle,
+  avatarUrl,
+  accent,
+  variant,
+  onDisconnect,
+}: {
+  handle: string;
+  avatarUrl?: string | null;
+  accent: string;
+  variant: 'mobile' | 'desktop';
+  onDisconnect: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const size = variant === 'desktop' ? 22 : 26;
+  const isImg = !!avatarUrl && /^(https?:|data:)/.test(avatarUrl);
+  const isEmoji = !!avatarUrl && !isImg && avatarUrl.length <= 4;
+  const avatar = isImg ? (
+    <img
+      src={avatarUrl as string}
+      alt=""
+      style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', display: 'block' }}
+    />
+  ) : (
+    <span
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: accent,
+        color: '#000',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: variant === 'desktop' ? 11 : 12,
+        fontWeight: 900,
+      }}
+    >
+      {isEmoji ? avatarUrl : (handle[0] || '?').toUpperCase()}
+    </span>
+  );
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-2 rounded-full active:opacity-90"
+        style={{
+          background: variant === 'desktop' ? '#0a0a0a' : 'transparent',
+          border: variant === 'desktop' ? '1px solid rgba(255,255,255,0.1)' : 'none',
+          padding: variant === 'desktop' ? '5px 12px' : 0,
+          cursor: 'pointer',
+        }}
+      >
+        {variant === 'desktop' && (
+          <span className="font-black italic uppercase" style={{ fontSize: 10, color: '#a1a1aa', letterSpacing: '0.14em' }}>
+            @{handle}
+          </span>
+        )}
+        {avatar}
+      </button>
+      {open && (
+        <>
+          {/* click-away backdrop */}
+          <span
+            onClick={() => setOpen(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 60, cursor: 'default' }}
+          />
+          <span
+            style={{
+              position: 'absolute',
+              top: '120%',
+              right: 0,
+              zIndex: 61,
+              background: '#0a0a0a',
+              border: '1px solid rgba(255,49,49,0.4)',
+              borderRadius: 10,
+              padding: 4,
+              minWidth: 150,
+              boxShadow: '0 10px 30px -8px rgba(0,0,0,0.8)',
+            }}
+          >
+            <button
+              onClick={() => {
+                setOpen(false);
+                onDisconnect();
+              }}
+              className="w-full font-black italic uppercase rounded-lg active:opacity-90"
+              style={{
+                background: 'rgba(255,49,49,0.1)',
+                color: '#FF3131',
+                border: 'none',
+                padding: '9px 12px',
+                fontSize: 11,
+                letterSpacing: '0.14em',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              ✕ Disconnect
+            </button>
+          </span>
+        </>
+      )}
+    </span>
+  );
+}
+
 export function WebShell({
   activeView,
   onNav,
@@ -294,7 +408,7 @@ export function WebShell({
           : undefined,
     },
     { id: 'play', label: 'FREE PLAY', view: View.PLAY, iconPath: 'gamepad-2' },
-    { id: 'ranks', label: 'RANKS', view: View.LEADERBOARD, iconPath: 'podium' },
+    { id: 'ranks', label: 'LEADERBOARD', view: View.LEADERBOARD, iconPath: 'podium' },
     {
       id: 'quests',
       label: 'QUESTS',
@@ -333,6 +447,43 @@ export function WebShell({
     ? `${walletAddress.slice(0, 4)}…${walletAddress.slice(-4)}`
     : null;
 
+  const { disconnect } = useWallet();
+  const handleDisconnect = async () => {
+    try {
+      await disconnect();
+    } catch {
+      /* MWA/provider may throw if session already cleared — safe to swallow */
+    }
+  };
+
+  // Display the player's username as their handle, falling back to the short
+  // wallet when they haven't set one yet.
+  const [username, setUsername] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!walletAddress) {
+      setUsername(null);
+      setAvatarUrl(null);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('player_profiles')
+      .select('username, avatar_url')
+      .eq('wallet_address', walletAddress)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const row = data as { username?: string; avatar_url?: string } | null;
+        setUsername(row?.username || null);
+        setAvatarUrl(row?.avatar_url || null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [walletAddress]);
+  const walletHandle = username || walletShort || '';
+
   const isMobile = useIsMobile();
 
   // Mobile bottom-tab destinations, mirroring the native dApp's bottom nav
@@ -341,8 +492,8 @@ export function WebShell({
   const bottomNavItems: NavItem[] = [
     { id: 'home', label: 'HOME', view: View.HOME, iconPath: 'home' },
     { id: 'quests', label: 'QUESTS', view: View.QUESTS, iconPath: 'bullseye' },
-    { id: 'play', label: 'PLAY', view: View.COMPETE_LOBBY, iconPath: 'swords' },
-    { id: 'ranks', label: 'RANKS', view: View.LEADERBOARD, iconPath: 'podium' },
+    { id: 'play', label: 'PLAY', view: View.COMPETE_LOBBY, iconPath: 'play' },
+    { id: 'ranks', label: 'LEADERBOARD', view: View.LEADERBOARD, iconPath: 'podium' },
     { id: 'profile', label: 'PROFILE', view: View.PROFILE, iconPath: 'user-circle' },
   ];
 
@@ -404,22 +555,7 @@ export function WebShell({
             </span>
           </span>
           {walletShort ? (
-            <span
-              style={{
-                width: 26,
-                height: 26,
-                borderRadius: '50%',
-                background: accent,
-                color: '#000',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 12,
-                fontWeight: 900,
-              }}
-            >
-              {walletShort[0].toUpperCase()}
-            </span>
+            <WalletPill handle={walletHandle} avatarUrl={avatarUrl} accent={accent} variant="mobile" onDisconnect={handleDisconnect} />
           ) : (
             <button
               onClick={onConnect}
@@ -815,41 +951,7 @@ export function WebShell({
             </button>
           ) : null}
           {walletShort ? (
-            <span
-              className="inline-flex items-center gap-2 rounded-full"
-              style={{
-                background: '#0a0a0a',
-                border: '1px solid rgba(255,255,255,0.1)',
-                padding: '5px 12px',
-              }}
-            >
-              <span
-                className="font-black italic uppercase"
-                style={{
-                  fontSize: 10,
-                  color: '#a1a1aa',
-                  letterSpacing: '0.14em',
-                }}
-              >
-                @{walletShort}
-              </span>
-              <span
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: '50%',
-                  background: accent,
-                  color: '#000',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 11,
-                  fontWeight: 900,
-                }}
-              >
-                {walletShort[0].toUpperCase()}
-              </span>
-            </span>
+            <WalletPill handle={walletHandle} avatarUrl={avatarUrl} accent={accent} variant="desktop" onDisconnect={handleDisconnect} />
           ) : (
             <button
               onClick={onConnect}
