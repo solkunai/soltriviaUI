@@ -990,6 +990,218 @@ export async function getTotalSolWonByWallets(walletAddresses: string[]): Promis
   return out;
 }
 
+/** A single row in a mode-specific (rounds/duels/custom) SOL-won leaderboard. */
+export interface ModeLeaderboardRow {
+  wallet_address: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  sol_lamports: number;
+  wins: number;
+}
+
+/**
+ * Real SOL-won leaderboard for the ROUNDS / DUELS / CUSTOM tabs, aggregated
+ * client-side from the source tables and joined to player_profiles. No EF —
+ * these mode leaderboards don't exist server-side yet.
+ */
+export async function getModeLeaderboard(
+  mode: 'rounds' | 'duels' | 'custom',
+  limit = 25,
+): Promise<ModeLeaderboardRow[]> {
+  if (!isSupabaseConfigured) return [];
+  const tally = new Map<string, { lamports: number; wins: number }>();
+  const add = (w: string | null | undefined, lamports: number) => {
+    if (!w) return;
+    const cur = tally.get(w) ?? { lamports: 0, wins: 0 };
+    cur.lamports += lamports;
+    cur.wins += 1;
+    tally.set(w, cur);
+  };
+
+  if (mode === 'rounds') {
+    const { data } = await supabase
+      .from('round_payouts')
+      .select('wallet_address, prize_lamports, paid_lamports')
+      .limit(5000);
+    for (const r of (data ?? []) as any[]) {
+      add(r.wallet_address, Number(r.paid_lamports ?? r.prize_lamports ?? 0) || 0);
+    }
+  } else if (mode === 'duels') {
+    const { data } = await supabase
+      .from('duels')
+      .select('winner_wallet, total_pot_lamports, entry_fee_lamports')
+      .in('status', ['completed', 'resolved'])
+      .not('winner_wallet', 'is', null)
+      .limit(5000);
+    for (const d of (data ?? []) as any[]) {
+      const pot = Number(d.total_pot_lamports ?? 0) || Number(d.entry_fee_lamports ?? 0) * 2;
+      add(d.winner_wallet, pot);
+    }
+  } else {
+    const { data } = await supabase
+      .from('custom_games')
+      .select('winner_wallets, winner_amounts')
+      .eq('status', 'finalized')
+      .limit(5000);
+    for (const g of (data ?? []) as any[]) {
+      const wallets: string[] = g.winner_wallets ?? [];
+      const amounts: number[] = g.winner_amounts ?? [];
+      wallets.forEach((w, i) => add(w, Number(amounts[i] ?? 0) || 0));
+    }
+  }
+
+  const sorted = [...tally.entries()]
+    .map(([wallet_address, v]) => ({ wallet_address, sol_lamports: v.lamports, wins: v.wins }))
+    .sort((a, b) => b.sol_lamports - a.sol_lamports)
+    .slice(0, limit);
+  if (sorted.length === 0) return [];
+
+  const wallets = sorted.map((s) => s.wallet_address);
+  const { data: profs } = await supabase
+    .from('player_profiles')
+    .select('wallet_address, username, avatar_url')
+    .in('wallet_address', wallets);
+  const byWallet = Object.fromEntries((profs ?? []).map((p: any) => [p.wallet_address, p]));
+
+  return sorted.map((s) => ({
+    wallet_address: s.wallet_address,
+    display_name: byWallet[s.wallet_address]?.username ?? null,
+    avatar_url: byWallet[s.wallet_address]?.avatar_url ?? null,
+    sol_lamports: s.sol_lamports,
+    wins: s.wins,
+  }));
+}
+
+// ─── Global Live Feed ─────────────────────────────────────────────────────
+
+export type LiveFeedKind = 'win' | 'place' | 'xp' | 'duel_win' | 'duel_new' | 'streak';
+
+export interface LiveFeedItem {
+  id: string;
+  text: string;
+  kind: LiveFeedKind;
+  highlight: boolean;
+  at: number;
+}
+
+const STREAK_MILESTONES = [5, 10, 25, 50, 100];
+
+/**
+ * Aggregate recent global activity for the Home live feed: round XP + SOL
+ * payouts, duel wins, freshly opened duels, and active streaks. Reads public
+ * tables and joins player_profiles for display names. Poll it for "real-time".
+ */
+export async function getLiveFeed(limit = 14): Promise<LiveFeedItem[]> {
+  if (!isSupabaseConfigured) return [];
+
+  const [gsRes, duelWonRes, duelNewRes, customRes, streakRes] = await Promise.all([
+    supabase
+      .from('game_sessions')
+      .select('wallet_address, score, rank, payout_lamports, finished_at, daily_rounds(round_number)')
+      .not('finished_at', 'is', null)
+      .order('finished_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('duels')
+      .select('duel_id, winner_wallet, total_pot_lamports, resolved_at')
+      .in('status', ['completed', 'resolved'])
+      .not('winner_wallet', 'is', null)
+      .not('resolved_at', 'is', null)
+      .order('resolved_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('duels')
+      .select('duel_id, player1_wallet, entry_fee_lamports, created_at')
+      .eq('status', 'waiting')
+      .order('created_at', { ascending: false })
+      .limit(8),
+    supabase
+      .from('custom_game_sessions')
+      .select('wallet_address, score, finished_at, custom_games(name)')
+      .not('finished_at', 'is', null)
+      .order('finished_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('player_profiles')
+      .select('wallet_address, current_streak, last_activity_date')
+      .gte('current_streak', 5)
+      .order('last_activity_date', { ascending: false })
+      .limit(10),
+  ]);
+
+  // Collect every wallet that appears, fetch display names in one query.
+  const wallets = new Set<string>();
+  for (const g of (gsRes.data ?? []) as any[]) if (g.wallet_address) wallets.add(g.wallet_address);
+  for (const d of (duelWonRes.data ?? []) as any[]) if (d.winner_wallet) wallets.add(d.winner_wallet);
+  for (const d of (duelNewRes.data ?? []) as any[]) if (d.player1_wallet) wallets.add(d.player1_wallet);
+  for (const c of (customRes.data ?? []) as any[]) if (c.wallet_address) wallets.add(c.wallet_address);
+  for (const p of (streakRes.data ?? []) as any[]) if (p.wallet_address) wallets.add(p.wallet_address);
+
+  let nameByWallet: Record<string, string> = {};
+  if (wallets.size > 0) {
+    const { data: profs } = await supabase
+      .from('player_profiles')
+      .select('wallet_address, username')
+      .in('wallet_address', [...wallets]);
+    nameByWallet = Object.fromEntries(
+      (profs ?? []).map((p: any) => [p.wallet_address, p.username || null]),
+    );
+  }
+  const name = (w: string) =>
+    nameByWallet[w] ? `@${String(nameByWallet[w]).replace(/^@/, '')}` : `${w.slice(0, 4)}…${w.slice(-4)}`;
+
+  const items: LiveFeedItem[] = [];
+
+  for (const g of (gsRes.data ?? []) as any[]) {
+    if (!g.finished_at) continue;
+    const at = new Date(g.finished_at).getTime();
+    const roundNum = g.daily_rounds ? (g.daily_rounds.round_number ?? 0) + 1 : null;
+    const roundTag = roundNum ? ` · Round #${roundNum}` : '';
+    const sol = (g.payout_lamports ?? 0) / 1_000_000_000;
+    if (sol > 0) {
+      items.push({ id: `gs-win-${g.wallet_address}-${at}`, text: `${name(g.wallet_address)} won ${sol.toFixed(3)} SOL${roundTag}`, kind: 'win', highlight: true, at });
+    } else if (g.rank != null && g.rank <= 5) {
+      items.push({ id: `gs-place-${g.wallet_address}-${at}`, text: `${name(g.wallet_address)} placed #${g.rank}${roundTag}`, kind: 'place', highlight: false, at });
+    } else if (g.score != null) {
+      items.push({ id: `gs-xp-${g.wallet_address}-${at}`, text: `${name(g.wallet_address)} earned ${Number(g.score).toLocaleString()} XP${roundTag}`, kind: 'xp', highlight: false, at });
+    }
+  }
+
+  for (const d of (duelWonRes.data ?? []) as any[]) {
+    if (!d.resolved_at) continue;
+    const at = new Date(d.resolved_at).getTime();
+    const sol = (d.total_pot_lamports ?? 0) / 1_000_000_000;
+    items.push({ id: `duel-win-${d.duel_id}`, text: `${name(d.winner_wallet)} won a duel · +${sol.toFixed(3)} SOL`, kind: 'duel_win', highlight: true, at });
+  }
+
+  for (const d of (duelNewRes.data ?? []) as any[]) {
+    if (!d.created_at) continue;
+    const at = new Date(d.created_at).getTime();
+    const sol = (d.entry_fee_lamports ?? 0) / 1_000_000_000;
+    items.push({ id: `duel-new-${d.duel_id}`, text: `${name(d.player1_wallet)} opened a ${sol.toFixed(2)} SOL duel`, kind: 'duel_new', highlight: false, at });
+  }
+
+  for (const c of (customRes.data ?? []) as any[]) {
+    if (!c.finished_at) continue;
+    const at = new Date(c.finished_at).getTime();
+    const game = c.custom_games?.name ?? 'a custom game';
+    if (c.score != null) {
+      items.push({ id: `custom-${c.wallet_address}-${at}`, text: `${name(c.wallet_address)} scored ${Number(c.score).toLocaleString()} in ${game}`, kind: 'xp', highlight: false, at });
+    }
+  }
+
+  for (const p of (streakRes.data ?? []) as any[]) {
+    const streak = Number(p.current_streak) || 0;
+    if (streak < 5) continue;
+    const isMilestone = STREAK_MILESTONES.includes(streak);
+    const at = p.last_activity_date ? new Date(p.last_activity_date).getTime() : 0;
+    items.push({ id: `streak-${p.wallet_address}`, text: `${name(p.wallet_address)} on a ${streak}-day streak`, kind: 'streak', highlight: isMilestone, at });
+  }
+
+  items.sort((a, b) => b.at - a.at);
+  return items.slice(0, limit);
+}
+
 /** Round payout for a wallet with date/round_number for on-chain claim (contract round_id). */
 export interface ClaimablePayout {
   round_id: string;

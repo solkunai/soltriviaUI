@@ -15,7 +15,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { useIsMobile } from '../src/hooks/useIsMobile';
-import { getCurrentRoundKey } from '../src/utils/api';
+import { getCurrentRoundKey, getLiveFeed, type LiveFeedItem } from '../src/utils/api';
 import {
   fetchTierRound,
   contractRoundIdFromDateAndNumber,
@@ -87,13 +87,26 @@ export function HomeRightRail({
   onBuyLives?: () => void;
 }) {
   const livesCount = lives ?? 0;
-  // Mocked feed for v1. Wire to real ticker_events / recent activity later.
-  const feed = [
-    { text: '@nftking won 0.124 SOL', highlight: true },
-    { text: '@bonkmaxi earned 4,200 XP · Round #14' },
-    { text: '@trivia_king on a 5-streak' },
-    { text: '@anchor_legend cleared Web3' },
-  ];
+  // Real global activity, polled every 12s so the feed moves as people play.
+  const [feed, setFeed] = useState<LiveFeedItem[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    const load = () => {
+      getLiveFeed(8)
+        .then((items) => {
+          if (mounted) setFeed(items);
+        })
+        .catch(() => {
+          /* keep last */
+        });
+    };
+    load();
+    const id = setInterval(load, 12_000);
+    return () => {
+      mounted = false;
+      clearInterval(id);
+    };
+  }, []);
   return (
     <div className="flex flex-col" style={{ gap: 16 }}>
       {/* Position card */}
@@ -169,35 +182,41 @@ export function HomeRightRail({
         >
           LIVE FEED
         </div>
-        {feed.map((f, i) => (
-          <div
-            key={i}
-            className="flex items-start gap-2 py-1.5"
-            style={{
-              borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
-            }}
-          >
-            <span
-              className="flex-shrink-0"
+        {feed.length === 0 ? (
+          <div className="py-2" style={{ fontSize: 12, color: '#52525b', lineHeight: 1.4 }}>
+            Waiting for the next move…
+          </div>
+        ) : (
+          feed.map((f, i) => (
+            <div
+              key={f.id}
+              className="flex items-start gap-2 py-1.5"
               style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                background: f.highlight ? '#14F195' : '#52525b',
-                marginTop: 5,
-              }}
-            />
-            <span
-              style={{
-                fontSize: 12,
-                color: f.highlight ? '#fff' : '#a1a1aa',
-                lineHeight: 1.4,
+                borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
               }}
             >
-              {f.text}
-            </span>
-          </div>
-        ))}
+              <span
+                className="flex-shrink-0"
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: f.highlight ? '#14F195' : '#52525b',
+                  marginTop: 5,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: 12,
+                  color: f.highlight ? '#fff' : '#a1a1aa',
+                  lineHeight: 1.4,
+                }}
+              >
+                {f.text}
+              </span>
+            </div>
+          ))
+        )}
       </div>
 
       {/* Lives card */}

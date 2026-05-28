@@ -1,7 +1,7 @@
 /**
  * CustomGamesViewV2 — web W5 (browse). Editorial header + blue CREATE
  * gradient hero + JOIN BY CODE input + OFFICIAL gold strip + filter tabs
- * + 3-col room grid. Mock data for v1.
+ * + 3-col room grid. Real data via custom_games (active + ended).
  */
 import React, { useState, useEffect } from 'react';
 import { useIsMobile } from '../src/hooks/useIsMobile';

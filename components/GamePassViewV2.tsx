@@ -18,7 +18,6 @@ const PERKS = [
   { t: 'Unlimited daily practice', d: 'No lives used, endless rounds' },
   { t: 'All 7 categories unlocked', d: 'Sports · Web3 · Sci-Tech · etc' },
   { t: '10% off all lives', d: 'Forever, stacks every purchase' },
-  { t: 'Pass-only weekly leagues', d: 'Private boards · 0.5 SOL pools' },
   { t: '+25% XP every round', d: 'Climb all-time ranks faster' },
   { t: 'Custom game discount', d: 'Create rooms for 0.003 SOL' },
 ];

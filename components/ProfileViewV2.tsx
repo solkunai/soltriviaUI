@@ -12,9 +12,9 @@
  *       - ACCOUNT cards: Lives / Game Pass / Referral claimable / Socials
  *       - RECENT ACTIVITY list
  *
- * Real data is plumbed via props from App.tsx. Stats and activity are mocked
- * for now and will get wired in a follow-up. Existing ProfileView still owns
- * claim/refund/export/notification logic until those sections are ported.
+ * Real data: stats fall back from props → fetched player_stats → '—', recent
+ * activity merges game_sessions + duels + custom_game_sessions, claims/refunds
+ * filtered by on-chain truth via claims.ts wrappers.
  */
 import React, { useEffect, useState } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';

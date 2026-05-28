@@ -1,15 +1,21 @@
 /**
  * LeaderboardViewV2 — web W10. Editorial header + filter tabs + total pool
  * chip + 5-place Olympic podium (5-3-1-2-4) + list for ranks 6+.
- * Mock data for v1.
+ *
+ * Real data:
+ *   ALL-TIME / THIS WEEK → getLeaderboard (XP) + getTotalSolWonByWallets (SOL).
+ *   ROUNDS / DUELS / CUSTOM → getModeLeaderboard (SOL won + wins per wallet).
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useIsMobile } from '../src/hooks/useIsMobile';
+import { useWallet } from '../src/contexts/WalletContext';
+import { getLeaderboard, getTotalSolWonByWallets, getModeLeaderboard } from '../src/utils/api';
 
 type Player = {
   rank: number;
   user: string;
-  xp: number;
+  /** Primary green metric: XP for global tabs, win-count for mode tabs. */
+  metric: number;
   sol: number;
   games: number;
   avatar: string;
@@ -17,51 +23,35 @@ type Player = {
   badge?: string;
 };
 
-const PODIUM: Player[] = [
-  { rank: 1, user: '@solana_sage', xp: 48230, sol: 2.418, games: 152, avatar: '#FFC857', col: '#FFD700', badge: '🥇' },
-  { rank: 2, user: '@trivia_king', xp: 42100, sol: 1.892, games: 128, avatar: '#FACC15', col: '#a1a1aa', badge: '🥈' },
-  { rank: 3, user: '@anchor_legend', xp: 38950, sol: 1.674, games: 118, avatar: '#A78BFA', col: '#fb923c', badge: '🥉' },
-  { rank: 4, user: '@seeker_pro', xp: 35780, sol: 1.421, games: 110, avatar: '#22D3EE', col: '#22D3EE' },
-  { rank: 5, user: '@phantom_user', xp: 32500, sol: 1.189, games: 98, avatar: '#F472B6', col: '#F472B6' },
-];
-
-const LIST_BELOW = [
-  { rank: 6, user: '@bonk_hodler', xp: 28910, sol: 0.967, games: 89, avatar: '#fb923c' },
-  { rank: 7, user: '@defi_degen', xp: 27420, sol: 0.882, games: 84, avatar: '#22D3EE' },
-  { rank: 8, user: '@apemaxi', xp: 24210, sol: 0.612, games: 72, avatar: '#FACC15' },
-  { rank: 9, user: '@nftking', xp: 22890, sol: 0.541, games: 68, avatar: '#FFC857' },
-  { rank: 10, user: '@degenmaxi', xp: 21340, sol: 0.491, games: 64, avatar: '#F472B6' },
-];
-
 const TABS = ['ALL-TIME', 'ROUNDS', 'DUELS', 'CUSTOM', 'THIS WEEK'] as const;
+type Tab = (typeof TABS)[number];
 
-function PodiumColumn({ player }: { player: Player }) {
+const SOL = 1_000_000_000;
+const PODIUM_COLS = ['#FFD700', '#a1a1aa', '#fb923c', '#22D3EE', '#F472B6'];
+const BADGES = ['🥇', '🥈', '🥉'];
+const AVATAR_COLORS = ['#FFC857', '#FF8C42', '#A78BFA', '#22D3EE', '#FACC15', '#F472B6', '#14F195'];
+
+function shortWallet(w: string): string {
+  return `${w.slice(0, 4)}…${w.slice(-4)}`;
+}
+function colorFor(w: string): string {
+  let h = 0;
+  for (let i = 0; i < w.length; i++) h = (h * 31 + w.charCodeAt(i)) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[h];
+}
+
+function PodiumColumn({ player, isMode }: { player: Player; isMode: boolean }) {
   const isFirst = player.rank === 1;
   const isTop3 = player.rank <= 3;
   const blockH = player.rank === 1 ? 132 : player.rank === 2 || player.rank === 3 ? 88 : 52;
   return (
     <div className="flex flex-col items-center">
-      {/* Player card */}
       <div
         className="w-full text-center relative rounded-xl"
-        style={{
-          background: '#0c0c0c',
-          border: `1.5px solid ${player.col}`,
-          padding: '12px 10px',
-          marginBottom: 6,
-        }}
+        style={{ background: '#0c0c0c', border: `1.5px solid ${player.col}`, padding: '12px 10px', marginBottom: 6 }}
       >
         {isTop3 ? (
-          <div
-            style={{
-              position: 'absolute',
-              top: -12,
-              left: 0,
-              right: 0,
-              textAlign: 'center',
-              fontSize: 20,
-            }}
-          >
+          <div style={{ position: 'absolute', top: -12, left: 0, right: 0, textAlign: 'center', fontSize: 20 }}>
             {player.badge}
           </div>
         ) : null}
@@ -75,50 +65,27 @@ function PodiumColumn({ player }: { player: Player }) {
             border: `2px solid ${player.col}`,
           }}
         />
-        <div
-          className="font-black italic uppercase mt-2 truncate"
-          style={{ fontSize: 9, color: '#fff', letterSpacing: '0.12em' }}
-        >
+        <div className="font-black italic uppercase mt-2 truncate" style={{ fontSize: 9, color: '#fff', letterSpacing: '0.12em' }}>
           {player.user}
         </div>
         <div
           className="font-black italic mt-1"
-          style={{
-            fontSize: isFirst ? 16 : 13,
-            color: '#14F195',
-            fontVariantNumeric: 'tabular-nums',
-            letterSpacing: '-0.02em',
-          }}
+          style={{ fontSize: isFirst ? 16 : 13, color: '#14F195', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}
         >
-          {player.xp.toLocaleString()}
+          {isMode ? `${player.metric} ${player.metric === 1 ? 'WIN' : 'WINS'}` : player.metric.toLocaleString()}
         </div>
         <div
           className="font-black italic uppercase mt-0.5"
-          style={{
-            fontSize: 8,
-            color: '#FFD700',
-            fontVariantNumeric: 'tabular-nums',
-            letterSpacing: '0.14em',
-          }}
+          style={{ fontSize: 8, color: '#FFD700', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.14em' }}
         >
           {player.sol.toFixed(3)} SOL
         </div>
       </div>
-      {/* Block */}
       <div
         className="w-full flex items-start justify-center relative overflow-hidden"
-        style={{
-          height: blockH,
-          background: player.col,
-          borderTopLeftRadius: 8,
-          borderTopRightRadius: 8,
-          paddingTop: isFirst ? 12 : 8,
-        }}
+        style={{ height: blockH, background: player.col, borderTopLeftRadius: 8, borderTopRightRadius: 8, paddingTop: isFirst ? 12 : 8 }}
       >
-        <div
-          className="absolute left-0 right-0 top-0"
-          style={{ height: 3, background: 'rgba(255,255,255,0.35)' }}
-        />
+        <div className="absolute left-0 right-0 top-0" style={{ height: 3, background: 'rgba(255,255,255,0.35)' }} />
         <span
           className="font-black italic"
           style={{
@@ -136,30 +103,90 @@ function PodiumColumn({ player }: { player: Player }) {
 }
 
 const LeaderboardViewV2: React.FC = () => {
-  const [tab, setTab] = useState<(typeof TABS)[number]>('ALL-TIME');
+  const { publicKey } = useWallet();
+  const walletAddress = publicKey?.toBase58() ?? null;
+  const [tab, setTab] = useState<Tab>('ALL-TIME');
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
   const isMobile = useIsMobile();
-  // Mobile drops the SOL EARNED + GAMES columns so the row fits a phone.
-  const listCols = isMobile ? '24px 30px 1fr 64px' : '30px 36px 1fr 100px 120px 80px';
+
+  const isMode = tab === 'ROUNDS' || tab === 'DUELS' || tab === 'CUSTOM';
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        let mapped: Player[] = [];
+        if (tab === 'ALL-TIME' || tab === 'THIS WEEK') {
+          const period = tab === 'THIS WEEK' ? 'weekly' : 'all';
+          const resp = await getLeaderboard(undefined, walletAddress || undefined, period);
+          const entries = resp.leaderboard ?? [];
+          const solMap = entries.length
+            ? await getTotalSolWonByWallets(entries.map((e) => e.wallet_address)).catch(() => ({}))
+            : {};
+          mapped = entries.map((e, i) => ({
+            rank: e.rank ?? i + 1,
+            user: e.display_name || shortWallet(e.wallet_address),
+            metric: e.score,
+            sol: (solMap[e.wallet_address] ?? 0) / SOL,
+            games: e.games_played ?? 0,
+            avatar: e.avatar_bg_color || colorFor(e.wallet_address),
+            col: i < 5 ? PODIUM_COLS[i] : '#a1a1aa',
+            badge: i < 3 ? BADGES[i] : undefined,
+          }));
+        } else {
+          const mode = tab === 'ROUNDS' ? 'rounds' : tab === 'DUELS' ? 'duels' : 'custom';
+          const rows = await getModeLeaderboard(mode);
+          mapped = rows.map((r, i) => ({
+            rank: i + 1,
+            user: r.display_name || shortWallet(r.wallet_address),
+            metric: r.wins,
+            sol: r.sol_lamports / SOL,
+            games: r.wins,
+            avatar: colorFor(r.wallet_address),
+            col: i < 5 ? PODIUM_COLS[i] : '#a1a1aa',
+            badge: i < 3 ? BADGES[i] : undefined,
+          }));
+        }
+        if (!cancelled) setPlayers(mapped);
+      } catch {
+        if (!cancelled) setPlayers([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, walletAddress]);
+
+  const podium = players.slice(0, 5);
+  const listBelow = players.slice(5);
+  const totalSol = players.reduce((sum, p) => sum + p.sol, 0);
 
   const podiumOrder = [5, 3, 1, 2, 4];
   const podiumOrdered = podiumOrder
-    .map((r) => PODIUM.find((p) => p.rank === r))
+    .map((r) => podium.find((p) => p.rank === r))
     .filter(Boolean) as Player[];
+
+  // Mobile drops the GAMES column. Mode tabs swap XP→WINS and drop GAMES.
+  const listCols = isMode
+    ? isMobile
+      ? '24px 30px 1fr 64px 70px'
+      : '30px 36px 1fr 100px 120px'
+    : isMobile
+      ? '24px 30px 1fr 64px'
+      : '30px 36px 1fr 100px 120px 80px';
 
   return (
     <div className="max-w-5xl">
       {/* Header */}
       <div className="mb-5">
-        <div
-          className="font-black italic uppercase"
-          style={{ fontSize: 10, color: '#14F195', letterSpacing: '0.18em' }}
-        >
+        <div className="font-black italic uppercase" style={{ fontSize: 10, color: '#14F195', letterSpacing: '0.18em' }}>
           GLOBAL · WORLDWIDE
         </div>
-        <h1
-          className="font-black italic uppercase mt-1 text-white"
-          style={{ fontSize: 42, lineHeight: 0.95, letterSpacing: '-0.02em' }}
-        >
+        <h1 className="font-black italic uppercase mt-1 text-white" style={{ fontSize: 42, lineHeight: 0.95, letterSpacing: '-0.02em' }}>
           LEGENDS{' '}
           <span
             style={{
@@ -175,7 +202,7 @@ const LeaderboardViewV2: React.FC = () => {
       </div>
 
       {/* Tabs + total pool chip */}
-      <div className="flex items-center gap-2 mb-5">
+      <div className="flex items-center gap-2 mb-5 flex-wrap">
         {TABS.map((t) => (
           <button
             key={t}
@@ -197,155 +224,130 @@ const LeaderboardViewV2: React.FC = () => {
         <div className="flex-1" />
         <span
           className="inline-flex items-center gap-2 rounded-full"
-          style={{
-            background: '#0c0c0c',
-            border: '1px solid rgba(255,255,255,0.1)',
-            padding: '7px 14px',
-          }}
+          style={{ background: '#0c0c0c', border: '1px solid rgba(255,255,255,0.1)', padding: '7px 14px' }}
         >
-          <span
-            className="font-black italic uppercase"
-            style={{ fontSize: 9, color: '#FFD700', letterSpacing: '0.14em' }}
-          >
-            TOTAL POOL
+          <span className="font-black italic uppercase" style={{ fontSize: 9, color: '#FFD700', letterSpacing: '0.14em' }}>
+            TOTAL WON
           </span>
           <span
             className="font-black italic text-white"
-            style={{
-              fontSize: 14,
-              fontVariantNumeric: 'tabular-nums',
-              letterSpacing: '-0.02em',
-            }}
+            style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}
           >
-            12.533 SOL
+            {totalSol.toFixed(3)} SOL
           </span>
         </span>
       </div>
 
-      {/* Olympic podium */}
-      <div
-        className="mb-5"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(5, 1fr)',
-          gap: 8,
-          alignItems: 'flex-end',
-        }}
-      >
-        {podiumOrdered.map((p) => (
-          <PodiumColumn key={p.rank} player={p} />
-        ))}
-      </div>
-
-      {/* Ranks 6+ list */}
-      <div
-        className="rounded-xl overflow-hidden"
-        style={{
-          background: '#0c0c0c',
-          border: '1px solid rgba(255,255,255,0.08)',
-        }}
-      >
+      {loading ? (
         <div
-          className="font-black italic uppercase"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: listCols,
-            gap: 14,
-            alignItems: 'center',
-            padding: '10px 18px',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
-            fontSize: 9,
-            color: '#52525b',
-            letterSpacing: '0.18em',
-          }}
+          className="rounded-xl flex items-center justify-center"
+          style={{ background: '#0c0c0c', border: '1px solid rgba(255,255,255,0.08)', height: 280 }}
         >
-          <span>#</span>
-          <span />
-          <span>PLAYER</span>
-          <span style={{ textAlign: 'right' }}>XP</span>
-          {!isMobile && <span style={{ textAlign: 'right' }}>SOL EARNED</span>}
-          {!isMobile && <span style={{ textAlign: 'right' }}>GAMES</span>}
+          <span className="font-black italic uppercase" style={{ fontSize: 11, color: '#52525b', letterSpacing: '0.18em' }}>
+            LOADING…
+          </span>
         </div>
-        {LIST_BELOW.map((r, i) => (
-          <div
-            key={r.rank}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: listCols,
-              gap: 14,
-              alignItems: 'center',
-              padding: '12px 18px',
-              borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
-            }}
-          >
-            <span
-              className="font-black italic"
-              style={{
-                fontSize: 16,
-                color: '#a1a1aa',
-                letterSpacing: '-0.02em',
-                fontVariantNumeric: 'tabular-nums',
-              }}
+      ) : players.length === 0 ? (
+        <div
+          className="rounded-xl flex flex-col items-center justify-center gap-2"
+          style={{ background: '#0c0c0c', border: '1px solid rgba(255,255,255,0.08)', height: 280 }}
+        >
+          <span className="font-black italic uppercase text-white" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
+            NO LEGENDS YET
+          </span>
+          <span className="font-black italic uppercase" style={{ fontSize: 10, color: '#52525b', letterSpacing: '0.14em' }}>
+            {isMode ? 'BE THE FIRST TO WIN' : 'PLAY TO CLAIM YOUR SPOT'}
+          </span>
+        </div>
+      ) : (
+        <>
+          {/* Olympic podium */}
+          {podiumOrdered.length > 0 && (
+            <div
+              className="mb-5"
+              style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, alignItems: 'flex-end' }}
             >
-              #{r.rank}
-            </span>
-            <span
-              className="rounded-full"
-              style={{
-                width: 28,
-                height: 28,
-                background: r.avatar,
-                border: '1px solid rgba(255,255,255,0.1)',
-              }}
-            />
-            <span
-              className="font-black italic uppercase truncate text-white"
-              style={{ fontSize: 13, letterSpacing: '-0.01em' }}
-            >
-              {r.user}
-            </span>
-            <span
-              className="font-black italic"
-              style={{
-                fontSize: 14,
-                color: '#14F195',
-                textAlign: 'right',
-                fontVariantNumeric: 'tabular-nums',
-                letterSpacing: '-0.02em',
-              }}
-            >
-              {r.xp.toLocaleString()}
-            </span>
-            {!isMobile && (
-              <span
-                className="font-black italic"
+              {podiumOrdered.map((p) => (
+                <PodiumColumn key={p.rank} player={p} isMode={isMode} />
+              ))}
+            </div>
+          )}
+
+          {/* Ranks 6+ list */}
+          {listBelow.length > 0 && (
+            <div className="rounded-xl overflow-hidden" style={{ background: '#0c0c0c', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div
+                className="font-black italic uppercase"
                 style={{
-                  fontSize: 14,
-                  color: '#FFD700',
-                  textAlign: 'right',
-                  fontVariantNumeric: 'tabular-nums',
-                  letterSpacing: '-0.02em',
+                  display: 'grid',
+                  gridTemplateColumns: listCols,
+                  gap: 14,
+                  alignItems: 'center',
+                  padding: '10px 18px',
+                  borderBottom: '1px solid rgba(255,255,255,0.06)',
+                  fontSize: 9,
+                  color: '#52525b',
+                  letterSpacing: '0.18em',
                 }}
               >
-                {r.sol.toFixed(3)}
-              </span>
-            )}
-            {!isMobile && (
-              <span
-                className="font-black italic"
-                style={{
-                  fontSize: 12,
-                  color: '#71717a',
-                  textAlign: 'right',
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                {r.games}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
+                <span>#</span>
+                <span />
+                <span>PLAYER</span>
+                <span style={{ textAlign: 'right' }}>{isMode ? 'WINS' : 'XP'}</span>
+                <span style={{ textAlign: 'right' }}>SOL WON</span>
+                {!isMode && !isMobile && <span style={{ textAlign: 'right' }}>GAMES</span>}
+              </div>
+              {listBelow.map((r, i) => (
+                <div
+                  key={r.rank}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: listCols,
+                    gap: 14,
+                    alignItems: 'center',
+                    padding: '12px 18px',
+                    borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                  }}
+                >
+                  <span
+                    className="font-black italic"
+                    style={{ fontSize: 16, color: '#a1a1aa', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}
+                  >
+                    #{r.rank}
+                  </span>
+                  <span
+                    className="rounded-full"
+                    style={{ width: 28, height: 28, background: r.avatar, border: '1px solid rgba(255,255,255,0.1)' }}
+                  />
+                  <span className="font-black italic uppercase truncate text-white" style={{ fontSize: 13, letterSpacing: '-0.01em' }}>
+                    {r.user}
+                  </span>
+                  <span
+                    className="font-black italic"
+                    style={{ fontSize: 14, color: '#14F195', textAlign: 'right', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}
+                  >
+                    {r.metric.toLocaleString()}
+                  </span>
+                  <span
+                    className="font-black italic"
+                    style={{ fontSize: 14, color: '#FFD700', textAlign: 'right', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}
+                  >
+                    {r.sol.toFixed(3)}
+                  </span>
+                  {!isMode && !isMobile && (
+                    <span
+                      className="font-black italic"
+                      style={{ fontSize: 12, color: '#71717a', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+                    >
+                      {r.games}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 };
