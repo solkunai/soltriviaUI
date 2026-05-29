@@ -23,7 +23,7 @@ const WalletRequiredModal: React.FC<WalletRequiredModalProps> = ({ isOpen, onClo
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+      <div className="relative bg-[#0A0A0A] border border-white/10 rounded-2xl p-8 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -71,9 +71,9 @@ const WalletRequiredModal: React.FC<WalletRequiredModalProps> = ({ isOpen, onClo
           </button>.
         </p>
 
-        {/* Connect Button */}
-        <div className="flex justify-center mb-4">
-          <WalletConnectButton />
+        {/* Connect options — render inline + centered inside the modal (not a topbar dropdown) */}
+        <div className="mb-4">
+          <WalletConnectButton inline />
         </div>
 
         {/* Help Text */}

@@ -11,7 +11,7 @@ import { useModal as usePhantomModal } from '@phantom/react-sdk';
  * Shows "Login" when disconnected — opens dropdown with wallet + social options.
  * Shows username when connected.
  */
-const WalletConnectButton: React.FC = () => {
+const WalletConnectButton: React.FC<{ inline?: boolean }> = ({ inline = false }) => {
   const { t } = useTranslation();
   const { publicKey, connected, disconnect, connecting, wallets, select, connect, wallet, isPrivyUser } = useWallet();
   const { setVisible } = useWalletModal();
@@ -193,7 +193,8 @@ const WalletConnectButton: React.FC = () => {
   // Not connected — show login button
   if (!connected) {
     return (
-      <div className="relative" ref={loginMenuRef}>
+      <div className={inline ? 'relative w-full' : 'relative'} ref={loginMenuRef}>
+        {!inline && (
         <button
           onClick={() => setShowLoginMenu(!showLoginMenu)}
           disabled={connecting}
@@ -217,10 +218,13 @@ const WalletConnectButton: React.FC = () => {
             {connecting ? t('wallet.connecting') : 'Login'}
           </span>
         </button>
+        )}
 
-        {/* Login Options Dropdown */}
-        {showLoginMenu && (
-          <div className="fixed left-4 right-4 top-[120px] md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-[280px] bg-[#0D0D0D] border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden z-[200]">
+        {/* Login Options — dropdown in topbar, centered inline panel inside the wallet modal */}
+        {(inline || showLoginMenu) && (
+          <div className={inline
+            ? 'w-full mt-3 bg-[#0D0D0D] border border-white/10 rounded-2xl overflow-hidden'
+            : 'fixed left-4 right-4 top-[120px] md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-[280px] bg-[#0D0D0D] border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden z-[200]'}>
             <div className="px-4 py-3 border-b border-white/5">
               <span className="text-white font-black text-xs uppercase tracking-wider">Sign In</span>
             </div>

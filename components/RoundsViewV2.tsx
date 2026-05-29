@@ -16,6 +16,7 @@ import { TRIVIA_PRIZE_BPS } from '../src/utils/constants';
 interface Props {
   lives: number | null;
   walletConnected: boolean;
+  entering?: boolean;
   onStartQuiz: () => void;
   onConnectWallet: () => void;
   onOpenBuyLives: () => void;
@@ -63,6 +64,7 @@ const HOW_STEPS = [
 const RoundsViewV2: React.FC<Props> = ({
   lives,
   walletConnected,
+  entering = false,
   onStartQuiz,
   onConnectWallet,
   onOpenBuyLives,
@@ -120,6 +122,7 @@ const RoundsViewV2: React.FC<Props> = ({
       : 'ENTER ROUND →';
 
   const handleCta = () => {
+    if (entering) return;
     if (!walletConnected) onConnectWallet();
     else if (!canPlay) onOpenBuyLives();
     else onStartQuiz();
@@ -402,6 +405,7 @@ const RoundsViewV2: React.FC<Props> = ({
         </div>
         <button
           onClick={handleCta}
+          disabled={entering}
           className="font-black italic uppercase rounded-full active:opacity-90"
           style={{
             background: '#14F195',
@@ -410,10 +414,12 @@ const RoundsViewV2: React.FC<Props> = ({
             fontSize: 13,
             letterSpacing: '0.14em',
             border: 'none',
-            cursor: 'pointer',
+            cursor: entering ? 'not-allowed' : 'pointer',
+            opacity: entering ? 0.65 : 1,
+            transition: 'opacity 0.15s ease',
           }}
         >
-          {ctaLabel}
+          {entering ? 'ENTERING...' : ctaLabel}
         </button>
       </div>
     </div>

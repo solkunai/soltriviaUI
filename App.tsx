@@ -128,6 +128,10 @@ const App: React.FC = () => {
   const { connected, publicKey, sendTransaction, isPrivyUser } = useWallet();
   const { connection } = useConnection();
   const [currentView, setCurrentView] = useState<View>(viewFromPath);
+  // Round-entry in-flight guard: ref blocks instant double-taps (before re-render),
+  // state drives the button spinner/disable. Prevents the "tap again → error" bug.
+  const isEnteringRoundRef = useRef(false);
+  const [isEnteringRound, setIsEnteringRound] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [nerdMintCopied, setNerdMintCopied] = useState(false);
   const [isBuyLivesOpen, setIsBuyLivesOpen] = useState(false);
@@ -768,7 +772,11 @@ const App: React.FC = () => {
       setShowWalletRequired(true);
       return;
     }
-    
+    // Block re-entry while a round entry is already in flight (covers every call site:
+    // RoundsView CTA, results "play again", free-play "play for real"). Synchronous ref
+    // so a fast double-tap is rejected before React re-renders the disabled button.
+    if (isEnteringRoundRef.current) return;
+
     // Check if player can play (has round entries OR purchased lives)
     const roundEntriesLeft = ROUND_ENTRIES_MAX - roundEntriesUsed;
     if (roundEntriesLeft <= 0 && (lives ?? 0) <= 0) {
@@ -777,6 +785,10 @@ const App: React.FC = () => {
     }
 
     try {
+      // Lock the entry button for the whole flow (pre-checks → build → sign → confirm).
+      isEnteringRoundRef.current = true;
+      setIsEnteringRound(true);
+
       // --- Pre-flight entry cap check (BEFORE taking payment) ---
       const now = new Date();
       const today = now.toISOString().split('T')[0];
@@ -970,6 +982,11 @@ const App: React.FC = () => {
 
       // For other errors, show the message
       alert(err.message || 'Failed to start quiz. Please try again.');
+    } finally {
+      // Always unlock the entry button, whether we entered, errored, hit a cap, or the
+      // user cancelled the wallet prompt. (return inside try/catch still runs finally.)
+      isEnteringRoundRef.current = false;
+      setIsEnteringRound(false);
     }
   };
 
@@ -1675,6 +1692,8 @@ const App: React.FC = () => {
                 setIsBuyLivesOpen(true);
               }
             }}
+            onConnect={() => setShowWalletRequired(true)}
+            onOpenGuide={() => setIsGuideOpen(true)}
             rightRail={
               <HomeRightRail
                 lives={livesDisplayReady ? lives : null}
@@ -1762,6 +1781,7 @@ const App: React.FC = () => {
             <RoundsViewV2
               lives={livesDisplayReady ? lives : null}
               walletConnected={connected}
+              entering={isEnteringRound}
               onStartQuiz={handleStartQuiz}
               onConnectWallet={() => setShowWalletRequired(true)}
               onOpenBuyLives={() => {
