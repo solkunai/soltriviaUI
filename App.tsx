@@ -1678,6 +1678,7 @@ const App: React.FC = () => {
             rightRail={
               <HomeRightRail
                 lives={livesDisplayReady ? lives : null}
+                onOpenSwap={() => setIsSwapOpen(true)}
                 onBuyLives={() => {
                   if (!connected) {
                     setShowWalletRequired(true);
@@ -1750,6 +1751,7 @@ const App: React.FC = () => {
             rightRail={
               <HomeRightRail
                 lives={livesDisplayReady ? lives : null}
+                onOpenSwap={() => setIsSwapOpen(true)}
                 onBuyLives={() => {
                   if (!connected) setShowWalletRequired(true);
                   else setIsBuyLivesOpen(true);

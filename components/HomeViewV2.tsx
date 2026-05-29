@@ -83,9 +83,11 @@ function shortenWallet(w: string): string {
 export function HomeRightRail({
   lives,
   onBuyLives,
+  onOpenSwap,
 }: {
   lives: number | null;
   onBuyLives?: () => void;
+  onOpenSwap?: () => void;
 }) {
   const livesCount = lives ?? 0;
   // Real global activity, polled every 12s so the feed moves as people play.
@@ -286,6 +288,29 @@ export function HomeRightRail({
           </button>
         ) : null}
       </div>
+
+      {/* Buy NERD card — opens the Bags swap */}
+      {onOpenSwap ? (
+        <div
+          className="rounded-xl"
+          style={{ background: '#0a0a0a', border: '1px solid rgba(251,191,36,0.33)', padding: '14px 16px' }}
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-black italic uppercase" style={{ fontSize: 9, color: '#FBBF24', letterSpacing: '0.18em' }}>
+              $NERD
+            </span>
+            <img src="/token-nerd.png" alt="NERD" style={{ width: 20, height: 20, borderRadius: 10 }} />
+          </div>
+          <div style={{ fontSize: 11, color: '#a1a1aa', marginTop: 6 }}>Swap SOL ↔ NERD, in-app.</div>
+          <button
+            onClick={onOpenSwap}
+            className="w-full rounded-full font-black italic uppercase mt-3 active:opacity-90"
+            style={{ background: '#FBBF24', color: '#000', padding: '8px 12px', fontSize: 11, letterSpacing: '0.14em', border: 'none', cursor: 'pointer' }}
+          >
+            BUY NERD
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

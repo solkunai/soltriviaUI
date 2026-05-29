@@ -78,17 +78,21 @@ const ICON_PATHS = {
     'M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .963L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0Z',
 } as const;
 
+const PNG_ICON: Record<string, string> = {
+  bullseye: '/bullseye-with-arrow.png',
+  mint: '/mint/mint-icon.png',
+};
 function Icon({
   name,
   size = 18,
   color = '#a1a1aa',
 }: {
-  name: keyof typeof ICON_PATHS | 'bullseye';
+  name: keyof typeof ICON_PATHS | 'bullseye' | 'mint';
   size?: number;
   color?: string;
 }) {
   // PNG-masked icons (so they tint with the sidebar text color)
-  if (name === 'bullseye') {
+  if (PNG_ICON[name]) {
     return (
       <span
         style={{
@@ -96,8 +100,8 @@ function Icon({
           width: size,
           height: size,
           backgroundColor: color,
-          WebkitMaskImage: 'url(/bullseye-with-arrow.png)',
-          maskImage: 'url(/bullseye-with-arrow.png)',
+          WebkitMaskImage: `url(${PNG_ICON[name]})`,
+          maskImage: `url(${PNG_ICON[name]})`,
           WebkitMaskSize: 'contain',
           maskSize: 'contain',
           WebkitMaskRepeat: 'no-repeat',
@@ -427,7 +431,7 @@ export function WebShell({
 
   const accountItems: NavItem[] = [
     { id: 'pass', label: 'GAME PASS', view: View.GAME_PASS, iconPath: 'ticket' },
-    { id: 'mint', label: 'MINT NFT', view: View.MINT, iconPath: 'sparkles', sub: 'SOON' },
+    { id: 'mint', label: 'MINT NFT', view: View.MINT, iconPath: 'mint', sub: 'SOON' },
     {
       id: 'lives',
       label: 'LIVES',
