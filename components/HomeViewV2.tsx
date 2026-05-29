@@ -590,11 +590,11 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
       {onMint && (
         <button
           onClick={onMint}
-          className="w-full rounded-xl mb-3 active:opacity-90 overflow-hidden flex items-center gap-3"
+          className="w-full rounded-xl mb-3 active:opacity-90 overflow-hidden flex items-center gap-3 st-saira"
           style={{ background: 'linear-gradient(90deg,#070F26,#0E1A3D,#0A1432)', border: '1.5px solid #FBBF2466', padding: 14, cursor: 'pointer' }}
         >
           {/* Fanned mystery cards */}
-          <div className="relative flex-shrink-0" style={{ width: 86, height: 76 }}>
+          <div className="relative flex-shrink-0 overflow-hidden" style={{ width: 86, height: 76 }}>
             {[
               { img: '/mint/nft-genius.png', rot: -18, x: -22, z: 1 },
               { img: '/mint/nft-competitor.png', rot: -6, x: -7, z: 2 },
@@ -602,12 +602,11 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
               { img: '/mint/nft-champion.png', rot: 18, x: 23, z: 2 },
             ].map((c, i) => (
               <div key={i} className="absolute rounded overflow-hidden" style={{ left: '50%', top: '50%', width: 34, height: 52, marginLeft: -17, marginTop: -26, zIndex: c.z, transform: `translateX(${c.x}px) rotate(${c.rot}deg)`, border: '1.5px solid #FBBF2488' }}>
-                <img src={c.img} alt="" style={{ width: '100%', height: '130%', objectFit: 'cover', filter: 'blur(3px)' }} />
-                <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(7,15,38,0.55)' }}>
-                  <span className="font-black italic text-white" style={{ fontSize: 20 }}>?</span>
-                </div>
+                <img src={c.img} alt="" style={{ width: '100%', height: '130%', objectFit: 'cover', filter: 'blur(6px) saturate(1.2)' }} />
+                <div className="absolute inset-0" style={{ background: 'rgba(7,15,38,0.28)' }} />
               </div>
             ))}
+            <div className="st-shimmer" style={{ position: 'absolute', inset: 0 }} />
           </div>
           {/* Copy */}
           <div className="flex-1 min-w-0 text-left">
@@ -622,7 +621,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             </div>
           </div>
           {/* Arrow chip */}
-          <div className="rounded-full flex items-center justify-center flex-shrink-0 font-black italic" style={{ width: 34, height: 34, background: 'linear-gradient(135deg,#FBBF24,#E89F0F)', color: '#070F26', fontSize: 18 }}>→</div>
+          <div className="rounded-full flex items-center justify-center flex-shrink-0 font-black" style={{ width: 36, height: 36, background: 'linear-gradient(135deg,#FBBF24,#E89F0F)', color: '#070F26', fontSize: 22, lineHeight: 1 }}>→</div>
         </button>
       )}
 

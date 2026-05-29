@@ -109,17 +109,20 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
   const panelNavy = `linear-gradient(120deg, ${MTC.navyDeep}, ${MTC.navy})`;
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-5xl st-saira">
       {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 mb-5">
         <div>
-          <div className="font-black italic uppercase flex items-center gap-2" style={{ fontSize: 10, color: '#71717a', letterSpacing: '0.18em' }}>
+          <div className="font-black italic uppercase flex items-center gap-2" style={{ fontSize: 10, color: '#d4d4d8', letterSpacing: '0.18em' }}>
             <img src="/mint/mint-icon.png" alt="" style={{ width: 12, height: 12, filter: 'brightness(0) invert(1)' }} /> NFT NIGHT · COMMEMORATIVE
           </div>
-          <h1 className="font-black italic uppercase mt-1 text-white" style={{ fontSize: isMobile ? 34 : 44, lineHeight: 0.95, letterSpacing: '-0.02em' }}>
-            COLLECT <span style={{ color: ARCHETYPES.competitor.accent }}>'EM ALL</span>
+          <h1 className="font-black italic uppercase mt-1 text-white" style={{ fontSize: isMobile ? 40 : 52, lineHeight: 0.92, letterSpacing: '-0.01em' }}>
+            COLLECT{' '}
+            <span style={{ backgroundImage: 'linear-gradient(110deg,#FFD93D 0%,#FF6E3C 50%,#7CD4F5 100%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              'EM ALL
+            </span>
           </h1>
-          <p style={{ fontSize: 12.5, color: '#a1a1aa', marginTop: 8, lineHeight: 1.5, maxWidth: 620 }}>
+          <p style={{ fontSize: 12.5, color: '#e4e4e7', marginTop: 8, lineHeight: 1.5, maxWidth: 620 }}>
             Four archetypes, 25K of each. Each mint is a random reveal — on-chain forever. Max 15
             per wallet. Collect the full set to unlock the{' '}
             <span style={{ color: MTC.gold, fontWeight: 900 }}>LEGEND</span> badge.
@@ -138,7 +141,8 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
           <div className="flex items-center justify-center">
             <div style={{ position: 'relative', width: isMobile ? 190 : 240, height: isMobile ? 283 : 358 }}>
               <div style={{ position: 'absolute', inset: -16, borderRadius: 24, background: `radial-gradient(circle, ${MTC.gold}33, transparent 70%)` }} />
-              <img src={ARCHETYPES.scholar.img} alt="Mystery card" style={{ position: 'relative', width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(0.5) blur(12px)' }} />
+              <img src={ARCHETYPES.scholar.img} alt="Mystery card" style={{ position: 'relative', width: '100%', height: '100%', objectFit: 'contain', filter: 'brightness(0.55) blur(12px) saturate(1.2)' }} />
+              <div className="st-shimmer" style={{ position: 'absolute', inset: 0, borderRadius: 14 }} />
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span className="font-black italic" style={{ fontSize: isMobile ? 90 : 120, color: MTC.gold, textShadow: `0 0 40px ${MTC.gold}88` }}>?</span>
               </div>
@@ -171,12 +175,9 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
 
             {/* Pills */}
             <div className="flex flex-wrap gap-2 mt-3">
-              <div className="rounded-full flex items-center gap-2" style={{ background: 'rgba(20,241,149,0.12)', border: '1px solid rgba(20,241,149,0.5)', padding: '6px 12px' }}>
-                <img src="/seeker-badge.png" alt="Seeker" style={{ width: 15, height: 15, objectFit: 'contain' }} />
-                <span className="font-black italic uppercase" style={{ fontSize: 9, color: '#14F195', letterSpacing: '0.12em' }}>SEEKER · 50% OFF · 0.01 SOL</span>
-              </div>
-              <div className="rounded-full" style={{ border: `1px solid ${MTC.gold}55`, background: `${MTC.gold}10`, padding: '6px 12px' }}>
-                <span className="font-black italic uppercase" style={{ fontSize: 9, color: MTC.gold, letterSpacing: '0.12em' }}>GAME PASS · 1 FREE MINT</span>
+              <div className="rounded-full flex items-center gap-2" style={{ background: '#14F195', border: `1.5px solid ${MTC.gold}`, padding: '6px 12px', boxShadow: '0 0 14px rgba(20,241,149,0.45)' }}>
+                <img src="/seeker-badge.png" alt="Seeker" style={{ width: 15, height: 15, objectFit: 'contain', filter: 'brightness(0)' }} />
+                <span className="font-black italic uppercase" style={{ fontSize: 9, color: '#070F26', letterSpacing: '0.12em' }}>SEEKER · 50% OFF · 0.01 SOL</span>
               </div>
             </div>
 
@@ -199,7 +200,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
               <img src="/mint/mint-icon.png" alt="" style={{ width: 15, height: 15 }} />
               {MINT_LIVE ? `MINT NOW · ${seekerPrice} SOL →` : 'MINTING OPENS SOON'}
             </button>
-            <div className="font-black italic uppercase text-center" style={{ fontSize: 8, color: '#52525b', letterSpacing: '0.12em', marginTop: 9, lineHeight: 1.5 }}>
+            <div className="font-black italic uppercase text-center" style={{ fontSize: 8, color: '#a1a1aa', letterSpacing: '0.12em', marginTop: 9, lineHeight: 1.5 }}>
               {!MINT_LIVE && (
                 <>
                   {eligible === false ? 'PLAY A LIVE ROUND TO LOCK IN ELIGIBILITY · ' : 'ELIGIBILITY LOCKED IN · '}
@@ -221,7 +222,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
       <div className="rounded-2xl mb-5" style={{ background: panelNavy, border: `1px solid ${MTC.gold}33`, padding: '14px 18px' }}>
         <div className="flex items-end justify-between mb-2">
           <div>
-            <div className="font-black italic uppercase" style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.14em' }}>MINTED</div>
+            <div className="font-black italic uppercase" style={{ fontSize: 9, color: '#d4d4d8', letterSpacing: '0.14em' }}>MINTED</div>
             <div className="font-black italic text-white" style={{ fontSize: 22, fontVariantNumeric: 'tabular-nums' }}>
               {minted.toLocaleString()} <span style={{ fontSize: 12, color: '#3a4a78' }}>/ {MINT_SUPPLY.toLocaleString()}</span>
             </div>
@@ -243,9 +244,9 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
             <div className="font-black italic uppercase" style={{ fontSize: 9, color: MTC.gold, letterSpacing: '0.14em' }}>SET COMPLETION</div>
             <div className="font-black italic text-white" style={{ fontSize: 30, lineHeight: 1, marginTop: 2 }}>
               {collection.typesOwned}<span style={{ color: '#3a4a78' }}>/4</span>
-              <span className="font-black italic uppercase" style={{ fontSize: 11, color: '#a1a1aa', marginLeft: 8 }}>ARCHETYPES</span>
+              <span className="font-black italic uppercase" style={{ fontSize: 11, color: '#e4e4e7', marginLeft: 8 }}>ARCHETYPES</span>
             </div>
-            <div className="font-black italic uppercase" style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.1em', marginTop: 4 }}>
+            <div className="font-black italic uppercase" style={{ fontSize: 9, color: '#d4d4d8', letterSpacing: '0.1em', marginTop: 4 }}>
               {totalOwned} CARDS · {toGo > 0 ? `${toGo} ARCHETYPE${toGo > 1 ? 'S' : ''} TO GO` : 'SET COMPLETE'}
             </div>
             {/* Progress bar */}
@@ -284,7 +285,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
           <div className="font-black italic uppercase" style={{ fontSize: 10, color: MTC.gold, letterSpacing: '0.14em' }}>
             {isMobile ? '4 POSSIBLE OUTCOMES' : 'MEET THE FOUR · ARCHETYPE GALLERY'}
           </div>
-          <div className="font-black italic uppercase" style={{ fontSize: 8, color: '#52525b', letterSpacing: '0.12em' }}>
+          <div className="font-black italic uppercase" style={{ fontSize: 8, color: '#a1a1aa', letterSpacing: '0.12em' }}>
             {isMobile ? 'MAX 15 / WALLET' : 'TAP A CARD FOR TRAITS'}
           </div>
         </div>
@@ -300,7 +301,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
                   <img src={A.icon} alt="" style={{ width: 11, height: 11 }} />
                   <span className="font-black italic uppercase" style={{ fontSize: 9, color: A.accent }}>{A.label.replace('THE ', '')}</span>
                 </div>
-                <span className="font-black italic uppercase" style={{ fontSize: 8, color: '#52525b', marginTop: 2 }}>{A.rarity} · {A.supply}</span>
+                <span className="font-black italic uppercase" style={{ fontSize: 8, color: '#a1a1aa', marginTop: 2 }}>{A.rarity} · {A.supply}</span>
               </button>
             );
           })}
@@ -322,7 +323,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
               const has = n > 0;
               return (
                 <div key={k} className="rounded-xl" style={{ background: '#0a0a0a', border: `1px solid ${has ? `${MTC.gold}44` : 'rgba(255,255,255,0.08)'}`, padding: 12, opacity: has ? 1 : 0.55 }}>
-                  <div className="font-black italic uppercase" style={{ fontSize: 8, color: has ? A.accent : '#52525b', letterSpacing: '0.1em' }}>{A.element} · {A.rarity}</div>
+                  <div className="font-black italic uppercase" style={{ fontSize: 8, color: has ? A.accent : '#a1a1aa', letterSpacing: '0.1em' }}>{A.element} · {A.rarity}</div>
                   <div className="relative my-2" style={{ height: 120 }}>
                     {has && <div className="absolute rounded-lg" style={{ inset: '4px 8px', background: '#161e34', transform: 'rotate(-6deg)', border: `1px solid ${MTC.gold}33` }} />}
                     <div className="relative rounded-lg overflow-hidden h-full" style={{ border: `1.5px solid ${has ? MTC.gold : '#1f2a4d'}`, background: '#161e34' }}>
@@ -336,7 +337,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
                       )}
                     </div>
                   </div>
-                  <div className="font-black italic uppercase text-center" style={{ fontSize: 9, color: has ? '#fff' : '#52525b' }}>{has ? A.label : 'NOT YET COLLECTED'}</div>
+                  <div className="font-black italic uppercase text-center" style={{ fontSize: 9, color: has ? '#fff' : '#a1a1aa' }}>{has ? A.label : 'NOT YET COLLECTED'}</div>
                   {has && (
                     <button onClick={() => setDetail(k)} className="w-full font-black italic uppercase rounded-lg mt-2" style={{ border: `1px solid ${MTC.gold}55`, color: MTC.gold, fontSize: 8, letterSpacing: '0.12em', padding: '6px 0', cursor: 'pointer' }}>VIEW TRAITS →</button>
                   )}
@@ -350,14 +351,14 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
       {/* ── Recent mints ────────────────────────────────────────────── */}
       <div className="mb-5">
         <div className="flex items-center justify-between mb-2">
-          <div className="font-black italic uppercase" style={{ fontSize: 10, color: '#52525b', letterSpacing: '0.14em' }}>RECENT MINTS</div>
+          <div className="font-black italic uppercase" style={{ fontSize: 10, color: '#a1a1aa', letterSpacing: '0.14em' }}>RECENT MINTS</div>
           <div className="flex items-center gap-1.5">
             <span style={{ width: 6, height: 6, borderRadius: 3, background: MTC.gold, display: 'inline-block' }} />
             <span className="font-black italic uppercase" style={{ fontSize: 8, color: MTC.gold }}>{recent.length ? 'LIVE' : '—'}</span>
           </div>
         </div>
         {recent.length === 0 ? (
-          <div className="rounded-xl" style={{ background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', padding: 14, fontSize: 11, color: '#71717a' }}>No mints yet — be the first.</div>
+          <div className="rounded-xl" style={{ background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', padding: 14, fontSize: 11, color: '#d4d4d8' }}>No mints yet — be the first.</div>
         ) : isMobile ? (
           <div className="rounded-xl" style={{ background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', padding: '0 12px' }}>
             {recent.map((m, i) => {
@@ -371,7 +372,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
                     <div className="truncate" style={{ fontSize: 11, color: '#fff' }}>{m.username ? `@${m.username}` : shortWallet(m.wallet)}</div>
                     <div className="font-black italic uppercase" style={{ fontSize: 8, color: A.accent, marginTop: 1 }}>{A.label.replace('THE ', '')}</div>
                   </div>
-                  <div style={{ fontSize: 9, color: '#52525b' }}>{timeAgo(m.createdAt)}</div>
+                  <div style={{ fontSize: 9, color: '#a1a1aa' }}>{timeAgo(m.createdAt)}</div>
                 </div>
               );
             })}
@@ -491,7 +492,7 @@ function TriviaGate({ onClose, onPass }: { onClose: () => void; onPass: () => vo
             const revealed = picked !== null;
             const correct = i === q.correct;
             const pickedThis = picked === i;
-            const col = !revealed ? '#fff' : correct ? '#14F195' : pickedThis ? '#FF3131' : '#71717a';
+            const col = !revealed ? '#fff' : correct ? '#14F195' : pickedThis ? '#FF3131' : '#d4d4d8';
             return (
               <button key={i} disabled={revealed} onClick={() => pick(i)} className="flex items-center gap-2 rounded-lg" style={{ border: `1px solid ${!revealed ? 'rgba(255,255,255,0.1)' : correct ? '#14F195' : pickedThis ? '#FF3131' : 'rgba(255,255,255,0.1)'}`, padding: '10px', cursor: revealed ? 'default' : 'pointer', color: col, fontSize: 11 }}>
                 {['A', 'B', 'C', 'D'][i]} · {opt}
