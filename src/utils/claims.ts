@@ -39,6 +39,9 @@ import {
   getEntryReceiptPda,
   getCustomEntryPda,
   getDuelPda,
+  getTierVaultPda,
+  getCustomVaultPda,
+  getDuelVaultPda,
 } from './soltriviaContract';
 import { PublicKey } from '@solana/web3.js';
 
@@ -49,6 +52,7 @@ export async function fetchUnpaidRoundPayouts(
 ): Promise<ClaimablePayout[]> {
   const candidates = await fetchClaimableRoundPayouts(walletAddress).catch(() => []);
   if (candidates.length === 0) return [];
+  const minRent = await connection.getMinimumBalanceForRentExemption(0);
   const checks = await Promise.all(
     candidates.map(async (p) => {
       try {
@@ -56,6 +60,10 @@ export async function fetchUnpaidRoundPayouts(
         if (!tr) return p; // can't read on-chain → assume unclaimed, claim attempt will tell us
         // claimed[rank-1] === true means this rank has already been paid out on-chain
         if (tr.claimed?.[p.rank - 1] === true) return null;
+        // Vault-sweep guard: if admin swept the vault, claim would fail on-chain
+        const vaultInfo = await connection.getAccountInfo(getTierVaultPda(p.contract_round_id, p.tier_index ?? 0));
+        const myPrize = Number(tr.prizeAmounts?.[p.rank - 1] ?? 0);
+        if (!vaultInfo || vaultInfo.lamports - minRent < myPrize) return null;
         return p;
       } catch {
         return p;
@@ -72,11 +80,17 @@ export async function fetchUnclaimedDuelWins(
 ): Promise<MyDuelWin[]> {
   const candidates = await fetchMyDuelWins(walletAddress).catch(() => []);
   if (candidates.length === 0) return [];
+  const minRent = await connection.getMinimumBalanceForRentExemption(0);
   const checks = await Promise.all(
     candidates.map(async (d) => {
       try {
         const onChain = await fetchDuel(connection, d.duel_id);
-        return onChain && !onChain.winnerClaimed ? d : null;
+        if (!onChain || onChain.winnerClaimed) return null;
+        // Vault-sweep guard: if admin swept the vault, claim would fail on-chain
+        const vaultInfo = await connection.getAccountInfo(getDuelVaultPda(d.duel_id));
+        const winnerPrize = Number(onChain.totalPot ?? 0) - Number(onChain.houseCutLamports ?? 0);
+        if (!vaultInfo || vaultInfo.lamports - minRent < winnerPrize) return null;
+        return d;
       } catch {
         return d;
       }
@@ -92,12 +106,18 @@ export async function fetchUnclaimedCustomWins(
 ): Promise<ClaimableCustomGameWin[]> {
   const candidates = await fetchMyCustomGameWins(walletAddress).catch(() => []);
   if (candidates.length === 0) return [];
+  const minRent = await connection.getMinimumBalanceForRentExemption(0);
   const checks = await Promise.all(
     candidates.map(async (c) => {
       try {
         const onChain = await fetchCustomGame(connection, c.on_chain_game_id);
         if (!onChain) return c;
-        return onChain.claimed?.[c.winner_index] === true ? null : c;
+        if (onChain.claimed?.[c.winner_index] === true) return null;
+        // Vault-sweep guard: if admin swept the vault, claim would fail on-chain
+        const vaultInfo = await connection.getAccountInfo(getCustomVaultPda(c.on_chain_game_id));
+        const myPrize = Number(onChain.winnerAmounts?.[c.winner_index] ?? 0);
+        if (!vaultInfo || vaultInfo.lamports - minRent < myPrize) return null;
+        return c;
       } catch {
         return c;
       }
