@@ -115,7 +115,7 @@ import DuelResultsView from './components/DuelResultsView';
 import CompeteLobbyView from './components/CompeteLobbyView';
 import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, buildRoundEntryTx, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type ActiveDuel } from './src/utils/api';
 import { fetchUnpaidRoundPayouts, fetchUnclaimedCustomWins, fetchClaimableRefundEntries, fetchClaimableRefundCustoms } from './src/utils/claims';
-import { REVENUE_WALLET, ENTRY_FEE_LAMPORTS, TXN_FEE_LAMPORTS, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, V2_TIER_FEES, getReEntryFeeLamports } from './src/utils/constants';
+import { REVENUE_WALLET, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, getReEntryFeeLamports } from './src/utils/constants';
 import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildExpireDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildFundCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
@@ -862,55 +862,28 @@ const App: React.FC = () => {
         console.warn('Lives pre-check failed, proceeding anyway:', livesCheckErr);
       }
 
-      const useContractEntry = import.meta.env.VITE_USE_ENTRY_CONTRACT !== 'false';
-
-      let transaction: VersionedTransaction;
-      if (useContractEntry) {
-        // The V2 program has been initialized since Feb 2026. The initialize-program call
-        // is a paranoid no-op — wrap it so a transient failure (CORS cache, RPC blip)
-        // never blocks a real player from entering a round.
-        try {
-          await initializeProgram({
-            revenueWallet: REVENUE_WALLET,
-            useDevnet: SOLANA_NETWORK === 'devnet',
-          });
-        } catch (initErr) {
-          console.warn('initializeProgram failed (non-fatal, program is already initialized):', initErr);
-        }
-        // Atomic round entry: EF returns a tx with enter_tier_round (+ create_tier_round
-        // partial-signed by operator if PDA doesn't exist). Operator only pays PDA rent if
-        // the user actually signs and the tx confirms — fixes the "round created, nobody joins" leak.
-        const entryTxResp = await buildRoundEntryTx(publicKey.toBase58(), {
-          date: today,
-          round_number: roundNumber,
-          tier_index: tierIndex,
-          ...(SOLANA_NETWORK === 'devnet' ? { useDevnet: true } : {}),
+      // The V2 program has been initialized since Feb 2026. The initialize-program call
+      // is a paranoid no-op — wrap it so a transient failure (CORS cache, RPC blip)
+      // never blocks a real player from entering a round.
+      try {
+        await initializeProgram({
+          revenueWallet: REVENUE_WALLET,
+          useDevnet: SOLANA_NETWORK === 'devnet',
         });
-        const txBytes = Uint8Array.from(atob(entryTxResp.tx_base64), c => c.charCodeAt(0));
-        transaction = VersionedTransaction.deserialize(txBytes);
-      } else {
-        const PRIZE_POOL_WALLET = import.meta.env.VITE_PRIZE_POOL_WALLET || 'C9U6pL7FcroUBcSGQR2iCEGmAydVjzEE7ZYaJuVJuEEo';
-        const tierEntryFee = V2_TIER_FEES[tierIndex] ?? ENTRY_FEE_LAMPORTS;
-        const { blockhash } = await getRecentBlockhashWithRetry(connection);
-        const instructions = [
-          SystemProgram.transfer({
-            fromPubkey: publicKey,
-            toPubkey: new PublicKey(PRIZE_POOL_WALLET),
-            lamports: tierEntryFee,
-          }),
-          SystemProgram.transfer({
-            fromPubkey: publicKey,
-            toPubkey: new PublicKey(REVENUE_WALLET),
-            lamports: TXN_FEE_LAMPORTS,
-          }),
-        ];
-        const messageV0 = new TransactionMessage({
-          payerKey: publicKey,
-          recentBlockhash: blockhash,
-          instructions,
-        }).compileToV0Message();
-        transaction = new VersionedTransaction(messageV0);
+      } catch (initErr) {
+        console.warn('initializeProgram failed (non-fatal, program is already initialized):', initErr);
       }
+      // Atomic round entry: EF returns a tx with enter_tier_round (+ create_tier_round
+      // partial-signed by operator if PDA doesn't exist). Operator only pays PDA rent if
+      // the user actually signs and the tx confirms — fixes the "round created, nobody joins" leak.
+      const entryTxResp = await buildRoundEntryTx(publicKey.toBase58(), {
+        date: today,
+        round_number: roundNumber,
+        tier_index: tierIndex,
+        ...(SOLANA_NETWORK === 'devnet' ? { useDevnet: true } : {}),
+      });
+      const txBytes = Uint8Array.from(atob(entryTxResp.tx_base64), c => c.charCodeAt(0));
+      const transaction = VersionedTransaction.deserialize(txBytes);
 
       // Debug: simulate transaction to get detailed error before wallet sends
       try {

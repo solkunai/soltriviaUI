@@ -14,7 +14,6 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_ANON_KEY?: string;
   readonly VITE_SUPABASE_FUNCTIONS_URL?: string;
   readonly VITE_SOLANA_NETWORK?: string;
-  readonly VITE_PRIZE_POOL_WALLET?: string;
   readonly VITE_REVENUE_WALLET?: string;
   readonly VITE_ENTRY_FEE_LAMPORTS?: string;
   readonly VITE_TXN_FEE_LAMPORTS?: string;

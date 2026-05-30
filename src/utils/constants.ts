@@ -2,7 +2,7 @@
 export const PAID_TRIVIA_ENABLED = true;
 
 // Wallet addresses (from environment variables)
-export const PRIZE_POOL_WALLET = import.meta.env.VITE_PRIZE_POOL_WALLET || 'C9U6pL7FcroUBcSGQR2iCEGmAydVjzEE7ZYaJuVJuEEo'; // Entry fees (0.02 SOL) go here
+// Legacy V1 PRIZE_POOL_WALLET (C9U6pL7F…) removed — V2 holds prizes in on-chain vault PDAs.
 export const REVENUE_WALLET = import.meta.env.VITE_REVENUE_WALLET || '4u1UTyMBX8ghSQBagZHCzArt32XMFSw4CUXbdgo2Cv74'; // Transaction fees (0.0025 SOL) and lives purchases (0.03 SOL)
 
 // Entry fee and lives pricing (from environment variables)
@@ -88,7 +88,11 @@ export const CATEGORY_LABELS: Record<PracticeCategory, string> = {
 // ─── V2 Contract Constants ───────────────────────────────────────────────
 export const V2_PROGRAM_ID = 'A3CSWY7bJukyKgR8RXXq1jbRAvqTY5jYtArF5Xt9dhjE';
 export const OPERATOR_WALLET = 'GRjf5emRyuwsk4Hf19xTLEdjttqx7QSKsh6RzGMd9XTr';
-export const OWNER_WALLET = 'A3pqxWWtgxY9qspd4wffSJQNAb99bbrUHYb1doMQmPcK'; // Ledger
+// On-chain config.owner. NOT the Ledger A3pqx (memory was wrong) — verified
+// 2026-05-29 via direct GameConfig PDA read. Kyle holds this in Phantom.
+// Will be transferred to the Squads 2/3 vault via set_owner after the upgrade
+// is deployed; this constant then updates to the Squads vault address.
+export const OWNER_WALLET = '8qHMpkPLfj4neP7MYm74Xos26jPE55bMUUBTJBQRYuBF';
 
 // Tier entry fees (lamports) — player pays this + 0.0025 platform fee
 export const V2_TIER_FEES = [20_000_000, 100_000_000, 500_000_000, 1_000_000_000] as const;
