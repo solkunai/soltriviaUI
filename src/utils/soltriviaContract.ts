@@ -23,6 +23,7 @@ const DUEL_VAULT_SEED    = new TextEncoder().encode('duel_vault');
 const CUSTOM_GAME_SEED   = new TextEncoder().encode('custom_game');
 const CUSTOM_VAULT_SEED  = new TextEncoder().encode('custom_vault');
 const CUSTOM_ENTRY_SEED  = new TextEncoder().encode('custom_entry');
+const REFERRAL_BALANCE_SEED = new TextEncoder().encode('referral_balance');
 
 // ─── Tier Fees (lamports) ────────────────────────────────────────────────────
 export const TIER_FEES = [20_000_000, 100_000_000, 500_000_000, 1_000_000_000] as const;
@@ -188,6 +189,13 @@ export function getCustomVaultPda(gameId: number, programId = SOLTRIVIA_PROGRAM_
 export function getCustomEntryPda(gameId: number, player: PublicKey, programId = SOLTRIVIA_PROGRAM_ID) {
   return PublicKey.findProgramAddressSync(
     [CUSTOM_ENTRY_SEED, u64Le(gameId), player.toBytes()],
+    programId,
+  )[0];
+}
+
+export function getReferralBalancePda(referrer: PublicKey, programId = SOLTRIVIA_PROGRAM_ID) {
+  return PublicKey.findProgramAddressSync(
+    [REFERRAL_BALANCE_SEED, referrer.toBytes()],
     programId,
   )[0];
 }

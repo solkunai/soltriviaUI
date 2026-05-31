@@ -8,19 +8,18 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
-import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
+import { VersionedTransaction } from '@solana/web3.js';
 import { useIsMobile } from '../src/hooks/useIsMobile';
-import { purchaseGamePass } from '../src/utils/api';
-import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
+import { purchaseGamePass, buildGamePassTx } from '../src/utils/api';
 import {
-  REVENUE_WALLET,
   GAME_PASS_USD_PRICING,
   NERD_PAYMENT_DISCOUNT,
+  getTokenMint,
   type GamePassPlan,
   type PaymentToken,
 } from '../src/utils/constants';
 import { fetchTokenPrices, calculateTokenAmount, formatTokenAmount, type TokenPrices } from '../src/utils/tokenPrices';
-import { buildSplTransferInstructions, getSplTokenBalance } from '../src/utils/splTransfer';
+import { getSplTokenBalance } from '../src/utils/splTransfer';
 
 interface Props {
   hasGamePass?: boolean;
@@ -81,6 +80,9 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, isSeekerVerified, onPurc
     setPurchasing(true);
     setPurchaseError(null);
     try {
+      const usdPriceCents = Math.round(usdPrice * 100);
+      const tokenMint = getTokenMint(token);
+
       let signatureToVerify = failedTxSignature;
       if (!signatureToVerify) {
         if (!prices || !tokenAmount) {
@@ -88,6 +90,16 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, isSeekerVerified, onPurc
           setPurchasing(false);
           return;
         }
+
+        // SOL native balance pre-check: covers 0.0025 SOL platform fee + tx fee.
+        const nativeBalance = await connection.getBalance(publicKey);
+        const MIN_NATIVE_LAMPORTS = 5_000_000; // 0.005 SOL
+        if (nativeBalance < MIN_NATIVE_LAMPORTS) {
+          setPurchaseError('Need at least 0.005 SOL native (covers the 0.0025 SOL platform fee + tx fee)');
+          setPurchasing(false);
+          return;
+        }
+
         if (token !== 'SOL') {
           const balance = await getSplTokenBalance(connection, publicKey, token);
           if (balance < tokenAmount) {
@@ -96,20 +108,34 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, isSeekerVerified, onPurc
             return;
           }
         }
-        const { blockhash } = await getRecentBlockhashWithRetry(connection);
-        const instructions =
-          token === 'SOL'
-            ? [SystemProgram.transfer({ fromPubkey: publicKey, toPubkey: new PublicKey(REVENUE_WALLET), lamports: Number(tokenAmount) })]
-            : buildSplTransferInstructions(publicKey, token, tokenAmount);
-        const messageV0 = new TransactionMessage({ payerKey: publicKey, recentBlockhash: blockhash, instructions }).compileToV0Message();
-        signatureToVerify = await sendTransaction(new VersionedTransaction(messageV0), connection);
+
+        // Build the multi-token, multi-recipient tx server-side (EF returns base64 v0 tx).
+        const builtTx = await buildGamePassTx({
+          walletAddress: publicKey.toBase58(),
+          plan,
+          paymentToken: token,
+          token_mint: tokenMint,
+          usd_price_cents: usdPriceCents,
+        });
+
+        // Deserialize, sign, send
+        const txBytes = Uint8Array.from(atob(builtTx.tx_base64), c => c.charCodeAt(0));
+        signatureToVerify = await sendTransaction(VersionedTransaction.deserialize(txBytes), connection);
         await Promise.race([
           connection.confirmTransaction(signatureToVerify, 'confirmed'),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Confirmation timeout')), 30000)),
         ]);
       }
       setFailedTxSignature(signatureToVerify);
-      await purchaseGamePass(publicKey.toBase58(), signatureToVerify, token, usdPrice, plan);
+      // Verify + credit via the existing purchase-game-pass EF (new payload triggers the 2-leg path).
+      await purchaseGamePass(
+        publicKey.toBase58(),
+        signatureToVerify,
+        token,
+        usdPrice,
+        plan,
+        { usd_price_cents: usdPriceCents, token_mint: tokenMint },
+      );
       setFailedTxSignature(null);
       onPurchased?.();
     } catch (err: any) {
@@ -119,7 +145,7 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, isSeekerVerified, onPurc
         setFailedTxSignature(null);
         setPurchaseError(`Insufficient balance. You need enough ${token} plus SOL for fees.`);
       } else if (failedTxSignature) {
-        setPurchaseError('Payment sent but activation failed. Tap Retry — no extra charge.');
+        setPurchaseError('Payment sent but activation failed. Tap Retry, no extra charge.');
       } else {
         setPurchaseError(err?.message || 'Purchase failed. Please try again.');
       }
@@ -230,19 +256,21 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, isSeekerVerified, onPurc
         </div>
       </div>
 
-      {/* Seeker discount callout */}
-      <div className="rounded-xl mb-4 flex items-center gap-4" style={{ background: 'rgba(20,241,149,0.06)', border: '1px solid rgba(20,241,149,0.27)', padding: '14px 18px' }}>
-        <img src="/seeker-badge.png" alt="Seeker" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-        <div className="flex-1 min-w-0">
-          <div className="font-black italic uppercase" style={{ fontSize: 10, color: '#14F195', letterSpacing: '0.18em' }}>
-            ● SEEKER HOLDERS
-          </div>
-          <div style={{ fontSize: 12, color: '#d4d4d8', marginTop: 4 }}>
-            Verify your Seeker Genesis Token for 50% off Game Pass and lives,{' '}
-            <span className="font-black italic uppercase" style={{ color: '#14F195' }}>FOREVER!</span>
+      {/* Seeker discount callout — only when NOT already verified */}
+      {!isSeekerVerified && (
+        <div className="rounded-xl mb-4 flex items-center gap-4" style={{ background: 'rgba(20,241,149,0.06)', border: '1px solid rgba(20,241,149,0.27)', padding: '14px 18px' }}>
+          <img src="/seeker-badge.png" alt="Seeker" style={{ width: 28, height: 28, objectFit: 'contain' }} />
+          <div className="flex-1 min-w-0">
+            <div className="font-black italic uppercase" style={{ fontSize: 10, color: '#14F195', letterSpacing: '0.18em' }}>
+              ● SEEKER HOLDERS
+            </div>
+            <div style={{ fontSize: 12, color: '#d4d4d8', marginTop: 4 }}>
+              Verify your Seeker Genesis Token for 35% off Game Pass and lives,{' '}
+              <span className="font-black italic uppercase" style={{ color: '#14F195' }}>FOREVER!</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {!hasGamePass && (
         <>

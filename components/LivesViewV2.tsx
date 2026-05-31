@@ -4,8 +4,9 @@
  * CTA. When wallet is NOT connected, viewable; CTA flips to
  * "Connect Wallet to Buy Lives" instead of the price.
  */
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useIsMobile } from '../src/hooks/useIsMobile';
+import { LIVES_USD_PRICING, NERD_PAYMENT_DISCOUNT } from '@/src/utils/constants';
 
 interface Props {
   livesCount: number | null;
@@ -19,25 +20,22 @@ type TierId = 'basic' | 'value' | 'bulk';
 type PaymentToken = 'SOL' | 'USDC' | 'SKR' | 'NERD';
 const TOKEN_CHIPS: PaymentToken[] = ['SOL', 'USDC', 'SKR', 'NERD'];
 
-const TIERS: Array<{
+// Static UI metadata (name/badge/color) keyed by tier id. Numeric values (lives + USD)
+// flow from LIVES_USD_PRICING so display tracks the locked constants automatically.
+const TIER_META: Record<TierId, { name: string; badge: string | null; color: string }> = {
+  basic: { name: 'STARTER',    badge: null,         color: '#FF3131' },
+  value: { name: 'VALUE PACK', badge: 'POPULAR',    color: '#14F195' },
+  bulk:  { name: 'GRINDER',    badge: 'BEST VALUE', color: '#FFD700' },
+};
+
+type DisplayTier = {
   id: TierId;
   name: string;
   lives: number;
-  sol: number;
   usd: number;
   badge: string | null;
   color: string;
-}> = [
-  { id: 'basic', name: 'STARTER', lives: 3, sol: 0.03, usd: 5, badge: null, color: '#FF3131' },
-  { id: 'value', name: 'VALUE PACK', lives: 15, sol: 0.1, usd: 15, badge: 'POPULAR', color: '#14F195' },
-  { id: 'bulk', name: 'GRINDER', lives: 35, sol: 0.25, usd: 35, badge: 'BEST VALUE', color: '#FFD700' },
-];
-
-const SEEKER_TIERS: typeof TIERS = [
-  { id: 'basic', name: 'STARTER', lives: 3, sol: 0.02, usd: 3, badge: null, color: '#FF3131' },
-  { id: 'value', name: 'VALUE PACK', lives: 15, sol: 0.08, usd: 12, badge: 'POPULAR', color: '#14F195' },
-  { id: 'bulk', name: 'GRINDER', lives: 35, sol: 0.2, usd: 28, badge: 'BEST VALUE', color: '#FFD700' },
-];
+};
 
 const LivesViewV2: React.FC<Props> = ({
   livesCount,
@@ -46,10 +44,22 @@ const LivesViewV2: React.FC<Props> = ({
   onConnect,
   onBuyTier,
 }) => {
-  const tiers = isSeekerVerified ? SEEKER_TIERS : TIERS;
   const [selected, setSelected] = useState<TierId>('value');
   const [token, setToken] = useState<PaymentToken>('SOL');
   const isMobile = useIsMobile();
+
+  // Derive tier list from the locked constants. NERD discount stacks when NERD is selected.
+  const tiers: DisplayTier[] = useMemo(() => {
+    return (['basic', 'value', 'bulk'] as TierId[]).map((id) => {
+      const p = LIVES_USD_PRICING[id];
+      let usd: number = isSeekerVerified ? p.seeker : p.standard;
+      if (token === 'NERD') {
+        usd = +(usd * (1 - NERD_PAYMENT_DISCOUNT)).toFixed(2);
+      }
+      return { id, ...TIER_META[id], lives: p.lives, usd };
+    });
+  }, [isSeekerVerified, token]);
+
   const selectedTier = tiers.find((t) => t.id === selected) ?? tiers[1];
 
   return (
@@ -91,7 +101,7 @@ const LivesViewV2: React.FC<Props> = ({
       >
         {tiers.map((tier) => {
           const isSelected = selected === tier.id;
-          const costPerLifeSol = (tier.sol / tier.lives).toFixed(4);
+          const costPerLifeUsd = (tier.usd / tier.lives).toFixed(2);
           return (
             <button
               key={tier.id}
@@ -166,7 +176,7 @@ const LivesViewV2: React.FC<Props> = ({
                   fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                {costPerLifeSol} SOL EACH · ${tier.usd} USD
+                ${costPerLifeUsd} EACH · ${tier.usd} USD
               </div>
               <div className="flex items-baseline justify-between mt-4">
                 <span
@@ -178,13 +188,13 @@ const LivesViewV2: React.FC<Props> = ({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {tier.sol}
+                  ${tier.usd}
                 </span>
                 <span
                   className="font-black italic uppercase"
                   style={{ fontSize: 10, color: '#71717a', letterSpacing: '0.14em' }}
                 >
-                  SOL
+                  USD
                 </span>
               </div>
             </button>
@@ -215,7 +225,7 @@ const LivesViewV2: React.FC<Props> = ({
               ● SEEKER HOLDERS
             </div>
             <div style={{ fontSize: 12, color: '#d4d4d8', marginTop: 4 }}>
-              Verify your Seeker Genesis Token for 50% off Game Pass and lives,{' '}
+              Verify your Seeker Genesis Token for 35% off Game Pass and lives,{' '}
               <span className="font-black italic uppercase" style={{ color: '#14F195' }}>FOREVER!</span>
             </div>
           </div>
@@ -297,18 +307,10 @@ const LivesViewV2: React.FC<Props> = ({
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {walletConnected
-              ? token === 'SOL'
-                ? `${selectedTier.sol} `
-                : token === 'USDC'
-                  ? `${selectedTier.usd} `
-                  : `≈ ${selectedTier.usd} `
-              : '— '}
-            <span style={{ fontSize: 11, color: '#71717a' }}>
-              {token === 'SOL' ? 'SOL' : token === 'USDC' ? 'USDC' : `${token} (LIVE PRICE)`}
-            </span>
+            {walletConnected ? `$${selectedTier.usd} ` : '— '}
+            <span style={{ fontSize: 11, color: '#71717a' }}>USD</span>
             <span style={{ fontSize: 10, color: '#71717a', marginLeft: 8 }}>
-              + ~0.0025 NETWORK FEE
+              + 0.0025 SOL PLATFORM FEE
             </span>
           </div>
         </div>

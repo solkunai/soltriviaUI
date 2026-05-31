@@ -412,13 +412,18 @@ export async function purchaseLives(
   txSignature: string,
   tier?: string,
   paymentToken?: string,
-  amountUsd?: number
+  amountUsd?: number,
+  opts?: { usd_price_cents?: number; token_mint?: string },
 ): Promise<PurchaseLivesResponse> {
   const url = `${FUNCTIONS_URL}/purchase-lives`;
   const response = await fetch(url, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ walletAddress, txSignature, tier, paymentToken, amountUsd }),
+    body: JSON.stringify({
+      walletAddress, txSignature, tier, paymentToken, amountUsd,
+      ...(opts?.usd_price_cents != null && { usd_price_cents: opts.usd_price_cents }),
+      ...(opts?.token_mint && { token_mint: opts.token_mint }),
+    }),
   });
 
   const body = await response.json().catch(() => ({}));
@@ -429,6 +434,53 @@ export async function purchaseLives(
     throw new Error(msg);
   }
   return body as PurchaseLivesResponse;
+}
+
+// NEW (2026-05-30): build the multi-token, multi-recipient Lives purchase tx server-side.
+// Returns base64 v0 tx for the client to sign + submit. Then the client calls purchaseLives
+// with the new opts (usd_price_cents + token_mint) to trigger the new 2-leg verify path.
+export interface BuildLivesPurchaseTxRequest {
+  walletAddress: string;
+  tier: 'basic' | 'value' | 'bulk';
+  paymentToken: 'SOL' | 'USDC' | 'SKR' | 'NERD';
+  token_mint?: string;
+  usd_price_cents?: number;
+}
+
+export interface BuildLivesPurchaseTxResponse {
+  ok: boolean;
+  tx_base64: string;
+  blockhash: string;
+  last_valid_block_height: number;
+  tier: string;
+  lives: number;
+  paymentToken: string;
+  token_mint: string;
+  usd_price_cents: number;
+  total_token_amount: string;
+  revenue_amount: string;
+  referrer_amount: string;
+  referrer_wallet: string | null;
+  is_seeker: boolean;
+  jupiter_price_usd: number;
+  platform_fee_lamports: number;
+}
+
+export async function buildLivesPurchaseTx(
+  params: BuildLivesPurchaseTxRequest,
+): Promise<BuildLivesPurchaseTxResponse> {
+  const url = `${FUNCTIONS_URL}/build-lives-purchase-tx`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = body.details ? `${body.error || 'Failed to build lives purchase tx'}: ${body.details}` : (body.error || 'Failed to build lives purchase tx');
+    throw new Error(msg);
+  }
+  return body as BuildLivesPurchaseTxResponse;
 }
 
 // Register or update player profile when wallet connects
@@ -1446,12 +1498,17 @@ export async function purchaseGamePass(
   txSignature: string,
   paymentToken?: string,
   amountUsd?: number,
-  plan: GamePassPlan = 'monthly'
+  plan: GamePassPlan = 'monthly',
+  opts?: { usd_price_cents?: number; token_mint?: string },
 ): Promise<GamePassResponse> {
   const response = await fetch(`${FUNCTIONS_URL}/purchase-game-pass`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ walletAddress, txSignature, paymentToken, amountUsd, plan }),
+    body: JSON.stringify({
+      walletAddress, txSignature, paymentToken, amountUsd, plan,
+      ...(opts?.usd_price_cents != null && { usd_price_cents: opts.usd_price_cents }),
+      ...(opts?.token_mint && { token_mint: opts.token_mint }),
+    }),
   });
 
   const body = await response.json().catch(() => ({}));
@@ -1460,6 +1517,53 @@ export async function purchaseGamePass(
     throw new Error(msg);
   }
   return body as GamePassResponse;
+}
+
+// NEW (2026-05-30): build the multi-token + multi-recipient Game Pass purchase tx server-side.
+// Returns base64 v0 tx for the client to sign + submit. Then the client calls purchaseGamePass
+// with the new opts (usd_price_cents + token_mint) to trigger the new 2-leg verify path.
+export interface BuildGamePassTxRequest {
+  walletAddress: string;
+  plan: GamePassPlan;
+  paymentToken: 'SOL' | 'USDC' | 'SKR' | 'NERD';
+  token_mint?: string;
+  usd_price_cents?: number;
+}
+
+export interface BuildGamePassTxResponse {
+  ok: boolean;
+  tx_base64: string;
+  blockhash: string;
+  last_valid_block_height: number;
+  plan: string;
+  days: number;
+  paymentToken: string;
+  token_mint: string;
+  usd_price_cents: number;
+  total_token_amount: string;
+  revenue_amount: string;
+  referrer_amount: string;
+  referrer_wallet: string | null;
+  is_seeker: boolean;
+  jupiter_price_usd: number;
+  platform_fee_lamports: number;
+}
+
+export async function buildGamePassTx(
+  params: BuildGamePassTxRequest,
+): Promise<BuildGamePassTxResponse> {
+  const url = `${FUNCTIONS_URL}/build-game-pass-tx`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = body.details ? `${body.error || 'Failed to build game pass tx'}: ${body.details}` : (body.error || 'Failed to build game pass tx');
+    throw new Error(msg);
+  }
+  return body as BuildGamePassTxResponse;
 }
 
 /**

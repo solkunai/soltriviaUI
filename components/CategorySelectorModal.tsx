@@ -1,21 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
-import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
-import { purchaseGamePass } from '../src/utils/api';
-import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
+import { VersionedTransaction } from '@solana/web3.js';
+import { purchaseGamePass, buildGamePassTx } from '../src/utils/api';
 import {
-  REVENUE_WALLET,
   FREE_CATEGORIES,
   ALL_CATEGORIES,
   CATEGORY_LABELS,
   GAME_PASS_USD_PRICING,
   NERD_PAYMENT_DISCOUNT,
+  getTokenMint,
   PracticeCategory,
   type PaymentToken,
   type GamePassPlan,
 } from '../src/utils/constants';
 import { fetchTokenPrices, calculateTokenAmount, formatTokenAmount, type TokenPrices } from '../src/utils/tokenPrices';
-import { buildSplTransferInstructions, getSplTokenBalance } from '../src/utils/splTransfer';
+import { getSplTokenBalance } from '../src/utils/splTransfer';
 
 interface CategorySelectorModalProps {
   isOpen: boolean;
@@ -107,12 +106,24 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
     setPurchaseError(null);
 
     try {
+      const usdPriceCents = Math.round(usdPrice * 100);
+      const tokenMint = getTokenMint(selectedToken);
+
       let signatureToVerify = failedTxSignature;
 
       // If we have a saved signature from a previous failed attempt, skip payment and just retry verification
       if (!signatureToVerify) {
         if (!prices || !tokenAmount) {
           setPurchaseError('Prices not loaded yet. Please wait a moment.');
+          setPurchasing(false);
+          return;
+        }
+
+        // SOL native balance pre-check: covers 0.0025 SOL platform fee + tx fee.
+        const nativeBalance = await connection.getBalance(publicKey);
+        const MIN_NATIVE_LAMPORTS = 5_000_000; // 0.005 SOL
+        if (nativeBalance < MIN_NATIVE_LAMPORTS) {
+          setPurchaseError('Need at least 0.005 SOL native (covers the 0.0025 SOL platform fee + tx fee)');
           setPurchasing(false);
           return;
         }
@@ -128,29 +139,18 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
           }
         }
 
-        const { blockhash } = await getRecentBlockhashWithRetry(connection);
+        // Build the multi-token, multi-recipient tx server-side (EF returns base64 v0 tx).
+        const builtTx = await buildGamePassTx({
+          walletAddress: publicKey.toBase58(),
+          plan,
+          paymentToken: selectedToken,
+          token_mint: tokenMint,
+          usd_price_cents: usdPriceCents,
+        });
 
-        let instructions;
-        if (selectedToken === 'SOL') {
-          instructions = [
-            SystemProgram.transfer({
-              fromPubkey: publicKey,
-              toPubkey: new PublicKey(REVENUE_WALLET),
-              lamports: Number(tokenAmount),
-            }),
-          ];
-        } else {
-          instructions = buildSplTransferInstructions(publicKey, selectedToken, tokenAmount);
-        }
-
-        const messageV0 = new TransactionMessage({
-          payerKey: publicKey,
-          recentBlockhash: blockhash,
-          instructions,
-        }).compileToV0Message();
-
-        const transaction = new VersionedTransaction(messageV0);
-        signatureToVerify = await sendTransaction(transaction, connection);
+        // Deserialize, sign, send
+        const txBytes = Uint8Array.from(atob(builtTx.tx_base64), c => c.charCodeAt(0));
+        signatureToVerify = await sendTransaction(VersionedTransaction.deserialize(txBytes), connection);
 
         // Wait for confirmation
         await Promise.race([
@@ -159,23 +159,30 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
         ]);
       }
 
-      // Save signature before backend call — if backend fails, we can retry with it
+      // Save signature before backend call. If backend fails, we can retry with it.
       setFailedTxSignature(signatureToVerify);
 
-      // Register with backend (pass token info) — works for both fresh and retry
-      await purchaseGamePass(publicKey.toBase58(), signatureToVerify, selectedToken, usdPrice, plan);
+      // Verify + credit via the existing purchase-game-pass EF (new payload triggers the 2-leg path).
+      await purchaseGamePass(
+        publicKey.toBase58(),
+        signatureToVerify,
+        selectedToken,
+        usdPrice,
+        plan,
+        { usd_price_cents: usdPriceCents, token_mint: tokenMint },
+      );
       setFailedTxSignature(null);
       onGamePassPurchased();
     } catch (err: any) {
       if (err.message?.includes('User rejected')) {
-        // User cancelled — do nothing
+        // User cancelled, do nothing
         setFailedTxSignature(null);
       } else if (err.message?.includes('insufficient funds') || err.message?.includes('Insufficient')) {
         setFailedTxSignature(null);
         setPurchaseError(`Insufficient balance. You need enough ${selectedToken} plus SOL for transaction fees.`);
       } else if (failedTxSignature) {
-        // Payment was already sent but backend failed — keep signature for retry
-        setPurchaseError('Payment sent but activation failed. Tap "Retry Activation" to try again — no extra payment needed.');
+        // Payment was already sent but backend failed, keep signature for retry
+        setPurchaseError('Payment sent but activation failed. Tap "Retry Activation" to try again, no extra payment needed.');
       } else {
         setPurchaseError(err.message || 'Purchase failed. Please try again.');
       }
@@ -357,7 +364,7 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
                   </div>
                   {isSeekerVerified && (
                     <span className="text-[9px] font-black uppercase tracking-wider text-[#14F195] bg-[#14F195]/10 px-2 py-0.5 rounded-full">
-                      50% Seeker Discount
+                      35% Seeker Discount
                     </span>
                   )}
                   {selectedToken === 'NERD' && (
