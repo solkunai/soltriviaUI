@@ -618,20 +618,93 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           className="w-full rounded-xl mb-3 active:opacity-90 overflow-hidden flex items-center gap-3 st-saira"
           style={{ background: 'linear-gradient(90deg,#070F26,#0E1A3D,#0A1432)', border: '1.5px solid #FBBF2466', padding: 14, cursor: 'pointer' }}
         >
-          {/* Fanned mystery cards */}
-          <div className="relative flex-shrink-0 overflow-hidden" style={{ width: 86, height: 76 }}>
-            {[
-              { img: '/mint/nft-genius.png', rot: -18, x: -22, z: 1 },
-              { img: '/mint/nft-competitor.png', rot: -6, x: -7, z: 2 },
-              { img: '/mint/nft-scholar.png', rot: 6, x: 8, z: 3 },
-              { img: '/mint/nft-champion.png', rot: 18, x: 23, z: 2 },
-            ].map((c, i) => (
-              <div key={i} className="absolute rounded overflow-hidden" style={{ left: '50%', top: '50%', width: 34, height: 52, marginLeft: -17, marginTop: -26, zIndex: c.z, transform: `translateX(${c.x}px) rotate(${c.rot}deg)`, border: '1.5px solid #FBBF2488' }}>
-                <img src={c.img} alt="" style={{ width: '100%', height: '130%', objectFit: 'cover', filter: 'blur(6px) saturate(1.2)' }} />
-                <div className="absolute inset-0" style={{ background: 'rgba(7,15,38,0.28)' }} />
+          {/* Mystery-card FAN — exact spec from Claude Design 2026-06-02.
+              4 cards rotated symmetrically around center (-18°/-6°/+6°/+18°), middle card on top.
+              3-nested-layer structure (position / float / tilt) so transforms never collide.
+              Idle bob animation defined in src/index.css. All four cards carry the "?". */}
+          <div style={{ position: 'relative', width: 84, height: 80, flexShrink: 0 }}>
+            {/* Center radial glow behind the fan */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '25%',
+                width: 240,
+                height: 240,
+                marginTop: -120,
+                marginLeft: -120,
+                background: 'radial-gradient(circle, #FBBF2422, transparent 60%)',
+                filter: 'blur(16px)',
+                pointerEvents: 'none',
+                zIndex: 0,
+              }}
+            />
+            {(
+              [
+                { src: '/mint/nft-genius.png',     bg: ['#A5E07B', '#5B9C3E'] as const, rot: -18, x: -22, z: 1 },
+                { src: '/mint/nft-competitor.png', bg: ['#FF9264', '#D14424'] as const, rot:  -6, x:  -7, z: 2 },
+                { src: '/mint/nft-scholar.png',    bg: ['#A9E4F7', '#5BAFD6'] as const, rot:   6, x:   8, z: 3 },
+                { src: '/mint/nft-champion.png',   bg: ['#FFE26B', '#D9A91A'] as const, rot:  18, x:  23, z: 2 },
+              ] as const
+            ).map((c, i) => (
+              <div
+                key={i}
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  zIndex: c.z,
+                  transform: `translate(calc(-50% + ${c.x}px), -50%)`,
+                }}
+              >
+                {/* LAYER 2 — staggered idle bob (animation ONLY on this element) */}
+                <div className={`st-bob-${i + 1}`}>
+                  {/* LAYER 3 — the visible card: tilt + border + glow */}
+                  <div
+                    style={{
+                      width: 34,
+                      height: 52,
+                      transform: `rotate(${c.rot}deg)`,
+                      borderRadius: 5,
+                      background: `linear-gradient(135deg, ${c.bg[0]}, ${c.bg[1]})`,
+                      border: '1.5px solid #FBBF2488',
+                      overflow: 'hidden',
+                      boxShadow: '0 4px 10px -2px rgba(0,0,0,0.6)',
+                      position: 'relative',
+                    }}
+                  >
+                    <img
+                      src={c.src}
+                      alt=""
+                      style={{
+                        width: '100%',
+                        height: '130%',
+                        objectFit: 'cover',
+                        objectPosition: 'center 28%',
+                        filter: 'blur(5px) saturate(1.2)',
+                      }}
+                    />
+                    {/* navy veil + the "?" */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'grid',
+                        placeItems: 'center',
+                        background: 'rgba(7,15,38,0.55)',
+                        fontStyle: 'italic',
+                        fontWeight: 900,
+                        fontSize: 22,
+                        color: '#fff',
+                        textShadow: '0 1px 0 rgba(0,0,0,0.8), 0 2px 6px rgba(0,0,0,0.7), 0 0 8px rgba(251,191,36,0.6)',
+                      }}
+                    >
+                      ?
+                    </div>
+                  </div>
+                </div>
               </div>
             ))}
-            <div className="st-shimmer" style={{ position: 'absolute', inset: 0 }} />
           </div>
           {/* Copy */}
           <div className="flex-1 min-w-0 text-left">

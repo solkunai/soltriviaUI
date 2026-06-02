@@ -16,12 +16,15 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { useIsMobile } from '../src/hooks/useIsMobile';
+import { useWallet, useConnection } from '../src/contexts/WalletContext';
+import { getAppConfig } from '../src/utils/featureFlags';
+import { fetchNftMintConfig } from '../src/utils/soltriviaContract';
 import {
   ARCHETYPES,
   ARCHETYPE_ORDER,
   MTC,
   MINT_SUPPLY,
-  randomGateQuestion,
+  pickGateQuestionForWallet,
   type ArchetypeKey,
 } from '../src/utils/mintData';
 import {
@@ -29,12 +32,10 @@ import {
   fetchCollection,
   fetchRecentMints,
   fetchMintedCount,
+  executeMintCommemorative,
   type CollectionState,
   type RecentMint,
 } from '../src/utils/mintFlow';
-
-const MINT_LIVE = false;
-const COLLECTION_ADDRESS = '<YOUR_COLLECTION_ADDRESS>';
 
 interface Props {
   walletAddress?: string | null;
@@ -58,6 +59,8 @@ function timeAgo(iso: string) {
 
 const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }) => {
   const isMobile = useIsMobile();
+  const { connection } = useConnection();
+  const { publicKey, sendTransaction } = useWallet();
 
   const [eligible, setEligible] = useState<boolean | null>(null);
   const [collection, setCollection] = useState<CollectionState>({
@@ -69,6 +72,30 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
   const [minted, setMinted] = useState(0);
   const [detail, setDetail] = useState<ArchetypeKey | null>(null);
   const [gateOpen, setGateOpen] = useState(false);
+
+  // Mint live-state + on-chain config (loaded from Supabase + RPC on mount).
+  const [mintLive, setMintLive] = useState(false);
+  const [collectionAddress, setCollectionAddress] = useState('');
+  // Mint execution state.
+  const [minting, setMinting] = useState(false);
+  const [mintError, setMintError] = useState<string | null>(null);
+  const [mintSuccessSig, setMintSuccessSig] = useState<string | null>(null);
+
+  // Load feature flags + on-chain mint config.
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const cfg = await getAppConfig();
+        if (!cancel) setMintLive(cfg.mint_live);
+      } catch { /* default false */ }
+      try {
+        const nftCfg = await fetchNftMintConfig(connection);
+        if (!cancel && nftCfg) setCollectionAddress(nftCfg.collection);
+      } catch { /* COLLECTION_ADDRESS stays empty pre-deploy */ }
+    })();
+    return () => { cancel = true; };
+  }, [connection]);
 
   // Global supply counter — polls independent of wallet connection.
   useEffect(() => {
@@ -87,7 +114,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
     try {
       const [elig, coll, rec] = await Promise.all([
         fetchMintEligibility(walletAddress),
-        fetchCollection(walletAddress, COLLECTION_ADDRESS),
+        fetchCollection(walletAddress, collectionAddress),
         fetchRecentMints(8),
       ]);
       setEligible(elig);
@@ -96,11 +123,39 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
     } catch {
       /* non-fatal */
     }
-  }, [walletAddress]);
+  }, [walletAddress, collectionAddress]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Execute the on-chain mint. Called by TriviaGate on success.
+  const handleMint = useCallback(async () => {
+    if (!publicKey) {
+      setMintError('Connect a wallet first.');
+      return;
+    }
+    setGateOpen(false);
+    setMinting(true);
+    setMintError(null);
+    try {
+      const result = await executeMintCommemorative({
+        player: publicKey,
+        connection,
+        sendTransaction,
+      });
+      setMintSuccessSig(result.signature);
+      // Refresh state — give Helius DAS a few seconds to index the new NFT.
+      setTimeout(() => {
+        refresh();
+        fetchMintedCount().then(setMinted).catch(() => {});
+      }, 3000);
+    } catch (e) {
+      setMintError(e instanceof Error ? e.message : 'Mint failed.');
+    } finally {
+      setMinting(false);
+    }
+  }, [publicKey, connection, sendTransaction, refresh]);
 
   const totalOwned = (Object.values(collection.counts) as number[]).reduce((a, b) => a + b, 0);
   const toGo = 4 - collection.typesOwned;
@@ -130,7 +185,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
         </div>
         <div className="rounded-full font-black italic uppercase flex items-center gap-2 flex-shrink-0" style={{ background: `${MTC.gold}1a`, border: `1px solid ${MTC.gold}55`, color: MTC.gold, fontSize: 9, letterSpacing: '0.14em', padding: '7px 12px' }}>
           <span style={{ width: 6, height: 6, borderRadius: 3, background: MTC.gold, display: 'inline-block' }} />
-          {MINT_LIVE ? 'READY TO MINT' : 'OPENS SOON'}
+          {mintLive ? 'READY TO MINT' : 'OPENS SOON'}
         </div>
       </div>
 
@@ -181,10 +236,10 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
               </div>
             </div>
 
-            {/* CTA — coming-soon placeholder styled as the design's gold bar */}
+            {/* CTA — gold bar; switches between OPENS-SOON / MINT NOW / MINTING… */}
             <button
-              onClick={MINT_LIVE ? () => setGateOpen(true) : undefined}
-              disabled={!MINT_LIVE}
+              onClick={mintLive && !minting ? () => setGateOpen(true) : undefined}
+              disabled={!mintLive || minting}
               className="w-full font-black italic uppercase rounded-xl mt-4 flex items-center justify-center gap-2"
               style={{
                 background: MTC.gold,
@@ -193,21 +248,25 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
                 padding: '16px 0',
                 fontSize: 13,
                 letterSpacing: '0.12em',
-                cursor: MINT_LIVE ? 'pointer' : 'default',
-                opacity: MINT_LIVE ? 1 : 0.92,
+                cursor: mintLive && !minting ? 'pointer' : 'default',
+                opacity: mintLive && !minting ? 1 : 0.92,
               }}
             >
               <img src="/mint/mint-icon.png" alt="" style={{ width: 15, height: 15 }} />
-              {MINT_LIVE ? `MINT NOW · ${seekerPrice} SOL →` : 'MINTING OPENS SOON'}
+              {!mintLive
+                ? 'MINTING OPENS SOON'
+                : minting
+                  ? 'MINTING…'
+                  : `MINT NOW · ${seekerPrice} SOL →`}
             </button>
             <div className="font-black italic uppercase text-center" style={{ fontSize: 8, color: '#a1a1aa', letterSpacing: '0.12em', marginTop: 9, lineHeight: 1.5 }}>
-              {!MINT_LIVE && (
+              {!mintLive && (
                 <>
                   {eligible === false ? 'PLAY A LIVE ROUND TO LOCK IN ELIGIBILITY · ' : 'ELIGIBILITY LOCKED IN · '}
                 </>
               )}
               ONE-PER-MINT · STORED AS COMPRESSED NFT · REVEAL IS RANDOM, ASSIGNED ON-CHAIN
-              {!MINT_LIVE && eligible === false && onPlay && (
+              {!mintLive && eligible === false && onPlay && (
                 <>
                   {' · '}
                   <button onClick={onPlay} style={{ color: MTC.gold, cursor: 'pointer' }}>PLAY →</button>
@@ -424,7 +483,48 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
 
       {/* Modals */}
       {detail && <ArchetypeDetailModal archetypeKey={detail} owned={collection.counts[detail]} onClose={() => setDetail(null)} />}
-      {MINT_LIVE && gateOpen && <TriviaGate onClose={() => setGateOpen(false)} onPass={() => setGateOpen(false)} />}
+      {mintLive && gateOpen && <TriviaGate walletAddress={walletAddress} onClose={() => setGateOpen(false)} onPass={handleMint} />}
+
+      {/* Error toast */}
+      {mintError && (
+        <div className="fixed bottom-4 right-4 z-50 rounded-lg flex items-start gap-3" style={{ background: '#1a0a0a', border: '1px solid #FF3131', padding: '12px 16px', maxWidth: 340 }}>
+          <div className="font-black italic" style={{ color: '#FF3131', fontSize: 12 }}>!</div>
+          <div className="flex-1">
+            <div className="font-black italic uppercase" style={{ color: '#FF3131', fontSize: 9, letterSpacing: '0.12em' }}>MINT FAILED</div>
+            <div className="text-white" style={{ fontSize: 11, marginTop: 3 }}>{mintError}</div>
+          </div>
+          <button onClick={() => setMintError(null)} className="text-white" style={{ fontSize: 14, lineHeight: 1, cursor: 'pointer' }}>×</button>
+        </div>
+      )}
+
+      {/* Success modal */}
+      {mintSuccessSig && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(2,3,12,0.92)' }} onClick={() => setMintSuccessSig(null)}>
+          <div className="relative w-full rounded-2xl text-center" style={{ maxWidth: 420, background: MTC.navy, border: `2px solid ${MTC.gold}`, padding: 24 }} onClick={(e) => e.stopPropagation()}>
+            <div className="font-black italic uppercase" style={{ color: MTC.gold, fontSize: 10, letterSpacing: '0.18em' }}>MINT CONFIRMED</div>
+            <div className="font-black italic uppercase text-white mt-2" style={{ fontSize: 28, lineHeight: 1 }}>WELCOME TO THE SET</div>
+            <p className="text-white mt-4" style={{ fontSize: 12, lineHeight: 1.6 }}>
+              Your card is being revealed. It may take up to a minute for your wallet to show the new NFT.
+            </p>
+            <a
+              href={`https://solscan.io/tx/${mintSuccessSig}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block mt-4 font-black italic uppercase rounded-lg"
+              style={{ color: MTC.gold, border: `1px solid ${MTC.gold}55`, padding: '8px 14px', fontSize: 10, letterSpacing: '0.14em' }}
+            >
+              VIEW TX ON SOLSCAN →
+            </a>
+            <button
+              onClick={() => setMintSuccessSig(null)}
+              className="block w-full font-black italic uppercase rounded-xl mt-3"
+              style={{ background: MTC.gold, color: MTC.navyDeep, padding: '12px 0', fontSize: 11, letterSpacing: '0.14em', cursor: 'pointer' }}
+            >
+              CLOSE
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -469,8 +569,10 @@ function ArchetypeDetailModal({ archetypeKey, owned, onClose }: { archetypeKey: 
 }
 
 // ─── Trivia Gate modal (GATE STEP 2) — mounts only when minting is live ───────
-function TriviaGate({ onClose, onPass }: { onClose: () => void; onPass: () => void }) {
-  const [q] = useState(() => randomGateQuestion());
+// Question rotates per wallet via localStorage so the same wallet sees all 10
+// before any repeat. See pickGateQuestionForWallet in mintData.ts.
+function TriviaGate({ walletAddress, onClose, onPass }: { walletAddress?: string | null; onClose: () => void; onPass: () => void }) {
+  const [q] = useState(() => pickGateQuestionForWallet(walletAddress));
   const [picked, setPicked] = useState<number | null>(null);
   const pick = (i: number) => {
     if (picked !== null) return;

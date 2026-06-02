@@ -1,16 +1,29 @@
 /**
- * mintFlow (web) — display reads for the Sol Trivia Elementals mint.
+ * mintFlow (web) — display reads + mint execution for the Sol Trivia Elementals.
  *
- * READS (live now): mint eligibility (button state), the wallet's collection
- * holdings via Helius DAS (Set Completion / Legend), and the recent-mints feed.
+ * READS: mint eligibility, on-chain mint config + per-wallet mint count,
+ * wallet collection holdings (Helius DAS), recent-mints feed, total supply.
  *
- * MINT ACTION (NOT live yet): the real mint is an on-chain `mint_commemorative`
- * instruction folded into the V2 program upgrade (no server-held signing key).
- * Until that ships, MintViewV2 renders an "opens soon" placeholder. When the
- * program lands, wire the build→sign→send here via the wallet adapter.
+ * MINT EXECUTION: `executeMintCommemorative` builds the on-chain ix, wraps in
+ * a VersionedTransaction, hands it to the wallet adapter for signing, and
+ * confirms. The mint is gated client-side by the `mint_live` feature flag, and
+ * gated server-side by the V2 program (eligibility + cap + paused check).
  */
+import {
+  Connection,
+  PublicKey,
+  TransactionMessage,
+  VersionedTransaction,
+} from '@solana/web3.js';
+import bs58 from 'bs58';
 import { supabase } from './supabase';
 import { VARIANT_TO_ARCHETYPE, type ArchetypeKey } from './mintData';
+import {
+  SOLTRIVIA_PROGRAM_ID,
+  buildMintCommemorativeIx,
+  fetchMinterRecord,
+  fetchNftMintConfig,
+} from './soltriviaContract';
 
 // Cloudflare Worker proxy that hides the Helius key from clients (same as native).
 const HELIUS_RPC_URL = 'https://soltrivia-helius-proxy.solkunai.workers.dev';
@@ -135,4 +148,200 @@ export async function fetchRecentMints(limit = 8): Promise<RecentMint[]> {
     archetype: VARIANT_TO_ARCHETYPE[r.variant] ?? 'genius',
     createdAt: r.created_at,
   }));
+}
+
+// ── Mint execution (on-chain) ─────────────────────────────────────────────────
+
+// Anchor account discriminator for `EntryReceipt` = sha256("account:EntryReceipt")[0..8].
+// Used to scan the program's on-chain accounts for a proof of eligibility.
+const ENTRY_RECEIPT_DISC = Uint8Array.from([2, 205, 191, 242, 12, 71, 135, 29]);
+// In EntryReceipt the `player` field is at offset 17 (disc[8] + round_id[8] + tier_index[1]).
+const ENTRY_RECEIPT_PLAYER_OFFSET = 17;
+
+/**
+ * Find an on-chain eligibility proof PDA for this player.
+ *
+ * Scans the program's `EntryReceipt` accounts via memcmp on the player field.
+ * The first match is returned — any valid EntryReceipt counts as a proof of a
+ * completed paid round, and the contract verifies it cryptographically.
+ *
+ * Returns null if the player has no paid round entry on-chain. The user can
+ * still mint after they pay into a tier round.
+ *
+ * (We do NOT scan Duel / CustomGameEntry here — getProgramAccounts is heavy,
+ * one scan covers the most-common case; players who only paid into duels or
+ * custom games will see the "play a paid round first" CTA.)
+ */
+export async function findEligibilityProof(
+  player: PublicKey,
+  connection: Connection,
+  programId: PublicKey = SOLTRIVIA_PROGRAM_ID,
+): Promise<PublicKey | null> {
+  try {
+    const accounts = await connection.getProgramAccounts(programId, {
+      commitment: 'confirmed',
+      dataSlice: { offset: 0, length: 0 }, // we only need pubkeys
+      filters: [
+        { memcmp: { offset: 0, bytes: bs58.encode(ENTRY_RECEIPT_DISC) } },
+        { memcmp: { offset: ENTRY_RECEIPT_PLAYER_OFFSET, bytes: player.toBase58() } },
+      ],
+    });
+    return accounts[0]?.pubkey ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export type MintExecutionResult = {
+  signature: string;
+};
+
+export type MintExecutionErrorKind =
+  | 'not_initialized' // nft_config not on-chain yet (deploy not done)
+  | 'paused'          // admin flipped paused=true
+  | 'cap_reached'     // player has hit max_per_wallet
+  | 'not_eligible'    // no EntryReceipt on chain
+  | 'rpc_error'       // network/RPC failure
+  | 'send_failed'     // signing/sending failed (rejected, balance, etc.)
+  | 'confirm_failed'; // tx submitted but did not confirm
+
+export class MintExecutionError extends Error {
+  kind: MintExecutionErrorKind;
+  cause?: unknown;
+  constructor(kind: MintExecutionErrorKind, message: string, cause?: unknown) {
+    super(message);
+    this.kind = kind;
+    this.cause = cause;
+  }
+}
+
+/**
+ * Execute the on-chain mint_commemorative instruction.
+ *
+ * Flow:
+ *   1. Read nft_config (revenue_wallet, merkle_tree, collection, paused flag).
+ *   2. Read minter_record to fail-fast on cap (the contract enforces this too).
+ *   3. Find an EntryReceipt PDA on-chain for the player (eligibility proof).
+ *   4. Build the ix with `buildMintCommemorativeIx`.
+ *   5. Wrap in a v0 VersionedTransaction, hand to wallet for signing+send.
+ *   6. Confirm with a 30s timeout.
+ *
+ * @param sendTransaction - wallet-adapter callback (typically `useWallet().sendTransaction`).
+ *
+ * The variant (Scholar/Genius/Competitor/Champion) is RANDOMIZED ON-CHAIN —
+ * after the tx confirms, the client should poll Helius DAS for the new asset
+ * to learn which archetype was revealed.
+ */
+export async function executeMintCommemorative(args: {
+  player: PublicKey;
+  connection: Connection;
+  sendTransaction: (tx: VersionedTransaction, connection: Connection) => Promise<string>;
+  sgtTokenAccount?: PublicKey | null;
+  sgtMint?: PublicKey | null;
+  programId?: PublicKey;
+}): Promise<MintExecutionResult> {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+
+  // 1. nft_config
+  let cfg;
+  try {
+    cfg = await fetchNftMintConfig(args.connection, programId);
+  } catch (e) {
+    throw new MintExecutionError('rpc_error', 'Failed to load mint config.', e);
+  }
+  if (!cfg) {
+    throw new MintExecutionError(
+      'not_initialized',
+      'Mint is not yet configured on-chain. Check back at launch.',
+    );
+  }
+  if (cfg.paused) {
+    throw new MintExecutionError('paused', 'Mint is currently paused.');
+  }
+
+  // 2. cap pre-check (the contract also enforces — this is for UX)
+  try {
+    const record = await fetchMinterRecord(args.connection, args.player, programId);
+    if (record && record.mintCount >= cfg.maxPerWallet) {
+      throw new MintExecutionError(
+        'cap_reached',
+        `You've reached the per-wallet cap (${cfg.maxPerWallet}).`,
+      );
+    }
+  } catch (e) {
+    if (e instanceof MintExecutionError) throw e;
+    // non-fatal — let the on-chain check decide
+  }
+
+  // 3. eligibility proof
+  const proof = await findEligibilityProof(args.player, args.connection, programId);
+  if (!proof) {
+    throw new MintExecutionError(
+      'not_eligible',
+      'Play a paid round first to unlock the mint.',
+    );
+  }
+
+  // 4. build ix
+  const ix = buildMintCommemorativeIx({
+    player: args.player,
+    revenueWallet: new PublicKey(cfg.revenueWallet),
+    eligibilityProof: proof,
+    merkleTree: new PublicKey(cfg.merkleTree),
+    coreCollection: new PublicKey(cfg.collection),
+    sgtTokenAccount: args.sgtTokenAccount,
+    sgtMint: args.sgtMint,
+    programId,
+  });
+
+  // 5. wrap in versioned tx
+  let blockhash: string;
+  let lastValidBlockHeight: number;
+  try {
+    const bh = await args.connection.getLatestBlockhash('confirmed');
+    blockhash = bh.blockhash;
+    lastValidBlockHeight = bh.lastValidBlockHeight;
+  } catch (e) {
+    throw new MintExecutionError('rpc_error', 'Failed to fetch recent blockhash.', e);
+  }
+  const message = new TransactionMessage({
+    payerKey: args.player,
+    recentBlockhash: blockhash,
+    instructions: [ix],
+  }).compileToV0Message();
+  const tx = new VersionedTransaction(message);
+
+  // 6. sign + send via wallet
+  let signature: string;
+  try {
+    signature = await args.sendTransaction(tx, args.connection);
+  } catch (e) {
+    throw new MintExecutionError('send_failed', extractRpcMessage(e), e);
+  }
+
+  // 7. confirm with timeout
+  try {
+    await Promise.race([
+      args.connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Confirmation timeout')), 30_000)),
+    ]);
+  } catch (e) {
+    throw new MintExecutionError('confirm_failed', 'Mint sent but did not confirm in time. It may still succeed — check Solscan.', e);
+  }
+
+  return { signature };
+}
+
+function extractRpcMessage(e: unknown): string {
+  if (e instanceof Error) {
+    const msg = e.message || 'Transaction failed.';
+    // Strip noisy Anchor codes when present
+    const m = msg.match(/custom program error: 0x([0-9a-fA-F]+)/);
+    if (m) {
+      const code = parseInt(m[1], 16);
+      return `On-chain error (code ${code}).`;
+    }
+    return msg;
+  }
+  return 'Transaction failed.';
 }

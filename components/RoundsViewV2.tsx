@@ -17,6 +17,10 @@ interface Props {
   lives: number | null;
   walletConnected: boolean;
   entering?: boolean;
+  /** How many times the player has already entered THIS round. First entry is free of life cost; entries 2-5 cost 1 life each. */
+  roundEntriesUsed: number;
+  /** Cap on entries per round (5). */
+  roundEntriesMax: number;
   onStartQuiz: () => void;
   onConnectWallet: () => void;
   onOpenBuyLives: () => void;
@@ -65,6 +69,8 @@ const RoundsViewV2: React.FC<Props> = ({
   lives,
   walletConnected,
   entering = false,
+  roundEntriesUsed,
+  roundEntriesMax,
   onStartQuiz,
   onConnectWallet,
   onOpenBuyLives,
@@ -113,18 +119,30 @@ const RoundsViewV2: React.FC<Props> = ({
     };
   }, [connection]);
 
-  const canPlay = (lives ?? 0) > 0;
+  // Entry state. First entry is free of life cost; entries 2-5 each consume 1 life;
+  // after 5 entries the player is locked out of this round (the contract enforces
+  // this server-side as well — see App.tsx handleStartQuiz pre-flight check).
+  const entriesLeft = Math.max(0, roundEntriesMax - roundEntriesUsed);
+  const isFirstEntry = roundEntriesUsed === 0;
+  const isAtMax = entriesLeft <= 0;
+  const hasLives = (lives ?? 0) > 0;
+  const canPlay = walletConnected && !isAtMax && (isFirstEntry || hasLives);
+
   const poolDisplay = pool >= 1 ? pool.toFixed(2) : pool.toFixed(4);
   const ctaLabel = !walletConnected
     ? 'CONNECT WALLET →'
-    : !canPlay
-      ? 'GET LIVES TO ENTER →'
-      : 'ENTER ROUND →';
+    : isAtMax
+      ? 'MAX ENTRIES REACHED · JOIN NEXT ROUND'
+      : isFirstEntry
+        ? 'ENTER ROUND · 0.02 SOL →'
+        : hasLives
+          ? `RE-ENTER · 0.02 SOL + 1 LIFE (${roundEntriesUsed}/${roundEntriesMax}) →`
+          : 'GET LIVES TO RE-ENTER →';
 
   const handleCta = () => {
-    if (entering) return;
+    if (entering || isAtMax) return;
     if (!walletConnected) onConnectWallet();
-    else if (!canPlay) onOpenBuyLives();
+    else if (!isFirstEntry && !hasLives) onOpenBuyLives();
     else onStartQuiz();
   };
 
@@ -405,18 +423,18 @@ const RoundsViewV2: React.FC<Props> = ({
         </div>
         <button
           onClick={handleCta}
-          disabled={entering}
+          disabled={entering || isAtMax}
           className="font-black italic uppercase rounded-full active:opacity-90"
           style={{
-            background: '#14F195',
-            color: '#000',
+            background: isAtMax ? '#27272a' : '#14F195',
+            color: isAtMax ? '#a1a1aa' : '#000',
             padding: '14px 32px',
             fontSize: 13,
             letterSpacing: '0.14em',
             border: 'none',
-            cursor: entering ? 'not-allowed' : 'pointer',
-            opacity: entering ? 0.65 : 1,
-            transition: 'opacity 0.15s ease',
+            cursor: entering || isAtMax ? 'not-allowed' : 'pointer',
+            opacity: entering ? 0.65 : isAtMax ? 0.55 : 1,
+            transition: 'opacity 0.15s ease, background 0.15s ease',
           }}
         >
           {entering ? 'ENTERING...' : ctaLabel}

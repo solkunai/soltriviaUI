@@ -149,7 +149,9 @@ const App: React.FC = () => {
   const [livesDisplayReady, setLivesDisplayReady] = useState(false); // false = show "—" for first 5s after connect
   const [roundEntriesUsed, setRoundEntriesUsed] = useState(0);
   const [freeEntryNotification, setFreeEntryNotification] = useState<string | null>(null);
-  const ROUND_ENTRIES_MAX = 2;
+  // Per-round entry cap. First entry is free of life cost; entries 2-5 cost 1 life each.
+  // Server-side double-check at App.tsx:813 enforces the same cap from the DB.
+  const ROUND_ENTRIES_MAX = 5;
   
   // Seeker Genesis Token verification status (for discounted lives pricing)
   const [isSeekerVerified, setIsSeekerVerified] = useState(false);
@@ -1755,6 +1757,8 @@ const App: React.FC = () => {
               lives={livesDisplayReady ? lives : null}
               walletConnected={connected}
               entering={isEnteringRound}
+              roundEntriesUsed={roundEntriesUsed}
+              roundEntriesMax={ROUND_ENTRIES_MAX}
               onStartQuiz={handleStartQuiz}
               onConnectWallet={() => setShowWalletRequired(true)}
               onOpenBuyLives={() => {

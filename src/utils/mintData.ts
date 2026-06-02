@@ -144,18 +144,58 @@ export const ARCHETYPE_ORDER: ArchetypeKey[] = ['genius', 'scholar', 'competitor
 // Total commemorative supply across all 4 archetypes (25K each).
 export const MINT_SUPPLY = 100000;
 
+// Trivia gate questions shown before a mint. Mix of crypto culture + Solana
+// knowledge filter. Updated 2026-06-02 — removed broken ◎ symbol Q, dropped
+// archetype-element Q (users can't know pre-mint), upgraded founder Q to the
+// "chad" version with degen wrong answers, added hacker-house + WAGMI +
+// Proof-of-History. Cycles per-wallet so the same wallet sees all 10 before
+// any repeat (see pickGateQuestionForWallet).
 export const GATE_QUESTIONS: { q: string; options: string[]; correct: number }[] = [
   { q: "Solana's native token?", options: ['SOL', 'ETH', 'BTC', 'SUI'], correct: 0 },
+  { q: "Who's the chad who co-founded Solana?", options: ['SBF', 'Toly', 'Elon', 'Andrew Tate'], correct: 1 },
   { q: 'How many archetypes drop tonight?', options: ['3', '4', '5', '7'], correct: 1 },
+  { q: "What does 'WAGMI' mean?", options: ['We Are Going Maximum In', "We're All Gonna Make It", 'Wallet Already Got My Info', 'Win And Get My Investment'], correct: 1 },
   { q: 'What does NFT stand for?', options: ['Network File Transfer', 'Non-Fungible Token', 'New Function Tag', 'Native Fee Token'], correct: 1 },
-  { q: 'THE GENIUS uses which element?', options: ['Fire', 'Ice', 'Earth', 'Lightning'], correct: 2 },
-  { q: 'SOL currency symbol?', options: ['◎', 'Ξ', '₿', '◆'], correct: 0 },
-  { q: 'Who founded Solana?', options: ['Vitalik B.', 'CZ', 'Anatoly Y.', 'Hoskinson'], correct: 2 },
+  { q: "Where's the 2026 Solana hacker house?", options: ['New York', 'Tokyo', 'London', 'Dubai'], correct: 2 },
   { q: 'Solana-native wallet?', options: ['MetaMask', 'Trezor', 'Phantom', 'Ledger'], correct: 2 },
-  { q: "THE CHAMPION's rarity?", options: ['Common', 'Rare', 'Epic', 'Legendary'], correct: 3 },
+  { q: "Solana's consensus innovation?", options: ['Proof of Work', 'Proof of Stake', 'Proof of History', 'Proof of Authority'], correct: 2 },
   { q: 'Solana mainnet launched?', options: ['2018', '2019', '2020', '2021'], correct: 2 },
   { q: "'gm' means…", options: ['Got Mint', 'Good Morning', 'God Mode', 'Good Money'], correct: 1 },
 ];
 
+// LocalStorage key prefix for the per-wallet question rotation index.
+const GATE_IDX_KEY = (wallet: string) => `mint:gateIdx:${wallet}`;
+
+/**
+ * Pick the next trivia gate question for this wallet, cycling so the same wallet
+ * sees all 10 before any repeat. If wallet is missing, falls back to random.
+ *
+ * Reads + writes localStorage as a side effect — call ONCE per gate-show (e.g.
+ * inside `useState` initializer).
+ */
+export function pickGateQuestionForWallet(walletAddress: string | null | undefined) {
+  if (!walletAddress) {
+    return GATE_QUESTIONS[Math.floor(Math.random() * GATE_QUESTIONS.length)];
+  }
+  const key = GATE_IDX_KEY(walletAddress);
+  let nextIdx: number;
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored !== null) {
+      const parsed = parseInt(stored, 10);
+      nextIdx = (parsed + 1) % GATE_QUESTIONS.length;
+    } else {
+      // First time this wallet hits the gate — start at a random index so
+      // adjacent wallets don't all see Q1 first.
+      nextIdx = Math.floor(Math.random() * GATE_QUESTIONS.length);
+    }
+    localStorage.setItem(key, String(nextIdx));
+  } catch {
+    nextIdx = Math.floor(Math.random() * GATE_QUESTIONS.length);
+  }
+  return GATE_QUESTIONS[nextIdx];
+}
+
+/** @deprecated kept for back-compat — prefer `pickGateQuestionForWallet`. */
 export const randomGateQuestion = () =>
   GATE_QUESTIONS[Math.floor(Math.random() * GATE_QUESTIONS.length)];

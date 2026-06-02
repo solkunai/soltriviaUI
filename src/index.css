@@ -272,3 +272,18 @@ body {
 .points-popup {
   animation: pointsPop 1s ease-out forwards;
 }
+
+/* ─── Mint banner mystery-card fan: idle bob ───
+   Used by HomeViewV2 mint CTA card fan. Each card gets a staggered duration +
+   delay so the 4 cards bob out of sync. Gated by prefers-reduced-motion. */
+@keyframes st-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-bob-1, .st-bob-2, .st-bob-3, .st-bob-4 { animation: none !important; }
+}
+.st-bob-1 { animation: st-bob 3.4s ease-in-out 0s    infinite; }
+.st-bob-2 { animation: st-bob 3.7s ease-in-out 0.35s infinite; }
+.st-bob-3 { animation: st-bob 4.0s ease-in-out 0.70s infinite; }
+.st-bob-4 { animation: st-bob 4.3s ease-in-out 1.05s infinite; }

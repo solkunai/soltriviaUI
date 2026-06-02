@@ -875,6 +875,190 @@ export function buildSweepCustomGameIx(
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// NFT Mint (v2.1) — commemorative mint via Bubblegum + Core
+// Source of truth: programs/soltrivia_v2/src/instructions/nft_mint.rs
+// ═══════════════════════════════════════════════════════════════════════════
+
+const NFT_MINT_CONFIG_SEED   = new TextEncoder().encode('nft_mint_config');
+const MINTER_SEED            = new TextEncoder().encode('minter');
+const MINT_AUTHORITY_SEED    = new TextEncoder().encode('mint_authority');
+
+// External Metaplex / Token-2022 program IDs (verbatim from nft_mint.rs).
+export const MPL_BUBBLEGUM_ID         = new PublicKey('BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY');
+export const MPL_NOOP_ID              = new PublicKey('mnoopTCrg4p8ry25e4bcWA9XZjbNjMTfgYVGGEdRsf3');
+export const MPL_ACCOUNT_COMPRESSION_ID = new PublicKey('mcmt6YrQEMKw8Mw43FmpRLmf7BqRnFMKmAcbxE3xkAW');
+export const MPL_CORE_ID              = new PublicKey('CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d');
+export const MPL_CORE_CPI_SIGNER      = new PublicKey('CbNY3JiXdXNE9tPNEk1aRZVEkWdj2v7kfJLNQwZZgpXk');
+export const TOKEN_2022_PROGRAM       = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
+export const SGT_MINT_AUTHORITY       = new PublicKey('GT2zuHVaZQYZSyQMgJPLzvkmyztfyXg2NJunqFp4p3A4');
+
+// v2.1 discriminators (Anchor: sha256("global:<fn>")[0..8]).
+const NFT_DISC = {
+  initNftMintConfig:    new Uint8Array([234, 251, 238, 11, 252, 157, 126, 136]),
+  mintCommemorative:    new Uint8Array([209, 133, 229, 236, 206, 175, 120, 52]),
+  initReferralBalance:  new Uint8Array([44, 125, 2, 25, 60, 102, 100, 183]),
+  claimReferralBalance: new Uint8Array([232, 137, 146, 65, 228, 90, 194, 96]),
+} as const;
+
+// ─── PDA Derivations ───
+
+export function getNftMintConfigPda(programId: PublicKey = SOLTRIVIA_PROGRAM_ID): PublicKey {
+  return PublicKey.findProgramAddressSync([NFT_MINT_CONFIG_SEED], programId)[0];
+}
+
+export function getMinterRecordPda(
+  player: PublicKey,
+  programId: PublicKey = SOLTRIVIA_PROGRAM_ID,
+): PublicKey {
+  return PublicKey.findProgramAddressSync([MINTER_SEED, player.toBytes()], programId)[0];
+}
+
+export function getMintAuthorityPda(programId: PublicKey = SOLTRIVIA_PROGRAM_ID): PublicKey {
+  return PublicKey.findProgramAddressSync([MINT_AUTHORITY_SEED], programId)[0];
+}
+
+/** Bubblegum tree_config PDA: seeds=[merkle_tree], program=Bubblegum. */
+export function getBubblegumTreeConfigPda(merkleTree: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync([merkleTree.toBytes()], MPL_BUBBLEGUM_ID)[0];
+}
+
+// ─── Account Data Types + Deserializers ───
+
+export type NftMintConfigData = {
+  authority: string;
+  revenueWallet: string;
+  merkleTree: string;
+  collection: string;
+  basePriceLamports: number;
+  seekerPriceLamports: number;
+  maxPerWallet: number;
+  mintedTotal: number;
+  paused: boolean;
+};
+
+export type MinterRecordData = {
+  player: string;
+  mintCount: number;
+};
+
+/** Layout (after 8-byte Anchor discriminator):
+ *  authority[32] · revenue_wallet[32] · merkle_tree[32] · collection[32]
+ *  base_price_lamports[u64] · seeker_price_lamports[u64]
+ *  max_per_wallet[u16] · minted_total[u64] · paused[u8] · bump[u8]
+ */
+export function deserializeNftMintConfig(raw: Uint8Array): NftMintConfigData {
+  const data = raw.slice(8);
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  return {
+    authority:           new PublicKey(data.slice(0, 32)).toBase58(),
+    revenueWallet:       new PublicKey(data.slice(32, 64)).toBase58(),
+    merkleTree:          new PublicKey(data.slice(64, 96)).toBase58(),
+    collection:          new PublicKey(data.slice(96, 128)).toBase58(),
+    basePriceLamports:   Number(dv.getBigUint64(128, true)),
+    seekerPriceLamports: Number(dv.getBigUint64(136, true)),
+    maxPerWallet:        dv.getUint16(144, true),
+    mintedTotal:         Number(dv.getBigUint64(146, true)),
+    paused:              data[154] === 1,
+  };
+}
+
+/** Layout (after 8-byte discriminator): player[32] · mint_count[u16] · bump[u8]. */
+export function deserializeMinterRecord(raw: Uint8Array): MinterRecordData {
+  const data = raw.slice(8);
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  return {
+    player:     new PublicKey(data.slice(0, 32)).toBase58(),
+    mintCount:  dv.getUint16(32, true),
+  };
+}
+
+// ─── Account Fetchers ───
+
+export async function fetchNftMintConfig(
+  connection: Connection,
+  programId: PublicKey = SOLTRIVIA_PROGRAM_ID,
+): Promise<NftMintConfigData | null> {
+  const pda = getNftMintConfigPda(programId);
+  const info = await connection.getAccountInfo(pda);
+  if (!info) return null;
+  return deserializeNftMintConfig(new Uint8Array(info.data));
+}
+
+export async function fetchMinterRecord(
+  connection: Connection,
+  player: PublicKey,
+  programId: PublicKey = SOLTRIVIA_PROGRAM_ID,
+): Promise<MinterRecordData | null> {
+  const pda = getMinterRecordPda(player, programId);
+  const info = await connection.getAccountInfo(pda);
+  if (!info) return null;
+  return deserializeMinterRecord(new Uint8Array(info.data));
+}
+
+// ─── Ix Builder: mint_commemorative ───
+//
+// Account order (17, MUST match `MintCommemorative` struct in nft_mint.rs):
+//   0. player (sig, mut)
+//   1. nft_config (PDA, mut)
+//   2. minter_record (PDA, mut, init_if_needed)
+//   3. mint_authority (PDA, readonly — PDA signs the Bubblegum CPI)
+//   4. revenue_wallet (mut, must equal nft_config.revenue_wallet)
+//   5. eligibility_proof (readonly, EntryReceipt | CustomGameEntry | Duel PDA)
+//   6. sgt_token_account (Option<UncheckedAccount>) — pass programId placeholder if omitted
+//   7. sgt_mint           (Option<UncheckedAccount>) — pass programId placeholder if omitted
+//   8. tree_config (mut)
+//   9. merkle_tree (mut, must equal nft_config.merkle_tree)
+//  10. core_collection (mut, must equal nft_config.collection)
+//  11. mpl_core_cpi_signer (MPL_CORE_CPI_SIGNER)
+//  12. log_wrapper        (MPL_NOOP_ID)
+//  13. compression_program (MPL_ACCOUNT_COMPRESSION_ID)
+//  14. mpl_core_program   (MPL_CORE_ID)
+//  15. bubblegum_program  (MPL_BUBBLEGUM_ID)
+//  16. system_program
+//
+// Anchor optional convention: pass the calling program's id as a placeholder
+// when an `Option<...>` account is None.
+export function buildMintCommemorativeIx(args: {
+  player: PublicKey;
+  revenueWallet: PublicKey;
+  eligibilityProof: PublicKey;
+  merkleTree: PublicKey;
+  coreCollection: PublicKey;
+  sgtTokenAccount?: PublicKey | null;
+  sgtMint?: PublicKey | null;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const sgtTa = args.sgtTokenAccount ?? programId;
+  const sgtMi = args.sgtMint ?? programId;
+
+  return makeIx(
+    programId,
+    NFT_DISC.mintCommemorative,
+    new Uint8Array(0),
+    [
+      { pubkey: args.player,                                isSigner: true,  isWritable: true  },
+      { pubkey: getNftMintConfigPda(programId),             isSigner: false, isWritable: true  },
+      { pubkey: getMinterRecordPda(args.player, programId), isSigner: false, isWritable: true  },
+      { pubkey: getMintAuthorityPda(programId),             isSigner: false, isWritable: false },
+      { pubkey: args.revenueWallet,                         isSigner: false, isWritable: true  },
+      { pubkey: args.eligibilityProof,                      isSigner: false, isWritable: false },
+      { pubkey: sgtTa,                                      isSigner: false, isWritable: false },
+      { pubkey: sgtMi,                                      isSigner: false, isWritable: false },
+      { pubkey: getBubblegumTreeConfigPda(args.merkleTree), isSigner: false, isWritable: true  },
+      { pubkey: args.merkleTree,                            isSigner: false, isWritable: true  },
+      { pubkey: args.coreCollection,                        isSigner: false, isWritable: true  },
+      { pubkey: MPL_CORE_CPI_SIGNER,                        isSigner: false, isWritable: false },
+      { pubkey: MPL_NOOP_ID,                                isSigner: false, isWritable: false },
+      { pubkey: MPL_ACCOUNT_COMPRESSION_ID,                 isSigner: false, isWritable: false },
+      { pubkey: MPL_CORE_ID,                                isSigner: false, isWritable: false },
+      { pubkey: MPL_BUBBLEGUM_ID,                           isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId,                    isSigner: false, isWritable: false },
+    ],
+  );
+}
+
 // ─── Backward-Compatible Exports (V1 callers in App.tsx / ProfileView.tsx) ──
 // These wrap V2 tier-0 equivalents. PAID_TRIVIA_ENABLED=false so they won't run in prod.
 
