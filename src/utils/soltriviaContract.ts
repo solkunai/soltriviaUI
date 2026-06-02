@@ -1059,6 +1059,554 @@ export function buildMintCommemorativeIx(args: {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// NFT Custom Games (v2.1) — creator escrows an NFT as the prize, players pay
+// SOL entry fee, operator finalizes with a single winner, winner claims the
+// NFT. Two variants by NFT standard:
+//   - Core (mpl-core): use *Nft builders below (7-9 accounts each)
+//   - Token Metadata pNFT: use *TmPnft builders (17-18 accounts each)
+//
+// Source of truth: programs/soltrivia_v2/src/instructions/custom_game_nft.rs +
+// custom_game_tm_pnft.rs. Account order MUST match the Rust Accounts<> structs
+// verbatim or transactions fail on-chain.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const CUSTOM_GAME_NFT_SEED   = new TextEncoder().encode('custom_nft');
+const CUSTOM_NFT_ESCROW_SEED = new TextEncoder().encode('custom_nft_escrow');
+
+// External program / sysvar IDs for the pNFT (Token Metadata) flow.
+export const MPL_TOKEN_METADATA_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
+export const SPL_TOKEN_PROGRAM_ID  = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+export const SPL_ATA_PROGRAM_ID    = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
+export const SYSVAR_INSTRUCTIONS_ID = new PublicKey('Sysvar1nstructions1111111111111111111111111');
+
+// v2.1 NFT custom game discriminators (Anchor: sha256("global:<fn>")[0..8]).
+const NFT_GAME_DISC = {
+  createCustomGameNft:      new Uint8Array([130, 187, 222, 216, 190, 72, 73, 242]),
+  enterCustomGameNft:       new Uint8Array([118, 42, 6, 152, 60, 2, 39, 252]),
+  finalizeCustomGameNft:    new Uint8Array([208, 105, 25, 221, 198, 137, 188, 213]),
+  claimCustomNftPrize:      new Uint8Array([31, 78, 197, 248, 144, 13, 201, 153]),
+  reclaimCustomNft:         new Uint8Array([82, 81, 71, 63, 203, 53, 11, 70]),
+  createCustomGameTmPnft:   new Uint8Array([158, 150, 158, 121, 201, 119, 31, 122]),
+  claimCustomTmPnftPrize:   new Uint8Array([116, 175, 150, 125, 123, 28, 5, 184]),
+  reclaimCustomTmPnft:      new Uint8Array([35, 244, 234, 39, 27, 28, 191, 173]),
+} as const;
+
+// ─── PDA Derivations ───
+
+/** CustomGameNft PDA: seeds=[CUSTOM_GAME_NFT_SEED, game_id_le_bytes]. Shared by both Core + pNFT variants. */
+export function getCustomGameNftPda(
+  gameId: number | bigint,
+  programId: PublicKey = SOLTRIVIA_PROGRAM_ID,
+): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [CUSTOM_GAME_NFT_SEED, u64Le(gameId)],
+    programId,
+  )[0];
+}
+
+/** Custom NFT escrow PDA: seeds=[CUSTOM_NFT_ESCROW_SEED, game_id_le_bytes]. */
+export function getCustomNftEscrowPda(
+  gameId: number | bigint,
+  programId: PublicKey = SOLTRIVIA_PROGRAM_ID,
+): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [CUSTOM_NFT_ESCROW_SEED, u64Le(gameId)],
+    programId,
+  )[0];
+}
+
+/** Token Metadata `Metadata` PDA for a pNFT mint. seeds=["metadata", MPL_TOKEN_METADATA_ID, mint]. */
+export function getTmMetadataPda(mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode('metadata'), MPL_TOKEN_METADATA_ID.toBytes(), mint.toBytes()],
+    MPL_TOKEN_METADATA_ID,
+  )[0];
+}
+
+/** Token Metadata `MasterEdition` PDA. seeds=["metadata", MPL_TOKEN_METADATA_ID, mint, "edition"]. */
+export function getTmMasterEditionPda(mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [
+      new TextEncoder().encode('metadata'),
+      MPL_TOKEN_METADATA_ID.toBytes(),
+      mint.toBytes(),
+      new TextEncoder().encode('edition'),
+    ],
+    MPL_TOKEN_METADATA_ID,
+  )[0];
+}
+
+/**
+ * Token Metadata `TokenRecord` PDA (only used for pNFTs with auth rules).
+ * seeds=["metadata", MPL_TOKEN_METADATA_ID, mint, "token_record", tokenAccount].
+ */
+export function getTmTokenRecordPda(mint: PublicKey, tokenAccount: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [
+      new TextEncoder().encode('metadata'),
+      MPL_TOKEN_METADATA_ID.toBytes(),
+      mint.toBytes(),
+      new TextEncoder().encode('token_record'),
+      tokenAccount.toBytes(),
+    ],
+    MPL_TOKEN_METADATA_ID,
+  )[0];
+}
+
+/**
+ * Associated Token Account derivation. owner can be a PDA (use allowOwnerOffCurve=true).
+ * seeds=[owner, TOKEN_PROGRAM_ID, mint], program=ATA_PROGRAM_ID.
+ */
+export function getAssociatedTokenAddress(
+  mint: PublicKey,
+  owner: PublicKey,
+): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [owner.toBytes(), SPL_TOKEN_PROGRAM_ID.toBytes(), mint.toBytes()],
+    SPL_ATA_PROGRAM_ID,
+  )[0];
+}
+
+// ─── Account Data Type + Deserializer ───
+
+export type CustomGameNftData = {
+  gameId: number;
+  creator: string;
+  nftAsset: string;             // Core: asset addr. pNFT: mint addr.
+  nftStandard: 'core' | 'pnft'; // mapped from u8 enum (0=Core, 1=TokenMetadata)
+  entryFeeLamports: number;
+  platformCutBps: number;
+  entryCount: number;
+  totalPot: number;
+  status: 'open' | 'finalized' | 'expired'; // mapped from u8 enum (0/1/2)
+  settledAt: number;
+  winner: string;
+  winnerClaimed: boolean;
+  creatorPaid: boolean;
+  expiresAt: number;
+  createdAt: number;
+};
+
+/** Layout (after 8-byte discriminator):
+ *   game_id[u64] · creator[32] · nft_asset[32] · nft_standard[u8]
+ *   entry_fee_lamports[u64] · platform_cut_bps[u16] · entry_count[u32]
+ *   total_pot[u64] · status[u8] · settled_at[i64] · winner[32]
+ *   winner_claimed[u8] · creator_paid[u8] · expires_at[i64] · created_at[i64]
+ *   bump[u8]
+ */
+export function deserializeCustomGameNft(raw: Uint8Array): CustomGameNftData {
+  const data = raw.slice(8);
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const standardByte = data[72];
+  const statusByte = data[95];
+  return {
+    gameId:            Number(dv.getBigUint64(0, true)),
+    creator:           new PublicKey(data.slice(8, 40)).toBase58(),
+    nftAsset:          new PublicKey(data.slice(40, 72)).toBase58(),
+    nftStandard:       standardByte === 1 ? 'pnft' : 'core',
+    entryFeeLamports:  Number(dv.getBigUint64(73, true)),
+    platformCutBps:    dv.getUint16(81, true),
+    entryCount:        dv.getUint32(83, true),
+    totalPot:          Number(dv.getBigUint64(87, true)),
+    status:            statusByte === 1 ? 'finalized' : statusByte === 2 ? 'expired' : 'open',
+    settledAt:         Number(dv.getBigInt64(96, true)),
+    winner:            new PublicKey(data.slice(104, 136)).toBase58(),
+    winnerClaimed:     data[136] === 1,
+    creatorPaid:       data[137] === 1,
+    expiresAt:         Number(dv.getBigInt64(138, true)),
+    createdAt:         Number(dv.getBigInt64(146, true)),
+  };
+}
+
+export async function fetchCustomGameNft(
+  connection: Connection,
+  gameId: number | bigint,
+  programId: PublicKey = SOLTRIVIA_PROGRAM_ID,
+): Promise<CustomGameNftData | null> {
+  const pda = getCustomGameNftPda(gameId, programId);
+  const info = await connection.getAccountInfo(pda);
+  if (!info) return null;
+  return deserializeCustomGameNft(new Uint8Array(info.data));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Ix Builders — Core (mpl-core) variants
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * create_custom_game_nft — creator escrows their Core NFT as the prize.
+ *
+ * IMPORTANT: game_id is taken from `config.next_custom_game_id` ON-CHAIN. The
+ * frontend must read GameConfig first to know what the next id will be, so it
+ * can derive the correct game/escrow PDAs to pass.
+ *
+ * Args: entry_fee_lamports (u64), expires_at (i64), platform_cut_bps (u16).
+ * Accounts (matches CreateCustomGameNft struct in custom_game_nft.rs:27):
+ *   0. creator (sig, mut)
+ *   1. config (PDA, mut)
+ *   2. game (PDA, mut) — derived from next_custom_game_id
+ *   3. escrow (PDA) — derived from next_custom_game_id
+ *   4. nft_asset (mut) — the Core asset being escrowed
+ *   5. mpl_core_program (= MPL_CORE_ID)
+ *   6. system_program
+ */
+export function buildCreateCustomGameNftIx(args: {
+  creator: PublicKey;
+  nextGameId: number | bigint;  // read from config.next_custom_game_id
+  coreNftAsset: PublicKey;
+  entryFeeLamports: number | bigint;
+  expiresAtUnix: number | bigint;
+  platformCutBps: number;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  return makeIx(
+    programId,
+    NFT_GAME_DISC.createCustomGameNft,
+    concat(
+      u64Le(args.entryFeeLamports),
+      i64Le(args.expiresAtUnix),
+      u16Le(args.platformCutBps),
+    ),
+    [
+      { pubkey: args.creator,                                         isSigner: true,  isWritable: true  },
+      { pubkey: getConfigPda(programId),                              isSigner: false, isWritable: true  },
+      { pubkey: getCustomGameNftPda(args.nextGameId, programId),      isSigner: false, isWritable: true  },
+      { pubkey: getCustomNftEscrowPda(args.nextGameId, programId),    isSigner: false, isWritable: false },
+      { pubkey: args.coreNftAsset,                                    isSigner: false, isWritable: true  },
+      { pubkey: MPL_CORE_ID,                                          isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId,                              isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * enter_custom_game_nft — player pays the SOL entry fee (if any) + platform fee.
+ * Shared by both Core and pNFT variants (entry only touches SOL + game state).
+ * Accounts (matches EnterCustomGameNft struct in custom_game_nft.rs:124):
+ *   0. player (sig, mut)
+ *   1. config (PDA, readonly)
+ *   2. game (PDA, mut)
+ *   3. escrow (PDA, mut) — collects the paid SOL pot
+ *   4. revenue_wallet (mut) — config.revenue_wallet
+ *   5. system_program
+ */
+export function buildEnterCustomGameNftIx(args: {
+  player: PublicKey;
+  gameId: number | bigint;
+  revenueWallet: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  return makeIx(
+    programId,
+    NFT_GAME_DISC.enterCustomGameNft,
+    u64Le(args.gameId),
+    [
+      { pubkey: args.player,                                       isSigner: true,  isWritable: true  },
+      { pubkey: getConfigPda(programId),                           isSigner: false, isWritable: false },
+      { pubkey: getCustomGameNftPda(args.gameId, programId),       isSigner: false, isWritable: true  },
+      { pubkey: getCustomNftEscrowPda(args.gameId, programId),     isSigner: false, isWritable: true  },
+      { pubkey: args.revenueWallet,                                isSigner: false, isWritable: true  },
+      { pubkey: SystemProgram.programId,                           isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * finalize_custom_game_nft — operator picks the single winner + disburses SOL.
+ * Accounts (matches FinalizeCustomGameNft struct in custom_game_nft.rs:206):
+ *   0. authority (sig) — operator OR owner
+ *   1. config (PDA, readonly)
+ *   2. game (PDA, mut)
+ *   3. escrow (PDA, mut)
+ *   4. creator (mut) — receives SOL pot share
+ *   5. revenue_wallet (mut)
+ *   6. system_program
+ */
+export function buildFinalizeCustomGameNftIx(args: {
+  authority: PublicKey;
+  gameId: number | bigint;
+  winner: PublicKey;
+  creator: PublicKey;
+  revenueWallet: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  return makeIx(
+    programId,
+    NFT_GAME_DISC.finalizeCustomGameNft,
+    concat(u64Le(args.gameId), args.winner.toBytes()),
+    [
+      { pubkey: args.authority,                                   isSigner: true,  isWritable: false },
+      { pubkey: getConfigPda(programId),                          isSigner: false, isWritable: false },
+      { pubkey: getCustomGameNftPda(args.gameId, programId),      isSigner: false, isWritable: true  },
+      { pubkey: getCustomNftEscrowPda(args.gameId, programId),    isSigner: false, isWritable: true  },
+      { pubkey: args.creator,                                     isSigner: false, isWritable: true  },
+      { pubkey: args.revenueWallet,                               isSigner: false, isWritable: true  },
+      { pubkey: SystemProgram.programId,                          isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * claim_custom_nft_prize (Core) — winner claims the NFT.
+ * Accounts (matches ClaimCustomNftPrize struct in custom_game_nft.rs:320):
+ *   0. winner (sig, mut)
+ *   1. game (PDA, mut)
+ *   2. escrow (PDA, readonly)
+ *   3. nft_asset (mut) — must == game.nft_asset
+ *   4. mpl_core_program
+ *   5. system_program
+ */
+export function buildClaimCustomNftPrizeIx(args: {
+  winner: PublicKey;
+  gameId: number | bigint;
+  coreNftAsset: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  return makeIx(
+    programId,
+    NFT_GAME_DISC.claimCustomNftPrize,
+    u64Le(args.gameId),
+    [
+      { pubkey: args.winner,                                      isSigner: true,  isWritable: true  },
+      { pubkey: getCustomGameNftPda(args.gameId, programId),      isSigner: false, isWritable: true  },
+      { pubkey: getCustomNftEscrowPda(args.gameId, programId),    isSigner: false, isWritable: false },
+      { pubkey: args.coreNftAsset,                                isSigner: false, isWritable: true  },
+      { pubkey: MPL_CORE_ID,                                      isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId,                          isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * reclaim_custom_nft (Core) — anyone can crank to return the NFT to the creator
+ * if the game expired without finalize.
+ * Accounts (matches ReclaimCustomNft struct in custom_game_nft.rs:386):
+ *   0. cranker (sig)
+ *   1. game (PDA, mut)
+ *   2. escrow (PDA, mut)
+ *   3. creator (mut)
+ *   4. nft_asset (mut)
+ *   5. mpl_core_program
+ *   6. system_program
+ */
+export function buildReclaimCustomNftIx(args: {
+  cranker: PublicKey;
+  gameId: number | bigint;
+  creator: PublicKey;
+  coreNftAsset: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  return makeIx(
+    programId,
+    NFT_GAME_DISC.reclaimCustomNft,
+    u64Le(args.gameId),
+    [
+      { pubkey: args.cranker,                                     isSigner: true,  isWritable: false },
+      { pubkey: getCustomGameNftPda(args.gameId, programId),      isSigner: false, isWritable: true  },
+      { pubkey: getCustomNftEscrowPda(args.gameId, programId),    isSigner: false, isWritable: true  },
+      { pubkey: args.creator,                                     isSigner: false, isWritable: true  },
+      { pubkey: args.coreNftAsset,                                isSigner: false, isWritable: true  },
+      { pubkey: MPL_CORE_ID,                                      isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId,                          isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Ix Builders — pNFT (Token Metadata) variants
+// pNFT TransferV1 needs ATAs, metadata PDA, master edition PDA, token records.
+// See custom_game_tm_pnft.rs:39 / 180 / 289 for the source structs.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * create_custom_game_tm_pnft — creator escrows their pNFT as the prize.
+ *
+ * Account order MUST match CreateCustomGameTmPnft (18 accounts incl. Options).
+ * For Option<AccountInfo> slots that are None: pass the program id placeholder
+ * (Anchor's convention).
+ */
+export function buildCreateCustomGameTmPnftIx(args: {
+  creator: PublicKey;
+  nextGameId: number | bigint;
+  nftMint: PublicKey;
+  creatorTokenRecord?: PublicKey | null; // Optional, required for pNFTs with auth rules
+  escrowTokenRecord?: PublicKey | null;  // Optional
+  authRulesProgram?: PublicKey | null;
+  authRules?: PublicKey | null;
+  entryFeeLamports: number | bigint;
+  expiresAtUnix: number | bigint;
+  platformCutBps: number;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const escrowPda = getCustomNftEscrowPda(args.nextGameId, programId);
+  const creatorAta = getAssociatedTokenAddress(args.nftMint, args.creator);
+  const escrowAta = getAssociatedTokenAddress(args.nftMint, escrowPda);
+  const metadata = getTmMetadataPda(args.nftMint);
+  const masterEdition = getTmMasterEditionPda(args.nftMint);
+  const ctr = args.creatorTokenRecord ?? programId;
+  const etr = args.escrowTokenRecord ?? programId;
+  const arp = args.authRulesProgram ?? programId;
+  const ar = args.authRules ?? programId;
+
+  return makeIx(
+    programId,
+    NFT_GAME_DISC.createCustomGameTmPnft,
+    concat(
+      u64Le(args.entryFeeLamports),
+      i64Le(args.expiresAtUnix),
+      u16Le(args.platformCutBps),
+    ),
+    [
+      { pubkey: args.creator,                                       isSigner: true,  isWritable: true  },
+      { pubkey: getConfigPda(programId),                            isSigner: false, isWritable: true  },
+      { pubkey: getCustomGameNftPda(args.nextGameId, programId),    isSigner: false, isWritable: true  },
+      { pubkey: escrowPda,                                          isSigner: false, isWritable: false },
+      { pubkey: args.nftMint,                                       isSigner: false, isWritable: false },
+      { pubkey: creatorAta,                                         isSigner: false, isWritable: true  },
+      { pubkey: escrowAta,                                          isSigner: false, isWritable: true  },
+      { pubkey: metadata,                                           isSigner: false, isWritable: true  },
+      { pubkey: masterEdition,                                      isSigner: false, isWritable: false },
+      { pubkey: ctr,                                                isSigner: false, isWritable: true  },
+      { pubkey: etr,                                                isSigner: false, isWritable: true  },
+      { pubkey: arp,                                                isSigner: false, isWritable: false },
+      { pubkey: ar,                                                 isSigner: false, isWritable: false },
+      { pubkey: SYSVAR_INSTRUCTIONS_ID,                             isSigner: false, isWritable: false },
+      { pubkey: SPL_TOKEN_PROGRAM_ID,                               isSigner: false, isWritable: false },
+      { pubkey: SPL_ATA_PROGRAM_ID,                                 isSigner: false, isWritable: false },
+      { pubkey: MPL_TOKEN_METADATA_ID,                              isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId,                            isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * claim_custom_tm_pnft_prize — winner claims the escrowed pNFT.
+ * Accounts (matches ClaimCustomTmPnftPrize struct in custom_game_tm_pnft.rs:180):
+ *   0. winner (sig, mut)
+ *   1. game (PDA, mut)
+ *   2. escrow (PDA, mut)
+ *   3. nft_mint
+ *   4. escrow_token (mut)
+ *   5. winner_token (mut)
+ *   6. nft_metadata (mut)
+ *   7. nft_master_edition
+ *   8. escrow_token_record (Option, mut)
+ *   9. winner_token_record (Option, mut)
+ *  10. auth_rules_program (Option)
+ *  11. auth_rules (Option)
+ *  12. sysvar_instructions
+ *  13. spl_token_program
+ *  14. spl_ata_program
+ *  15. token_metadata_program
+ *  16. system_program
+ */
+export function buildClaimCustomTmPnftPrizeIx(args: {
+  winner: PublicKey;
+  gameId: number | bigint;
+  nftMint: PublicKey;
+  escrowTokenRecord?: PublicKey | null;
+  winnerTokenRecord?: PublicKey | null;
+  authRulesProgram?: PublicKey | null;
+  authRules?: PublicKey | null;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const escrowPda = getCustomNftEscrowPda(args.gameId, programId);
+  const escrowAta = getAssociatedTokenAddress(args.nftMint, escrowPda);
+  const winnerAta = getAssociatedTokenAddress(args.nftMint, args.winner);
+  const metadata = getTmMetadataPda(args.nftMint);
+  const masterEdition = getTmMasterEditionPda(args.nftMint);
+  const etr = args.escrowTokenRecord ?? programId;
+  const wtr = args.winnerTokenRecord ?? programId;
+  const arp = args.authRulesProgram ?? programId;
+  const ar = args.authRules ?? programId;
+
+  return makeIx(
+    programId,
+    NFT_GAME_DISC.claimCustomTmPnftPrize,
+    u64Le(args.gameId),
+    [
+      { pubkey: args.winner,                                       isSigner: true,  isWritable: true  },
+      { pubkey: getCustomGameNftPda(args.gameId, programId),       isSigner: false, isWritable: true  },
+      { pubkey: escrowPda,                                         isSigner: false, isWritable: true  },
+      { pubkey: args.nftMint,                                      isSigner: false, isWritable: false },
+      { pubkey: escrowAta,                                         isSigner: false, isWritable: true  },
+      { pubkey: winnerAta,                                         isSigner: false, isWritable: true  },
+      { pubkey: metadata,                                          isSigner: false, isWritable: true  },
+      { pubkey: masterEdition,                                     isSigner: false, isWritable: false },
+      { pubkey: etr,                                               isSigner: false, isWritable: true  },
+      { pubkey: wtr,                                               isSigner: false, isWritable: true  },
+      { pubkey: arp,                                               isSigner: false, isWritable: false },
+      { pubkey: ar,                                                isSigner: false, isWritable: false },
+      { pubkey: SYSVAR_INSTRUCTIONS_ID,                            isSigner: false, isWritable: false },
+      { pubkey: SPL_TOKEN_PROGRAM_ID,                              isSigner: false, isWritable: false },
+      { pubkey: SPL_ATA_PROGRAM_ID,                                isSigner: false, isWritable: false },
+      { pubkey: MPL_TOKEN_METADATA_ID,                             isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId,                           isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * reclaim_custom_tm_pnft — cranker returns the pNFT to creator after expiry.
+ * Same 18-account shape as create, just different role mapping.
+ */
+export function buildReclaimCustomTmPnftIx(args: {
+  cranker: PublicKey;
+  gameId: number | bigint;
+  creator: PublicKey;
+  nftMint: PublicKey;
+  escrowTokenRecord?: PublicKey | null;
+  creatorTokenRecord?: PublicKey | null;
+  authRulesProgram?: PublicKey | null;
+  authRules?: PublicKey | null;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const escrowPda = getCustomNftEscrowPda(args.gameId, programId);
+  const escrowAta = getAssociatedTokenAddress(args.nftMint, escrowPda);
+  const creatorAta = getAssociatedTokenAddress(args.nftMint, args.creator);
+  const metadata = getTmMetadataPda(args.nftMint);
+  const masterEdition = getTmMasterEditionPda(args.nftMint);
+  const etr = args.escrowTokenRecord ?? programId;
+  const ctr = args.creatorTokenRecord ?? programId;
+  const arp = args.authRulesProgram ?? programId;
+  const ar = args.authRules ?? programId;
+
+  return makeIx(
+    programId,
+    NFT_GAME_DISC.reclaimCustomTmPnft,
+    u64Le(args.gameId),
+    [
+      { pubkey: args.cranker,                                      isSigner: true,  isWritable: false },
+      { pubkey: getCustomGameNftPda(args.gameId, programId),       isSigner: false, isWritable: true  },
+      { pubkey: escrowPda,                                         isSigner: false, isWritable: true  },
+      { pubkey: args.creator,                                      isSigner: false, isWritable: true  },
+      { pubkey: args.nftMint,                                      isSigner: false, isWritable: false },
+      { pubkey: escrowAta,                                         isSigner: false, isWritable: true  },
+      { pubkey: creatorAta,                                        isSigner: false, isWritable: true  },
+      { pubkey: metadata,                                          isSigner: false, isWritable: true  },
+      { pubkey: masterEdition,                                     isSigner: false, isWritable: false },
+      { pubkey: etr,                                               isSigner: false, isWritable: true  },
+      { pubkey: ctr,                                               isSigner: false, isWritable: true  },
+      { pubkey: arp,                                               isSigner: false, isWritable: false },
+      { pubkey: ar,                                                isSigner: false, isWritable: false },
+      { pubkey: SYSVAR_INSTRUCTIONS_ID,                            isSigner: false, isWritable: false },
+      { pubkey: SPL_TOKEN_PROGRAM_ID,                              isSigner: false, isWritable: false },
+      { pubkey: SPL_ATA_PROGRAM_ID,                                isSigner: false, isWritable: false },
+      { pubkey: MPL_TOKEN_METADATA_ID,                             isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId,                           isSigner: false, isWritable: false },
+    ],
+  );
+}
+
 // ─── Backward-Compatible Exports (V1 callers in App.tsx / ProfileView.tsx) ──
 // These wrap V2 tier-0 equivalents. PAID_TRIVIA_ENABLED=false so they won't run in prod.
 
