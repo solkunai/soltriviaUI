@@ -38,6 +38,9 @@ type RoomRow = {
   expires: string;
   hot?: boolean;
   ended?: boolean;
+  // NFT prize fields (only populated when prizeModel === 'nft')
+  nftMint?: string | null;
+  nftStandard?: 'core' | 'pnft' | null;
 };
 
 const SOL = 1_000_000_000;
@@ -80,7 +83,7 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
           supabase
             .from('custom_games')
             .select(
-              'slug, name, creator_wallet, prize_model, entry_fee_lamports, player_count, max_players, expires_at, created_at, status',
+              'slug, name, creator_wallet, prize_model, entry_fee_lamports, player_count, max_players, expires_at, created_at, status, nft_mint, nft_standard',
             )
             .eq('status', 'active')
             .gt('expires_at', nowIso)
@@ -89,7 +92,7 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
           supabase
             .from('custom_games')
             .select(
-              'slug, name, creator_wallet, prize_model, entry_fee_lamports, player_count, max_players, expires_at, status',
+              'slug, name, creator_wallet, prize_model, entry_fee_lamports, player_count, max_players, expires_at, status, nft_mint, nft_standard',
             )
             .in('status', ['completed', 'finalized', 'expired'])
             .order('expires_at', { ascending: false })
@@ -118,6 +121,8 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
           expires: isEnded ? 'ENDED' : expiryLabel(g.expires_at),
           hot: (g.player_count ?? 0) >= 6,
           ended: isEnded,
+          nftMint: g.nft_mint ?? null,
+          nftStandard: g.nft_standard ?? null,
         });
 
         // Official games live in the FEATURED strip only — keep them out of

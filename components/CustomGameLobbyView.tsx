@@ -16,6 +16,21 @@ interface CustomGameLobbyViewProps {
   onClaimRefund?: (onChainGameId: number) => Promise<void>;
   onFundAndStart?: (gameData: CustomGameData) => void;
   onEndGame?: (gameData: CustomGameData) => Promise<void>;
+  /** Winner claims the escrowed NFT prize (v2.1). Branches by nft_standard. */
+  onClaimNftPrize?: (args: {
+    onChainGameId: number;
+    nftMint: string;
+    nftStandard: 'core' | 'pnft';
+  }) => Promise<void>;
+  /** Creator reclaims their NFT if the game expired without finalize. */
+  onReclaimNftPrize?: (args: {
+    onChainGameId: number;
+    creatorWallet: string;
+    nftMint: string;
+    nftStandard: 'core' | 'pnft';
+  }) => Promise<void>;
+  /** Build + sign the enter_custom_game_nft tx for an NFT game. Returns tx sig. */
+  onEnterNftGame?: (args: { onChainGameId: number }) => Promise<string>;
   onBack: () => void;
   onConnectWallet: () => void;
 }
@@ -29,6 +44,8 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   onClaimRefund,
   onFundAndStart,
   onEndGame,
+  onClaimNftPrize,
+  onReclaimNftPrize,
   onBack,
   onConnectWallet,
 }) => {
@@ -194,6 +211,18 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     const canClaimRefund = isPaidExpired && gameData.player_has_entered && gameData.on_chain_game_id != null && onClaimRefund;
     const entryRefundSOL = gameData.entry_fee_lamports / 1e9;
 
+    // v2.1: NFT prize game expired without finalize. Creator (or anyone, but
+    // the contract sends the NFT to the creator) can crank reclaim_custom_nft
+    // (or _tm_pnft) to return the escrowed NFT.
+    const isNftExpired = gameData.prize_model === 'nft';
+    const isCreatorOfExpired = !!(walletAddress && gameData.creator_wallet === walletAddress);
+    const canReclaimNft = isNftExpired
+      && isCreatorOfExpired
+      && !!gameData.nft_mint
+      && !!gameData.nft_standard
+      && gameData.on_chain_game_id != null
+      && !!onReclaimNftPrize;
+
     const handleRefund = async () => {
       if (gameData.on_chain_game_id == null || !onClaimRefund) return;
       setRefunding(true);
@@ -201,6 +230,24 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
         await onClaimRefund(gameData.on_chain_game_id);
       } catch (err: any) {
         if (!err.message?.includes('User rejected')) alert(err.message || 'Failed to claim refund');
+      } finally {
+        setRefunding(false);
+      }
+    };
+
+    const handleNftReclaim = async () => {
+      if (!canReclaimNft) return;
+      setRefunding(true);
+      try {
+        await onReclaimNftPrize!({
+          onChainGameId: gameData.on_chain_game_id!,
+          creatorWallet: gameData.creator_wallet,
+          nftMint: gameData.nft_mint!,
+          nftStandard: gameData.nft_standard!,
+        });
+        await fetchGame();
+      } catch (err: any) {
+        if (!err.message?.includes('User rejected')) alert(err.message || 'Failed to reclaim NFT');
       } finally {
         setRefunding(false);
       }
@@ -216,7 +263,25 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           </div>
           <h2 className="text-2xl font-[1000] italic text-white uppercase mb-2">Game Expired</h2>
           <p className="text-zinc-400 text-sm mb-2">"{gameData.name}" has expired.</p>
-          {canClaimRefund ? (
+          {canReclaimNft ? (
+            <>
+              <p className="text-zinc-400 text-xs mb-6">
+                Your NFT prize is still in escrow. Reclaim it to your wallet below.
+              </p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleNftReclaim}
+                  disabled={refunding}
+                  className="min-h-[48px] px-8 py-3 bg-purple-500 text-white font-[1000] italic uppercase rounded-xl hover:bg-purple-400 transition-all active:scale-[0.98] disabled:opacity-50"
+                >
+                  {refunding ? 'Reclaiming NFT...' : 'Reclaim My NFT'}
+                </button>
+                <button onClick={onBack} className="min-h-[44px] px-8 py-3 text-zinc-500 font-black uppercase text-[10px] tracking-wider hover:text-zinc-300 transition-all">
+                  Back to Home
+                </button>
+              </div>
+            </>
+          ) : canClaimRefund ? (
             <>
               <p className="text-zinc-400 text-xs mb-6">You paid {entryRefundSOL} SOL entry. Claim your refund below.</p>
               <div className="flex flex-col gap-3">
@@ -231,6 +296,15 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                   Back to Home
                 </button>
               </div>
+            </>
+          ) : isNftExpired ? (
+            <>
+              <p className="text-zinc-600 text-xs mb-6">
+                This NFT prize game expired without a winner. The creator can reclaim the escrowed NFT.
+              </p>
+              <button onClick={onBack} className="min-h-[44px] px-8 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]">
+                Back to Home
+              </button>
             </>
           ) : (
             <>
@@ -263,6 +337,9 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   // ── Main Lobby ──
   const isPaid = gameData.prize_model === 'player_funded' || gameData.prize_model === 'creator_funded';
   const isCreatorFunded = gameData.prize_model === 'creator_funded';
+  const isNftPrize = gameData.prize_model === 'nft';
+  const nftMint = gameData.nft_mint;
+  const nftStandard = gameData.nft_standard;
   const isCreator = !!(walletAddress && gameData.creator_wallet === walletAddress);
   const hasEntered = gameData.player_has_entered;
   const attemptsUsed = gameData.player_attempts ?? 0;
@@ -277,12 +354,48 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     : gameData.prize_pot_lamports / 1e9;
   const isFunded = isCreatorFunded && !!gameData.fund_tx_signature;
 
-  // Check if current wallet is a winner
-  const winnerIndex = (isPaid && gameData.winner_wallets)
+  // Check if current wallet is a winner (includes NFT games — they also use winner_wallets)
+  const winnerIndex = ((isPaid || isNftPrize) && gameData.winner_wallets)
     ? gameData.winner_wallets.indexOf(walletAddress ?? '')
     : -1;
   const isWinner = winnerIndex >= 0;
-  const winnerAmountSOL = isWinner ? (gameData.winner_amounts?.[winnerIndex] ?? 0) / 1e9 : 0;
+  const winnerAmountSOL = isWinner && isPaid ? (gameData.winner_amounts?.[winnerIndex] ?? 0) / 1e9 : 0;
+
+  // NFT-specific handler closures.
+  const handleClaimNft = async () => {
+    if (!gameData || gameData.on_chain_game_id == null || !nftMint || !nftStandard || !onClaimNftPrize) return;
+    setClaiming(true);
+    try {
+      await onClaimNftPrize({
+        onChainGameId: gameData.on_chain_game_id,
+        nftMint,
+        nftStandard,
+      });
+      await fetchGame();
+    } catch (err: any) {
+      if (!err.message?.includes('User rejected')) alert(err.message || 'Failed to claim NFT prize');
+    } finally {
+      setClaiming(false);
+    }
+  };
+
+  const handleReclaimNft = async () => {
+    if (!gameData || gameData.on_chain_game_id == null || !nftMint || !nftStandard || !onReclaimNftPrize) return;
+    setRefunding(true);
+    try {
+      await onReclaimNftPrize({
+        onChainGameId: gameData.on_chain_game_id,
+        creatorWallet: gameData.creator_wallet,
+        nftMint,
+        nftStandard,
+      });
+      await fetchGame();
+    } catch (err: any) {
+      if (!err.message?.includes('User rejected')) alert(err.message || 'Failed to reclaim NFT');
+    } finally {
+      setRefunding(false);
+    }
+  };
 
   // Prize breakdown
   const prizeBreakdown: { rank: number; pct: string; sol: number }[] = [];
@@ -504,6 +617,73 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                     <p className="text-zinc-500 text-xs font-black mt-1">View the leaderboard below to see winners.</p>
                   </div>
                 )
+              )}
+            </>
+          ) : isNftPrize ? (
+            /* ── NFT Prize Game CTAs (v2.1) ── */
+            <>
+              {/* Finalized NFT game: winner claims, others see message */}
+              {gameData.status === 'finalized' && (
+                isWinner && nftMint && nftStandard && onClaimNftPrize ? (
+                  <button
+                    onClick={handleClaimNft}
+                    disabled={claiming}
+                    className="w-full min-h-[56px] px-6 py-4 bg-gradient-to-r from-purple-500 to-purple-600 text-white font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:from-purple-400 hover:to-purple-500 shadow-[0_10px_40px_-10px_rgba(168,85,247,0.4)] transition-all active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {claiming ? 'Claiming NFT...' : 'Claim NFT Prize'}
+                  </button>
+                ) : (
+                  <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
+                    <span className="text-zinc-400 font-[1000] italic uppercase text-lg">NFT Game Finalized</span>
+                    <p className="text-zinc-500 text-xs font-black mt-1">
+                      {gameData.winner_wallets?.[0]
+                        ? `Winner: ${gameData.winner_wallets[0].slice(0, 6)}…${gameData.winner_wallets[0].slice(-4)}`
+                        : 'Check leaderboard for the winner.'}
+                    </p>
+                  </div>
+                )
+              )}
+
+              {/* Expired NFT games early-return at the top of this component
+                  (line ~209) and render the dedicated reclaim screen there.
+                  So status === 'expired' is unreachable here. */}
+
+              {/* Completed: awaiting finalization */}
+              {gameData.status === 'completed' && (
+                <div className="w-full min-h-[56px] px-6 py-4 bg-blue-500/10 border border-blue-500/20 rounded-xl text-center">
+                  <span className="text-blue-400 font-[1000] italic uppercase text-lg">Finalizing NFT Winner...</span>
+                  <p className="text-zinc-500 text-xs font-black mt-1">The single winner will receive the escrowed NFT.</p>
+                </div>
+              )}
+
+              {/* Active/started NFT game: lobby is shared with SOL games' active flow.
+                  Players join via onJoinGame (which builds enter_custom_game_nft when prize_model=nft).
+                  Creator sees their game status; non-creator players see join button. */}
+              {(gameData.status === 'active' || gameData.status === 'started') && (
+                <div className="w-full min-h-[56px] px-6 py-4 bg-purple-500/10 border border-purple-500/30 rounded-xl text-center">
+                  <span className="text-purple-300 font-[1000] italic uppercase text-lg">NFT Prize Game</span>
+                  <p className="text-zinc-400 text-xs font-black mt-1">
+                    Single winner gets the escrowed NFT
+                    {entryFeeSOL > 0 && ` · Entry: ${entryFeeSOL} SOL`}
+                  </p>
+                  {!isCreator && !hasEntered && (
+                    <button
+                      onClick={handleJoin}
+                      disabled={joining}
+                      className="w-full min-h-[44px] px-4 py-3 bg-purple-500 text-white font-[1000] italic uppercase text-sm tracking-tighter rounded-xl hover:bg-purple-400 transition-all active:scale-[0.98] mt-3 disabled:opacity-50"
+                    >
+                      {joining ? 'Joining...' : entryFeeSOL > 0 ? `Join NFT Game (${entryFeeSOL} SOL)` : 'Join NFT Game'}
+                    </button>
+                  )}
+                  {hasEntered && !isCreator && canPlay && (
+                    <button
+                      onClick={() => onStartGame(gameData)}
+                      className="w-full min-h-[44px] px-4 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-sm tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98] mt-3"
+                    >
+                      Play Now
+                    </button>
+                  )}
+                </div>
               )}
 
               {/* Completed: awaiting finalization */}

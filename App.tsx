@@ -116,7 +116,31 @@ import CompeteLobbyView from './components/CompeteLobbyView';
 import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, buildRoundEntryTx, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type ActiveDuel } from './src/utils/api';
 import { fetchUnpaidRoundPayouts, fetchUnclaimedCustomWins, fetchClaimableRefundEntries, fetchClaimableRefundCustoms } from './src/utils/claims';
 import { REVENUE_WALLET, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, getReEntryFeeLamports } from './src/utils/constants';
-import { buildEnterRoundInstruction, buildEnterTierRoundIx, contractRoundIdFromDateAndNumber, buildCreateDuelIx, buildJoinDuelIx, buildCancelDuelIx, buildExpireDuelIx, buildClaimDuelPrizeIx, buildEnterCustomGameIx, buildFundCustomGameIx, buildClaimCustomPrizeIx, buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchGameConfig, fetchTierRound, fetchCustomGame as fetchCustomGameOnChain } from './src/utils/soltriviaContract';
+import {
+  buildEnterRoundInstruction,
+  buildEnterTierRoundIx,
+  contractRoundIdFromDateAndNumber,
+  buildCreateDuelIx,
+  buildJoinDuelIx,
+  buildCancelDuelIx,
+  buildExpireDuelIx,
+  buildClaimDuelPrizeIx,
+  buildEnterCustomGameIx,
+  buildFundCustomGameIx,
+  buildClaimCustomPrizeIx,
+  buildClaimTierPrizeIx,
+  buildClaimTierRefundIx,
+  buildClaimCustomRefundIx,
+  // NFT custom-game ix builders (v2.1) — for claim + reclaim flows
+  buildClaimCustomNftPrizeIx,
+  buildClaimCustomTmPnftPrizeIx,
+  buildReclaimCustomNftIx,
+  buildReclaimCustomTmPnftIx,
+  buildEnterCustomGameNftIx,
+  fetchGameConfig,
+  fetchTierRound,
+  fetchCustomGame as fetchCustomGameOnChain,
+} from './src/utils/soltriviaContract';
 
 import { supabase } from './src/utils/supabase';
 import { useKeepAlive } from './src/hooks/useKeepAlive';
@@ -1092,11 +1116,20 @@ const App: React.FC = () => {
       return;
     }
     const { blockhash } = await getRecentBlockhashWithRetry(connection);
-    const ix = buildEnterCustomGameIx(
-      publicKey,
-      gameData.on_chain_game_id,
-      new PublicKey(REVENUE_WALLET),
-    );
+    // v2.1: NFT prize games escrow + transfer via a different on-chain ix
+    // (enter_custom_game_nft), pointing at the NFT escrow PDA instead of the
+    // SOL vault. Same SOL-pot semantics from the player's POV.
+    const ix = gameData.prize_model === 'nft'
+      ? buildEnterCustomGameNftIx({
+          player: publicKey,
+          gameId: gameData.on_chain_game_id,
+          revenueWallet: new PublicKey(REVENUE_WALLET),
+        })
+      : buildEnterCustomGameIx(
+          publicKey,
+          gameData.on_chain_game_id,
+          new PublicKey(REVENUE_WALLET),
+        );
     const messageV0 = new TransactionMessage({
       payerKey: publicKey,
       recentBlockhash: blockhash,
@@ -1216,6 +1249,123 @@ const App: React.FC = () => {
     } finally {
       setClaimingId(null);
     }
+  };
+
+  // ─── NFT custom game handlers (v2.1) ──────────────────────────────────────
+  // For NFT prize games, the player signs the on-chain ix directly. EF isn't
+  // needed for claim/reclaim — only for tracking metadata after the fact.
+
+  /** Winner claims the escrowed NFT prize. Branches by nft_standard. */
+  const handleClaimNftCustomPrize = async (args: {
+    onChainGameId: number;
+    nftMint: string;
+    nftStandard: 'core' | 'pnft';
+  }) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    setClaimingId(`custom-nft-${args.onChainGameId}`);
+    try {
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
+      const mintPk = new PublicKey(args.nftMint);
+      const ix = args.nftStandard === 'core'
+        ? buildClaimCustomNftPrizeIx({
+            winner: publicKey,
+            gameId: args.onChainGameId,
+            coreNftAsset: mintPk,
+          })
+        : buildClaimCustomTmPnftPrizeIx({
+            winner: publicKey,
+            gameId: args.onChainGameId,
+            nftMint: mintPk,
+          });
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      console.log(`NFT prize claimed for game ${args.onChainGameId}. Tx: ${signature}`);
+    } catch (err: any) {
+      console.error('Failed to claim NFT prize:', err);
+      if (err.message?.includes('AlreadyClaimed')) {
+        // Treat as success — NFT is in winner's wallet
+      } else if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to claim NFT prize. Please try again.');
+      }
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  /** Creator reclaims their NFT if the game expired without finalize. Branches by nft_standard. */
+  const handleReclaimNftCustomPrize = async (args: {
+    onChainGameId: number;
+    creatorWallet: string;
+    nftMint: string;
+    nftStandard: 'core' | 'pnft';
+  }) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    setClaimingId(`custom-nft-reclaim-${args.onChainGameId}`);
+    try {
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
+      const mintPk = new PublicKey(args.nftMint);
+      const creatorPk = new PublicKey(args.creatorWallet);
+      const ix = args.nftStandard === 'core'
+        ? buildReclaimCustomNftIx({
+            cranker: publicKey,
+            gameId: args.onChainGameId,
+            creator: creatorPk,
+            coreNftAsset: mintPk,
+          })
+        : buildReclaimCustomTmPnftIx({
+            cranker: publicKey,
+            gameId: args.onChainGameId,
+            creator: creatorPk,
+            nftMint: mintPk,
+          });
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      console.log(`NFT reclaimed for game ${args.onChainGameId}. Tx: ${signature}`);
+    } catch (err: any) {
+      console.error('Failed to reclaim NFT:', err);
+      if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to reclaim NFT. Please try again.');
+      }
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  /** Build + sign enter_custom_game_nft tx for joining an NFT game. Returns tx signature. */
+  const buildAndSendEnterNftGameTx = async (args: {
+    onChainGameId: number;
+  }): Promise<string> => {
+    if (!connected || !publicKey) throw new Error('Wallet not connected');
+    const cfg = await fetchGameConfig(connection);
+    if (!cfg) throw new Error('GameConfig not found');
+    const revenueWallet = new PublicKey(cfg.revenueWallet);
+    const { blockhash } = await getRecentBlockhashWithRetry(connection);
+    const ix = buildEnterCustomGameNftIx({
+      player: publicKey,
+      gameId: args.onChainGameId,
+      revenueWallet,
+    });
+    const messageV0 = new TransactionMessage({
+      payerKey: publicKey,
+      recentBlockhash: blockhash,
+      instructions: [ix],
+    }).compileToV0Message();
+    const tx = new VersionedTransaction(messageV0);
+    const signature = await sendTransaction(tx, connection);
+    await connection.confirmTransaction(signature, 'confirmed');
+    return signature;
   };
 
   const handleClaimRoundPrizeFromPlay = async (payout: ClaimablePayout) => {
@@ -2143,6 +2293,9 @@ const App: React.FC = () => {
               onEndGame={handleEndCustomGame}
               onClaimPrize={handleClaimCustomPrize}
               onClaimRefund={handleClaimCGRefundById}
+              onClaimNftPrize={handleClaimNftCustomPrize}
+              onReclaimNftPrize={handleReclaimNftCustomPrize}
+              onEnterNftGame={buildAndSendEnterNftGameTx}
               onBack={() => setCurrentView(View.HOME)}
               onConnectWallet={() => setShowWalletRequired(true)}
             />

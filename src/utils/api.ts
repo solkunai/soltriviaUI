@@ -1797,8 +1797,12 @@ export interface CustomGameData {
   player_best_score: number | null;
   player_attempts: number;
   player_has_in_progress: boolean;
-  // Prize pool fields (paid games)
-  prize_model: 'free' | 'player_funded' | 'creator_funded';
+  // Prize pool fields (paid games) + v2.1 NFT prize support
+  prize_model: 'free' | 'player_funded' | 'creator_funded' | 'nft';
+  /** v2.1: when prize_model === 'nft', the on-chain asset address (Core asset or pNFT mint). */
+  nft_mint?: string | null;
+  /** v2.1: when prize_model === 'nft', the asset standard. */
+  nft_standard?: 'core' | 'pnft' | null;
   on_chain_game_id: number | null;
   creator_deposit_lamports: number;
   fund_tx_signature: string | null;
