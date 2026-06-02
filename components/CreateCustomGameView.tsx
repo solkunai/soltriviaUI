@@ -2,7 +2,14 @@ import React, { useState, useMemo } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { createCustomGame, recordCustomGameFunding } from '../src/utils/api';
-import { buildFundCustomGameIx } from '../src/utils/soltriviaContract';
+import {
+  buildFundCustomGameIx,
+  buildCreateCustomGameNftIx,
+  buildCreateCustomGameTmPnftIx,
+  fetchGameConfig,
+} from '../src/utils/soltriviaContract';
+import NFTSelector from './NFTSelector';
+import type { WalletNFT } from '../src/hooks/useWalletNFTs';
 import { supabase } from '../src/utils/supabase';
 import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import {
@@ -66,7 +73,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   const [timeLimit, setTimeLimit] = useState<number>(15);
 
   // Prize Pool
-  const [prizeModel, setPrizeModel] = useState<'free' | 'player_funded' | 'creator_funded'>('free');
+  const [prizeModel, setPrizeModel] = useState<'free' | 'player_funded' | 'creator_funded' | 'nft_prize'>('free');
   const [entryFeeLamports, setEntryFeeLamports] = useState<number>(CUSTOM_GAME_ENTRY_FEE_PRESETS[1]); // 0.1 SOL default
   const [customEntryFee, setCustomEntryFee] = useState('');
   const [maxPlayers, setMaxPlayers] = useState<number>(10);
@@ -74,6 +81,8 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   const [maxWinners, setMaxWinners] = useState<number>(3);
   const [creatorDepositLamports, setCreatorDepositLamports] = useState<number>(CREATOR_FUNDED_PRIZE_PRESETS[2]); // 0.5 SOL default
   const [customCreatorDeposit, setCustomCreatorDeposit] = useState('');
+  // NFT prize: the wallet asset that becomes the single-winner prize. Core or pNFT.
+  const [selectedNft, setSelectedNft] = useState<WalletNFT | null>(null);
 
   // Questions
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
@@ -91,6 +100,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   // Prize calculations
   const isPaid = prizeModel === 'player_funded' || prizeModel === 'creator_funded';
   const isCreatorFunded = prizeModel === 'creator_funded';
+  const isNftPrize = prizeModel === 'nft_prize';
   const activeEntryFee = customEntryFee ? Math.round(parseFloat(customEntryFee) * 1_000_000_000) : entryFeeLamports;
   const activeCreatorDeposit = customCreatorDeposit ? Math.round(parseFloat(customCreatorDeposit) * 1_000_000_000) : creatorDepositLamports;
   const estimatedPot = isCreatorFunded ? activeCreatorDeposit : (isPaid ? activeEntryFee * maxPlayers : 0);
@@ -161,6 +171,12 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
       }
       if (maxPlayers < CUSTOM_GAME_MIN_PLAYERS) { setError(`Minimum ${CUSTOM_GAME_MIN_PLAYERS} players`); return; }
     }
+    if (isNftPrize) {
+      if (!selectedNft) { setError('Pick an NFT prize from your wallet first'); return; }
+      if (selectedNft.standard !== 'core' && selectedNft.standard !== 'pnft') {
+        setError('Only Core and pNFT standards are supported as prizes. The legacy NFT format isn\'t escrow-compatible.'); return;
+      }
+    }
     setError(null);
 
     // Initialize empty questions if needed
@@ -214,6 +230,95 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
     if (!publicKey || creating) return;
     setCreating(true);
     setError(null);
+
+    // ── NFT prize branch: bypass EF, submit the on-chain create_custom_game_nft
+    // (or TmPnft) ix directly. Creator wallet signs to escrow the NFT into the
+    // program-owned escrow PDA. The Supabase metadata insertion for NFT games
+    // is a backend-agent task (extend createCustomGame EF to accept nft fields).
+    if (isNftPrize) {
+      try {
+        if (!selectedNft) throw new Error('No NFT selected');
+        if (selectedNft.standard !== 'core' && selectedNft.standard !== 'pnft') {
+          throw new Error('Only Core and pNFT standards are supported as prizes.');
+        }
+
+        // 1. Read on-chain config to know what game_id will be assigned.
+        const cfg = await fetchGameConfig(connection);
+        if (!cfg) throw new Error('GameConfig not initialized on-chain.');
+        const nextGameId = cfg.nextCustomGameId;
+
+        // 2. Build the NFT-create ix matching the selected standard.
+        const nowSec = Math.floor(Date.now() / 1000);
+        const expiresAtUnix = nowSec + Math.max(60, gameDurationMinutes * 60);
+        const nftMintPk = new PublicKey(selectedNft.mint);
+
+        const nftCreateIx = selectedNft.standard === 'core'
+          ? buildCreateCustomGameNftIx({
+              creator: publicKey,
+              nextGameId,
+              coreNftAsset: nftMintPk,
+              entryFeeLamports: activeEntryFee || 0,
+              expiresAtUnix,
+              platformCutBps: CUSTOM_GAME_PLATFORM_CUT_BPS,
+            })
+          : buildCreateCustomGameTmPnftIx({
+              creator: publicKey,
+              nextGameId,
+              nftMint: nftMintPk,
+              // Token records / auth rules are only required for pNFTs with
+              // auth-rules sets. Most pNFTs (Mad Lads, DeGods) DO use them;
+              // for an MVP we let the user retry if the tx fails (the error
+              // surfaces the missing accounts). Future polish: derive automatically.
+              entryFeeLamports: activeEntryFee || 0,
+              expiresAtUnix,
+              platformCutBps: CUSTOM_GAME_PLATFORM_CUT_BPS,
+            });
+
+        // 3. Also charge the SOL creation fee (separate tx — same as the
+        // non-NFT flow expects). For NFT games we bundle creation fee + NFT
+        // escrow into one tx to avoid 2 wallet popups.
+        const creationFeeIx = SystemProgram.transfer({
+          fromPubkey: publicKey,
+          toPubkey: new PublicKey(REVENUE_WALLET),
+          lamports: creationFeeLamports,
+        });
+
+        const { blockhash } = await getRecentBlockhashWithRetry(connection);
+        const message = new TransactionMessage({
+          payerKey: publicKey,
+          recentBlockhash: blockhash,
+          instructions: [creationFeeIx, nftCreateIx],
+        }).compileToV0Message();
+        const tx = new VersionedTransaction(message);
+        const sig = await sendTransaction(tx, connection);
+        await Promise.race([
+          connection.confirmTransaction(sig, 'confirmed'),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Confirmation timeout')), 30000)),
+        ]);
+
+        // TODO(backend-agent): extend createCustomGame EF to accept
+        // { prizeModel: 'nft', onChainGameId, nftMint, nftStandard, txSignature }
+        // and insert the game row into Supabase so the browse page can show it.
+        // Until then, NFT games exist ON-CHAIN but are not browseable via the UI.
+        // The escrow + game record are SAFE — creator can reclaim after expiry.
+        setError(
+          `Game created on-chain (id ${nextGameId}). NFT escrowed. Supabase metadata wiring pending — ` +
+          'this NFT game won\'t appear in browse yet. Backend agent needs to extend createCustomGame EF. ' +
+          `Tx: ${sig.slice(0, 8)}…`,
+        );
+        setCreatedSlug(`nft-game-${nextGameId}`);
+        return;
+      } catch (err: any) {
+        console.error('NFT custom game create failed:', err);
+        const msg = err?.message?.includes('User rejected') || err?.message?.includes('user reject')
+          ? 'Transaction cancelled.'
+          : err?.message || 'Failed to create NFT custom game.';
+        setError(msg);
+        return;
+      } finally {
+        setCreating(false);
+      }
+    }
 
     try {
       // Build payment tx
@@ -558,32 +663,93 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
             {/* Game Type Toggle */}
             <div>
               <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Game Type</label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={() => setPrizeModel('free')}
-                  className={`flex-1 min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'free' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  className={`flex-1 min-w-[120px] min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'free' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
                 >
                   Free
                 </button>
                 <button
                   onClick={() => setPrizeModel('player_funded')}
-                  className={`flex-1 min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'player_funded' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  className={`flex-1 min-w-[120px] min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'player_funded' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
                 >
                   Player-Funded
                 </button>
                 <button
                   onClick={() => setPrizeModel('creator_funded')}
-                  className={`flex-1 min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'creator_funded' ? 'bg-amber-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  className={`flex-1 min-w-[120px] min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'creator_funded' ? 'bg-amber-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
                 >
                   Creator-Funded
+                </button>
+                <button
+                  onClick={() => setPrizeModel('nft_prize')}
+                  className={`flex-1 min-w-[120px] min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'nft_prize' ? 'bg-purple-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                >
+                  NFT Prize
                 </button>
               </div>
               <p className="text-zinc-600 text-[10px] mt-1">
                 {prizeModel === 'free' ? 'No entry fee. Players compete for XP and bragging rights.'
                   : prizeModel === 'player_funded' ? 'Players pay an entry fee. Winners split the prize pool.'
-                  : 'You deposit the prize pool. Players join for 0.0025 SOL. Winners claim from your deposit.'}
+                  : prizeModel === 'creator_funded' ? 'You deposit the prize pool. Players join for 0.0025 SOL. Winners claim from your deposit.'
+                  : 'You escrow one of your NFTs as the prize. Single winner takes it. Optional SOL entry fee.'}
               </p>
             </div>
+
+            {/* NFT prize selection — visible when prizeModel === 'nft_prize' */}
+            {isNftPrize && (
+              <div>
+                <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Pick the NFT prize</label>
+                <NFTSelector
+                  walletAddress={publicKey?.toBase58() ?? null}
+                  selectedMint={selectedNft?.mint ?? null}
+                  onSelect={(nft) => setSelectedNft(nft)}
+                />
+                {selectedNft && (
+                  <div className="mt-3 rounded-xl bg-purple-500/10 border border-purple-500/30 px-4 py-3 flex items-center gap-3">
+                    {selectedNft.thumbnail && (
+                      <img src={selectedNft.thumbnail} alt="" className="w-10 h-10 rounded-md object-cover" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-white text-sm font-[1000] truncate">{selectedNft.name}</div>
+                      <div className="text-zinc-400 text-[10px] truncate">{selectedNft.collectionName} · {selectedNft.standard.toUpperCase()}</div>
+                    </div>
+                    <button onClick={() => setSelectedNft(null)} className="text-zinc-400 hover:text-white text-sm px-2">Clear</button>
+                  </div>
+                )}
+                <p className="text-zinc-600 text-[10px] mt-2">
+                  Single winner gets your NFT. Optional SOL entry fee below. If too few play, you can reclaim the NFT after expiry.
+                </p>
+              </div>
+            )}
+
+            {/* NFT prize: optional entry fee — shown when nft_prize is selected */}
+            {isNftPrize && (
+              <div>
+                <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">
+                  Entry Fee (optional, SOL)
+                </label>
+                <div className="flex gap-2 flex-wrap mb-2">
+                  <button
+                    onClick={() => { setEntryFeeLamports(0); setCustomEntryFee(''); }}
+                    className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customEntryFee && entryFeeLamports === 0 ? 'bg-purple-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  >
+                    Free
+                  </button>
+                  {CUSTOM_GAME_ENTRY_FEE_PRESETS.map((fee, i) => (
+                    <button
+                      key={fee}
+                      onClick={() => { setEntryFeeLamports(fee); setCustomEntryFee(''); }}
+                      className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customEntryFee && entryFeeLamports === fee ? 'bg-purple-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    >
+                      {CUSTOM_GAME_ENTRY_FEE_LABELS[i]}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-zinc-600 text-[10px] mt-1">Optional. If you set an entry fee, you keep 90% of the SOL pot; 10% platform cut.</p>
+              </div>
+            )}
 
             {isPaid && (
               <>
