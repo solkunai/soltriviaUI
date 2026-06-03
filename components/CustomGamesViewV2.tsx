@@ -18,12 +18,15 @@ type Tab = 'JOIN' | 'MY GAMES' | 'ENDED';
 
 // Canonical free always-on official games. Slugs match the custom_games rows
 // created server-side; total_plays + clickability come from real data.
+// Canonical roster per [[project-official-custom-games]] (locked 4 games):
+// degen crypto CT, current events, NFT topic, sports. Native matches; web
+// previously drifted with 5 (added ct-lore + memecoins + wrong NFT slug)
+// which would have shown different OFFICIAL games per platform. Aligned now.
 const OFFICIAL_TOPICS = [
+  { slug: 'official-degen-ct', name: 'Degen Crypto CT', blurb: 'Crypto Twitter drama, legends, ticker chaos' },
   { slug: 'official-current-events', name: 'Current Events', blurb: 'Biggest crypto + tech news' },
+  { slug: 'official-nft-topic', name: 'NFT Topic', blurb: 'Collections, floors, mint mechanics' },
   { slug: 'official-sports', name: 'Sports', blurb: 'Broad sports trivia' },
-  { slug: 'official-ct-lore', name: 'CT Lore', blurb: 'Crypto Twitter drama + legends' },
-  { slug: 'official-memecoins', name: 'Memecoins', blurb: 'Tickers, launches, degen lore' },
-  { slug: 'official-nfts', name: 'NFTs', blurb: 'Collections, floors, mint mechanics' },
 ];
 
 // Display shape the room grid renders. Mapped from custom_games rows.
@@ -316,7 +319,8 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
                   // even spacing (no scroll needed in practice but gracefully
                   // supports future additions).
                   flex: '0 0 auto',
-                  width: isMobile ? '78%' : 'calc((100% - 40px) / 5)',
+                  // 4-card layout: 3 gaps × 10px = 30px subtracted.
+                  width: isMobile ? '78%' : 'calc((100% - 30px) / 4)',
                   minWidth: isMobile ? 220 : 160,
                   scrollSnapAlign: 'start',
                 }}
