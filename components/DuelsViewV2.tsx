@@ -133,6 +133,13 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
   const [selectedToken, setSelectedToken] = useState<TokenAsset | null>(null);
   const [splWagerInput, setSplWagerInput] = useState<string>('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  // SOL custom wager mode (toggled by tapping the CUSTOM pill in the SOL
+  // preset grid). When true, the preset grid hides and a free-form input
+  // appears, capped at 500 SOL (a high but bounded ceiling so accidental
+  // huge inputs don't ship).
+  const [solCustomMode, setSolCustomMode] = useState(false);
+  const [solCustomInput, setSolCustomInput] = useState<string>('');
+  const SOL_CUSTOM_MAX = 500;
 
   // When user switches to USDC, pre-select the USDC token. Clear it when
   // switching back so SPL mode starts fresh (forces a deliberate pick).
@@ -158,14 +165,24 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
     return Number.isFinite(n) && n > 0 ? n : 0;
   })();
 
+  // Effective SOL wager: from the free-form custom input when in custom mode,
+  // otherwise from the selected preset. Capped at SOL_CUSTOM_MAX to prevent
+  // accidental huge entries.
+  const effectiveSolWager = (() => {
+    if (!solCustomMode) return wager;
+    const n = parseFloat(solCustomInput);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.min(SOL_CUSTOM_MAX, n);
+  })();
+
   const canCreate = tokenMode === 'sol'
-    ? wager > 0
+    ? effectiveSolWager > 0
     : !!selectedToken && splWager > 0;
 
   const handleCreateClick = () => {
     if (!canCreate) return;
     if (tokenMode === 'sol') {
-      onCreateDuel?.(wager);
+      onCreateDuel?.(effectiveSolWager);
     } else if (selectedToken) {
       onCreateDuel?.(splWager, {
         mint: selectedToken.mint,
@@ -182,7 +199,8 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
   // Formatted CTA text depending on mode.
   const ctaText = (() => {
     if (tokenMode === 'sol') {
-      const total = wager + PLATFORM_FEE_SOL;
+      if (effectiveSolWager <= 0) return 'ENTER WAGER →';
+      const total = effectiveSolWager + PLATFORM_FEE_SOL;
       return `CREATE DUEL · ${total.toFixed(4)} SOL →`;
     }
     if (!selectedToken) return tokenMode === 'usdc' ? 'ENTER WAGER →' : 'PICK A TOKEN →';
@@ -460,8 +478,10 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
           </div>
         )}
 
-        {/* SOL mode: classic 6-preset grid */}
-        {tokenMode === 'sol' && (
+        {/* SOL mode: classic 6-preset grid + CUSTOM toggle. When CUSTOM is
+            tapped, the grid is replaced with a free-form input (capped at
+            SOL_CUSTOM_MAX = 500 SOL) and a "back to presets" pill. */}
+        {tokenMode === 'sol' && !solCustomMode && (
         <div
           className="mt-2"
           style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(4, 1fr)' : 'repeat(7, 1fr)', gap: 8 }}
@@ -488,6 +508,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
             );
           })}
           <button
+            onClick={() => setSolCustomMode(true)}
             className="font-black italic uppercase rounded-lg active:opacity-90"
             style={{
               padding: '12px 0',
@@ -502,6 +523,65 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
             CUSTOM
           </button>
         </div>
+        )}
+
+        {/* SOL mode + custom: free-form input + back-to-presets affordance */}
+        {tokenMode === 'sol' && solCustomMode && (
+          <div className="mt-2 flex flex-col gap-2">
+            <input
+              type="text"
+              inputMode="decimal"
+              autoFocus
+              value={solCustomInput}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!/^\d*\.?\d*$/.test(v)) return;
+                // Soft-cap during typing: if user enters > SOL_CUSTOM_MAX we
+                // still update the input but the effectiveSolWager clamps it.
+                // Lets them backspace gracefully without weird jumps.
+                setSolCustomInput(v);
+              }}
+              placeholder={`Amount in SOL (max ${SOL_CUSTOM_MAX})`}
+              className="font-black italic rounded-lg"
+              style={{
+                background: '#000',
+                color: '#fff',
+                padding: '12px 16px',
+                fontSize: 18,
+                border: 'none',
+                outline: 'none',
+                width: '100%',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            />
+            {/* Warn when user exceeds the cap. effectiveSolWager already
+                clamps; this just surfaces what they'll actually pay. */}
+            {parseFloat(solCustomInput) > SOL_CUSTOM_MAX && (
+              <div style={{ fontSize: 10, color: '#000', opacity: 0.7, fontStyle: 'italic' }}>
+                Capped at {SOL_CUSTOM_MAX} SOL · adjust below if you want less.
+              </div>
+            )}
+            <button
+              onClick={() => {
+                setSolCustomMode(false);
+                setSolCustomInput('');
+              }}
+              className="font-black italic uppercase rounded-full active:opacity-90"
+              style={{
+                appearance: 'none',
+                cursor: 'pointer',
+                fontSize: 10,
+                padding: '6px 14px',
+                background: 'rgba(0,0,0,0.15)',
+                color: '#000',
+                border: 'none',
+                letterSpacing: '0.14em',
+                alignSelf: 'flex-start',
+              }}
+            >
+              ← BACK TO PRESETS
+            </button>
+          </div>
         )}
 
         {/* Mount the SPL picker as an absolute overlay on the hero so it
