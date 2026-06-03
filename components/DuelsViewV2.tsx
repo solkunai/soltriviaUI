@@ -70,7 +70,11 @@ type OpenRow = {
   /** Token decimals; undefined = SOL. */
   tokenDecimals?: number;
   expires: string;
+  /** Gradient color fallback used when avatarUrl is missing or fails. */
   avatar: string;
+  /** Player profile avatar URL (custom upload or default). Null = use the
+   *  colored-letter fallback. Falsy after onError too. */
+  avatarUrl?: string | null;
   hot?: boolean;
 };
 
@@ -225,16 +229,19 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
         ]);
         if (!mounted) return;
 
-        // Open duels: hide my own (can't duel yourself). Resolve player1 usernames.
+        // Open duels: hide my own (can't duel yourself). Resolve player1
+        // usernames AND avatar URLs in one round-trip.
         const others = open.filter((d) => d.player1_wallet !== walletAddress);
         const wallets = [...new Set(others.map((d) => d.player1_wallet))];
         let nameByWallet: Record<string, string | null> = {};
+        let avatarByWallet: Record<string, string | null> = {};
         if (wallets.length > 0) {
           const { data } = await supabase
             .from('player_profiles')
-            .select('wallet_address, username')
+            .select('wallet_address, username, avatar_url')
             .in('wallet_address', wallets);
           nameByWallet = Object.fromEntries((data ?? []).map((p: any) => [p.wallet_address, p.username]));
+          avatarByWallet = Object.fromEntries((data ?? []).map((p: any) => [p.wallet_address, p.avatar_url]));
         }
         if (!mounted) return;
         setOpenRows(
@@ -253,6 +260,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
               tokenDecimals: isSpl ? (d.token_decimals as number) : undefined,
               expires: countdown(d.expires_at),
               avatar: colorFor(d.player1_wallet),
+              avatarUrl: avatarByWallet[d.player1_wallet] ?? null,
               // "Hot" heuristic: SOL ≥ 0.25, SPL when raw amount looks large
               // relative to base unit (≥ 100 of the display unit). Heuristic
               // only; doesn't claim USD equivalence.
@@ -665,20 +673,12 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
                     borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
                   }}
                 >
-                  <div
-                    className="rounded-full flex items-center justify-center font-black italic"
-                    style={{
-                      width: 36,
-                      height: 36,
-                      background: `linear-gradient(135deg, ${o.avatar}, ${o.avatar}77)`,
-                      border: `1.5px solid ${o.hot ? '#FF3131' : 'rgba(255,255,255,0.2)'}`,
-                      color: '#000',
-                      fontSize: 15,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {o.user.replace('@', '')[0]?.toUpperCase() ?? '?'}
-                  </div>
+                  <DuelRowAvatar
+                    avatarUrl={o.avatarUrl}
+                    fallbackColor={o.avatar}
+                    fallbackLetter={o.user.replace('@', '')[0]?.toUpperCase() ?? '?'}
+                    hot={!!o.hot}
+                  />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span
@@ -823,5 +823,54 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
     </div>
   );
 };
+
+// ─── Sub-components ──────────────────────────────────────────
+
+/**
+ * Open-duel row avatar: prefers the player's profile avatar_url; falls back
+ * to a colored circle with the first letter of their name on missing URL
+ * OR on image load error. The 'hot' flag re-uses the existing red ring.
+ */
+function DuelRowAvatar({
+  avatarUrl,
+  fallbackColor,
+  fallbackLetter,
+  hot,
+}: {
+  avatarUrl: string | null | undefined;
+  fallbackColor: string;
+  fallbackLetter: string;
+  hot: boolean;
+}) {
+  const [imgFailed, setImgFailed] = React.useState(false);
+  const showImage = !!avatarUrl && !imgFailed;
+  return (
+    <div
+      className="rounded-full flex items-center justify-center font-black italic overflow-hidden"
+      style={{
+        width: 36,
+        height: 36,
+        background: showImage
+          ? '#141416'
+          : `linear-gradient(135deg, ${fallbackColor}, ${fallbackColor}77)`,
+        border: `1.5px solid ${hot ? '#FF3131' : 'rgba(255,255,255,0.2)'}`,
+        color: '#000',
+        fontSize: 15,
+        flexShrink: 0,
+      }}
+    >
+      {showImage ? (
+        <img
+          src={avatarUrl as string}
+          alt=""
+          onError={() => setImgFailed(true)}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      ) : (
+        fallbackLetter
+      )}
+    </div>
+  );
+}
 
 export default DuelsViewV2;
