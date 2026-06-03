@@ -239,11 +239,11 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
         if (!mounted) return;
         setOpenRows(
           others.map((d) => {
-            const isSpl = !!(d.mint && d.token_symbol && typeof d.token_decimals === 'number');
+            const isSpl = !!(d.token_mint && d.token_symbol && typeof d.token_decimals === 'number');
             // SPL: convert raw token amount to display units using decimals.
             // SOL: lamports → SOL.
             const wagerDisplay = isSpl
-              ? Number(BigInt(d.entry_fee_token_amount ?? '0')) / Math.pow(10, d.token_decimals as number)
+              ? Number(d.entry_token_amount ?? 0) / Math.pow(10, d.token_decimals as number)
               : (d.entry_fee_lamports ?? 0) / SOL;
             return {
               duelId: d.duel_id,

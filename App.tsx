@@ -1619,18 +1619,19 @@ const App: React.FC = () => {
       const signature = await sendTransaction(tx, connection);
       await connection.confirmTransaction(signature, 'confirmed');
 
-      // Call create-duel EF with SPL fields. The EF's SPL branch reads
-      // these to write the matching row in the duels table with token
-      // metadata for downstream display + join flow.
+      // Call create-duel EF with SPL fields. Field names match the EF's
+      // canonical SPL branch (token_mint / entry_token_amount). token_program
+      // is intentionally NOT sent — the EF doesn't store it; the on-chain
+      // ix already runs with the right program (detected from mint owner
+      // above), and handleJoinDuelSpl re-detects it at join time.
       const result = await createDuel({
         wallet_address: publicKey.toBase58(),
         tx_signature: signature,
         duel_id: nextDuelId,
         entry_fee_lamports: 0,                    // SOL wager unused for SPL
         is_public: isPublic,
-        mint: token.mint,
-        token_program: tokenProgram.equals(TOKEN_2022_PROGRAM) ? 'token2022' : 'spl',
-        entry_fee_token_amount: entryFeeAmount.toString(),
+        token_mint: token.mint,
+        entry_token_amount: entryFeeAmount.toString(),
         token_symbol: token.symbol,
         token_decimals: token.decimals,
       });
@@ -1662,27 +1663,21 @@ const App: React.FC = () => {
 
   /**
    * SPL-token duel joiner. Mirrors handleJoinDuel but routes through
-   * buildJoinDuelSplIx. Token program detection is the same as create.
+   * buildJoinDuelSplIx. Token program is always re-detected from on-chain
+   * mint owner (single source of truth, cheap RPC call).
    */
   const handleJoinDuelSpl = async (
     onChainDuelId: number,
     mint: string,
-    tokenProgramHint: 'spl' | 'token2022' | undefined,
   ) => {
     if (!connected || !publicKey) { setShowWalletRequired(true); return; }
     try {
       const mintPk = new PublicKey(mint);
-      // Re-detect token program even if the duel record has a hint, since
-      // the source of truth is the on-chain mint owner.
       const mintInfo = await connection.getAccountInfo(mintPk);
       if (!mintInfo) throw new Error(`Mint not found: ${mint}`);
       const tokenProgram = mintInfo.owner.equals(TOKEN_2022_PROGRAM)
         ? TOKEN_2022_PROGRAM
         : SPL_TOKEN_PROGRAM_ID;
-      // tokenProgramHint is unused server-side detection won out, but
-      // surfaced as a param so callers can short-circuit if they trust
-      // the duel record (currently we don't, the RPC call is cheap).
-      void tokenProgramHint;
 
       // Fetch on-chain config for the correct revenue_wallet (see
       // InvalidRevenueWallet note in handleCreateDuel).
@@ -1726,12 +1721,13 @@ const App: React.FC = () => {
       });
       if (duelInfo.share_code) setDuelShareCode(duelInfo.share_code);
       // Raw token amount + token info for display in waiting / play / results.
-      if (duelInfo.entry_fee_token_amount) {
-        setDuelEntryFee(Number(BigInt(duelInfo.entry_fee_token_amount)));
+      // Canonical field names: token_mint / entry_token_amount.
+      if (duelInfo.entry_token_amount) {
+        setDuelEntryFee(Number(duelInfo.entry_token_amount));
       }
       if (duelInfo.token_symbol) setDuelTokenSymbol(duelInfo.token_symbol);
       if (typeof duelInfo.token_decimals === 'number') setDuelTokenDecimals(duelInfo.token_decimals);
-      if (duelInfo.mint) setDuelTokenMint(duelInfo.mint);
+      if (duelInfo.token_mint) setDuelTokenMint(duelInfo.token_mint);
 
       setCurrentView(View.DUEL_PLAY);
     } catch (err: any) {
@@ -1746,12 +1742,12 @@ const App: React.FC = () => {
     if (!connected || !publicKey) { setShowWalletRequired(true); return; }
 
     // Detect SPL vs SOL by pre-fetching the duel record. The duel row
-    // populates `mint` + `token_program` when create-duel was called with
-    // SPL fields. For SOL duels these stay undefined.
+    // populates `token_mint` when create-duel was called with SPL fields.
+    // For SOL duels it stays undefined/null.
     try {
       const pre = await getDuel({ duel_id: onChainDuelId, wallet_address: publicKey.toBase58() });
-      if (pre?.mint && pre.token_program) {
-        return handleJoinDuelSpl(onChainDuelId, pre.mint, pre.token_program);
+      if (pre?.token_mint) {
+        return handleJoinDuelSpl(onChainDuelId, pre.token_mint);
       }
     } catch {
       // getDuel may fail if the duel doesn't exist yet on the EF side; fall

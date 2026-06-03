@@ -2164,13 +2164,15 @@ export interface DuelInfo {
   created_at: string;
   resolved_at: string | null;
   my_session?: { current_question_index: number; score: number; correct_count: number; finished: boolean };
-  /** v2.1 SPL duel fields. Set when the duel is an SPL-token wager, undefined for SOL. */
-  mint?: string;
-  token_program?: 'spl' | 'token2022';
+  /** v2.1 SPL duel fields. Set when the duel is an SPL-token wager, undefined for SOL.
+   *  Column names match the duels table canonical schema (token_mint /
+   *  entry_token_amount) — NOT the earlier shipped-but-mismatched names. */
+  token_mint?: string;
   token_symbol?: string;
   token_decimals?: number;
-  /** Raw u64 amount string in the token's smallest units. */
-  entry_fee_token_amount?: string;
+  /** Raw u64 amount in token smallest units. Returned as a number from
+   *  Postgres bigint column; cast via BigInt() on the client when reading. */
+  entry_token_amount?: number;
 }
 
 export interface CreateDuelResponse {
@@ -2228,11 +2230,12 @@ export async function createDuel(params: {
   duel_id: number;
   entry_fee_lamports: number;
   is_public: boolean;
-  /** v2.1 SPL duel fields — pass these when the duel is an SPL wager. */
-  mint?: string;
-  token_program?: 'spl' | 'token2022';
-  /** Raw u64 amount string. */
-  entry_fee_token_amount?: string;
+  /** v2.1 SPL duel fields — pass these when the duel is an SPL wager. Column
+   *  names match the create-duel EF v27+ expected request shape. */
+  token_mint?: string;
+  /** Raw u64 amount as a number (must be <= Number.MAX_SAFE_INTEGER); for
+   *  amounts beyond that, send a stringified bigint and let the EF parse. */
+  entry_token_amount?: number | string;
   token_symbol?: string;
   token_decimals?: number;
 }): Promise<CreateDuelResponse> {
@@ -2307,17 +2310,17 @@ export async function getOpenDuels(): Promise<Array<{
   share_code: string;
   created_at: string;
   expires_at: string;
-  /** v2.1 SPL duel fields. Null/undefined for SOL duels. */
-  mint?: string | null;
-  token_program?: 'spl' | 'token2022' | null;
+  /** v2.1 SPL duel fields. Null/undefined for SOL duels. Column names match
+   *  the canonical schema (token_mint / entry_token_amount). */
+  token_mint?: string | null;
   token_symbol?: string | null;
   token_decimals?: number | null;
-  entry_fee_token_amount?: string | null;
+  entry_token_amount?: number | null;
 }>> {
   if (!isSupabaseConfigured) return [];
   const { data, error } = await supabase
     .from('duels')
-    .select('id, duel_id, player1_wallet, entry_fee_lamports, is_public, share_code, created_at, expires_at, mint, token_program, token_symbol, token_decimals, entry_fee_token_amount')
+    .select('id, duel_id, player1_wallet, entry_fee_lamports, is_public, share_code, created_at, expires_at, token_mint, token_symbol, token_decimals, entry_token_amount')
     .eq('status', 'waiting')
     .eq('is_public', true)
     .gt('expires_at', new Date().toISOString())
