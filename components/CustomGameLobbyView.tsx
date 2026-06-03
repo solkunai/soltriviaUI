@@ -5,6 +5,7 @@ import {
   DEFAULT_AVATAR,
   getReEntryFeeLamports,
 } from '../src/utils/constants';
+import NftPrizeCard from './NftPrizeCard';
 
 interface CustomGameLobbyViewProps {
   slug: string;
@@ -268,11 +269,20 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
               <p className="text-zinc-400 text-xs mb-6">
                 Your NFT prize is still in escrow. Reclaim it to your wallet below.
               </p>
+              {gameData.nft_mint && (
+                <div className="mb-5">
+                  <NftPrizeCard
+                    mint={gameData.nft_mint}
+                    hintStandard={gameData.nft_standard ?? undefined}
+                    variant="full"
+                  />
+                </div>
+              )}
               <div className="flex flex-col gap-3">
                 <button
                   onClick={handleNftReclaim}
                   disabled={refunding}
-                  className="min-h-[48px] px-8 py-3 bg-purple-500 text-white font-[1000] italic uppercase rounded-xl hover:bg-purple-400 transition-all active:scale-[0.98] disabled:opacity-50"
+                  className="min-h-[48px] px-8 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98] disabled:opacity-50 shadow-[0_10px_40px_-10px_rgba(56,189,248,0.4)]"
                 >
                   {refunding ? 'Reclaiming NFT...' : 'Reclaim My NFT'}
                 </button>
@@ -622,13 +632,26 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           ) : isNftPrize ? (
             /* ── NFT Prize Game CTAs (v2.1) ── */
             <>
+              {/* Artwork hero — shown for every NFT game state so all players
+                  see what the prize actually IS. Fetches metadata from Helius
+                  DAS (cached 5min). Cyan accents per the brand rule. */}
+              {nftMint && (
+                <div className="mb-4">
+                  <NftPrizeCard
+                    mint={nftMint}
+                    hintStandard={nftStandard ?? undefined}
+                    variant="full"
+                  />
+                </div>
+              )}
+
               {/* Finalized NFT game: winner claims, others see message */}
               {gameData.status === 'finalized' && (
                 isWinner && nftMint && nftStandard && onClaimNftPrize ? (
                   <button
                     onClick={handleClaimNft}
                     disabled={claiming}
-                    className="w-full min-h-[56px] px-6 py-4 bg-gradient-to-r from-purple-500 to-purple-600 text-white font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:from-purple-400 hover:to-purple-500 shadow-[0_10px_40px_-10px_rgba(168,85,247,0.4)] transition-all active:scale-[0.98] disabled:opacity-50"
+                    className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.4)] transition-all active:scale-[0.98] disabled:opacity-50"
                   >
                     {claiming ? 'Claiming NFT...' : 'Claim NFT Prize'}
                   </button>
@@ -650,8 +673,8 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
 
               {/* Completed: awaiting finalization */}
               {gameData.status === 'completed' && (
-                <div className="w-full min-h-[56px] px-6 py-4 bg-blue-500/10 border border-blue-500/20 rounded-xl text-center">
-                  <span className="text-blue-400 font-[1000] italic uppercase text-lg">Finalizing NFT Winner...</span>
+                <div className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8]/10 border border-[#38BDF8]/30 rounded-xl text-center">
+                  <span className="text-[#38BDF8] font-[1000] italic uppercase text-lg">Finalizing NFT Winner...</span>
                   <p className="text-zinc-500 text-xs font-black mt-1">The single winner will receive the escrowed NFT.</p>
                 </div>
               )}
@@ -660,8 +683,8 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                   Players join via onJoinGame (which builds enter_custom_game_nft when prize_model=nft).
                   Creator sees their game status; non-creator players see join button. */}
               {(gameData.status === 'active' || gameData.status === 'started') && (
-                <div className="w-full min-h-[56px] px-6 py-4 bg-purple-500/10 border border-purple-500/30 rounded-xl text-center">
-                  <span className="text-purple-300 font-[1000] italic uppercase text-lg">NFT Prize Game</span>
+                <div className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8]/10 border border-[#38BDF8]/30 rounded-xl text-center">
+                  <span className="text-[#7DD3FC] font-[1000] italic uppercase text-lg">NFT Prize Game</span>
                   <p className="text-zinc-400 text-xs font-black mt-1">
                     Single winner gets the escrowed NFT
                     {entryFeeSOL > 0 && ` · Entry: ${entryFeeSOL} SOL`}
@@ -670,7 +693,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                     <button
                       onClick={handleJoin}
                       disabled={joining}
-                      className="w-full min-h-[44px] px-4 py-3 bg-purple-500 text-white font-[1000] italic uppercase text-sm tracking-tighter rounded-xl hover:bg-purple-400 transition-all active:scale-[0.98] mt-3 disabled:opacity-50"
+                      className="w-full min-h-[44px] px-4 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-sm tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98] mt-3 disabled:opacity-50"
                     >
                       {joining ? 'Joining...' : entryFeeSOL > 0 ? `Join NFT Game (${entryFeeSOL} SOL)` : 'Join NFT Game'}
                     </button>
