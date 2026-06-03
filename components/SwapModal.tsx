@@ -28,6 +28,8 @@ import {
   pushRecentTokenMint,
   type JupiterToken,
 } from '../src/utils/jupiterTokens';
+import { fetchPumpFunToken, looksLikeMintCA } from '../src/utils/pumpFunFallback';
+import { fetchPrices, type JupiterPriceEntry } from '../src/utils/jupiterPrice';
 
 interface Props {
   isOpen: boolean;
@@ -666,20 +668,72 @@ function TokenPickerSheet({
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
+  // External token (pump.fun, bags, etc.) fetched on CA-paste fallback.
+  const [externalToken, setExternalToken] = useState<JupiterToken | null>(null);
+  const [externalLookup, setExternalLookup] = useState<'idle' | 'looking' | 'notfound'>('idle');
+  // Map of mint → live USD price (lazy-fetched).
+  const [prices, setPrices] = useState<Record<string, JupiterPriceEntry>>({});
+
   const recent = useMemo(() => {
     const mints = getRecentTokenMints();
     return mints.map((m) => tokens.find((t) => t.address === m)).filter(Boolean) as JupiterToken[];
   }, [tokens]);
 
-  const isCA = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(query.trim());
+  const isCA = looksLikeMintCA(query);
 
   const filtered = useMemo(() => searchTokens(query, tokens), [query, tokens]);
   // Split by whitelist
   const wl = filtered.filter((t) => isWhitelisted(t.symbol));
   const rest = filtered.filter((t) => !isWhitelisted(t.symbol));
 
-  // If user pasted a CA that isn't in the strict list, offer an "Import token" row.
-  const importPending = isCA && filtered.length === 0;
+  // CA paste fallback: when user pastes a mint NOT in Jupiter's list, try
+  // Pump.fun's frontend API. If found, render as an importable row. Covers
+  // newly-launched pump.fun + pre-graduation tokens not yet on Jupiter.
+  useEffect(() => {
+    if (!isCA || filtered.length > 0) {
+      setExternalToken(null);
+      setExternalLookup('idle');
+      return;
+    }
+    let cancelled = false;
+    setExternalLookup('looking');
+    (async () => {
+      const t = await fetchPumpFunToken(query.trim());
+      if (cancelled) return;
+      if (t) {
+        setExternalToken(t);
+        setExternalLookup('idle');
+      } else {
+        setExternalToken(null);
+        setExternalLookup('notfound');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [query, isCA, filtered.length]);
+
+  // Live USD price enrichment for visible rows (Jupiter free Price API).
+  // Fetches the top ~80 visible mints on render, batches into single request.
+  useEffect(() => {
+    const visible: string[] = [];
+    if (!query) {
+      visible.push(...recent.map((t) => t.address));
+    }
+    visible.push(...wl.map((t) => t.address));
+    visible.push(...rest.slice(0, 60).map((t) => t.address));
+    if (externalToken) visible.push(externalToken.address);
+    if (visible.length === 0) return;
+
+    let cancelled = false;
+    fetchPrices(visible).then((map) => {
+      if (cancelled) return;
+      setPrices((prev) => ({ ...prev, ...map }));
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, tokens.length, externalToken?.address]);
+
+  // No real token results AND no successful external lookup yet = the "not in any list" notice
+  const noResults = !tokensLoading && wl.length === 0 && rest.length === 0 && !externalToken;
 
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
@@ -717,22 +771,39 @@ function TokenPickerSheet({
           {!tokensLoading && !query && recent.length > 0 && (
             <>
               <div className="st-uplabel" style={{ fontSize: 9, color: '#52525b', padding: '8px 14px 4px' }}>RECENTLY USED</div>
-              {recent.map((t) => <TokenRow key={'r' + t.address} t={t} onPick={onPick} />)}
+              {recent.map((t) => <TokenRow key={'r' + t.address} t={t} price={prices[t.address]?.price} onPick={onPick} />)}
             </>
           )}
           {!tokensLoading && wl.length > 0 && (
             <>
               <div className="st-uplabel" style={{ fontSize: 9, color: '#52525b', padding: '10px 14px 4px' }}>WHITELISTED</div>
-              {wl.map((t) => <TokenRow key={t.address} t={t} onPick={onPick} />)}
+              {wl.map((t) => <TokenRow key={t.address} t={t} price={prices[t.address]?.price} onPick={onPick} />)}
             </>
           )}
           {!tokensLoading && rest.length > 0 && (
             <>
               <div className="st-uplabel" style={{ fontSize: 9, color: '#52525b', padding: '10px 14px 4px' }}>ALL TOKENS</div>
-              {rest.slice(0, 80).map((t) => <TokenRow key={t.address} t={t} onPick={onPick} />)}
+              {rest.slice(0, 80).map((t) => <TokenRow key={t.address} t={t} price={prices[t.address]?.price} onPick={onPick} />)}
             </>
           )}
-          {!tokensLoading && importPending && (
+          {!tokensLoading && externalToken && (
+            <>
+              <div className="st-uplabel" style={{ fontSize: 9, color: '#52525b', padding: '10px 14px 4px' }}>
+                IMPORTED FROM PUMP.FUN
+              </div>
+              <TokenRow t={externalToken} price={prices[externalToken.address]?.price} onPick={onPick} pumpFun />
+              <div style={{ fontSize: 10, color: '#FFD700', textAlign: 'center', marginTop: 6, padding: '0 14px' }}>
+                ⚠ Pre-graduation pump.fun token. High risk. Confirm liquidity before betting.
+              </div>
+            </>
+          )}
+          {!tokensLoading && isCA && externalLookup === 'looking' && (
+            <div style={{ padding: '20px 14px', textAlign: 'center' }}>
+              <Spinner size={16} />
+              <div className="st-uplabel" style={{ fontSize: 9, color: '#71717a', marginTop: 8 }}>CHECKING PUMP.FUN…</div>
+            </div>
+          )}
+          {!tokensLoading && isCA && externalLookup === 'notfound' && (
             <div style={{ padding: '14px' }}>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
@@ -743,17 +814,17 @@ function TokenPickerSheet({
                   background: '#141416', border: '1.5px solid rgba(255,255,255,0.12)', color: '#a1a1aa',
                 }}>?</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="st-display" style={{ fontSize: 16, color: '#fff', fontStyle: 'italic' }}>UNKNOWN TOKEN</div>
+                  <div className="st-display" style={{ fontSize: 16, color: '#fff', fontStyle: 'italic' }}>NOT INDEXED</div>
                   <div className="st-mono" style={{ fontSize: 9, color: '#71717a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{query}</div>
                 </div>
-                <span className="st-uplabel" style={{ fontSize: 9, color: '#FFD700', padding: '6px 10px', borderRadius: 999, border: '1px solid rgba(255,215,0,0.35)' }}>NOT IN LIST</span>
+                <span className="st-uplabel" style={{ fontSize: 9, color: '#FF3131', padding: '6px 10px', borderRadius: 999, border: '1px solid rgba(255,49,49,0.35)' }}>NO DATA</span>
               </div>
               <div style={{ fontSize: 11, color: '#71717a', textAlign: 'center', marginTop: 10 }}>
-                Token not in Jupiter's strict list. Only verified tokens are swappable here.
+                Mint not found on Jupiter or Pump.fun. Double-check the address or wait for indexing.
               </div>
             </div>
           )}
-          {!tokensLoading && !importPending && wl.length === 0 && rest.length === 0 && (
+          {noResults && !isCA && (
             <div style={{ padding: '40px 14px', textAlign: 'center', color: '#71717a', fontSize: 12 }}>
               No tokens match "{query}".
             </div>
@@ -764,7 +835,14 @@ function TokenPickerSheet({
   );
 }
 
-function TokenRow({ t, onPick }: { t: JupiterToken; onPick: (t: JupiterToken) => void }) {
+function TokenRow({
+  t, price, onPick, pumpFun = false,
+}: {
+  t: JupiterToken;
+  price?: number;
+  onPick: (t: JupiterToken) => void;
+  pumpFun?: boolean;
+}) {
   return (
     <button
       onClick={() => onPick(t)}
@@ -784,12 +862,25 @@ function TokenRow({ t, onPick }: { t: JupiterToken; onPick: (t: JupiterToken) =>
               background: 'rgba(20,241,149,0.12)',
             }}>★</span>
           )}
+          {pumpFun && (
+            <span className="st-uplabel" style={{
+              fontSize: 7, color: '#FFD700', padding: '2px 5px', borderRadius: 4,
+              background: 'rgba(255,215,0,0.12)', border: '1px solid rgba(255,215,0,0.35)',
+            }}>PUMP.FUN</span>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 1 }}>
           <span style={{ fontSize: 11, color: '#71717a' }}>{t.name}</span>
           <span className="st-mono" style={{ fontSize: 9, color: '#52525b' }}>{shortCA(t.address)}</span>
         </div>
       </div>
+      {price !== undefined && price > 0 && (
+        <div style={{ textAlign: 'right' }}>
+          <div className="st-mono" style={{ fontSize: 12, color: '#cfcfd6', fontVariantNumeric: 'tabular-nums' }}>
+            ${price < 0.01 ? price.toExponential(2) : price.toLocaleString(undefined, { maximumFractionDigits: price < 1 ? 6 : 2 })}
+          </div>
+        </div>
+      )}
     </button>
   );
 }
