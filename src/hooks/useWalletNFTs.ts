@@ -25,15 +25,37 @@ export interface WalletNFT {
   standard: NFTStandard;
   /** True if the asset is a Bubblegum compressed NFT. */
   compressed: boolean;
+  /** True if the asset matches client-side spam heuristics. */
+  isSpam?: boolean;
+  /** True if the asset is in a Metaplex-verified collection. False = unverified
+   *  (could be legit unverified or spam — combine with isSpam for confidence). */
+  verified?: boolean;
 }
 
 export type FetchStatus = 'loading' | 'ready' | 'empty' | 'error';
 
-// Public Cloudflare Worker proxy that fronts Helius. The upstream Helius API
-// key lives only inside the Worker; it is NEVER shipped to the client.
-const HELIUS_RPC_PROXY_URL =
+// DAS endpoint selection by cluster:
+//   • mainnet → Cloudflare Worker proxy (API key stays server-side).
+//   • devnet  → direct Helius devnet URL with API key in .env.local (gitignored,
+//              local-dev only, never reaches production build because Render
+//              env doesn't have it set).
+//
+// Solana wallet addresses are network-agnostic, so the cluster choice is the
+// ONLY thing that determines which set of NFTs comes back from DAS.
+const SOLANA_NETWORK = (import.meta.env.VITE_SOLANA_NETWORK as string | undefined) || 'mainnet-beta';
+const IS_DEVNET = SOLANA_NETWORK === 'devnet';
+
+const HELIUS_MAINNET_PROXY =
   (import.meta.env.VITE_HELIUS_RPC_PROXY_URL as string | undefined) ||
   'https://soltrivia-helius-proxy.solkunai.workers.dev';
+// For devnet, set VITE_HELIUS_DEVNET_DAS_URL in .env.local with your devnet
+// Helius API key. Example:
+//   VITE_HELIUS_DEVNET_DAS_URL=https://devnet.helius-rpc.com/?api-key=xxx
+// (Public devnet RPCs do NOT support DAS — Helius's devnet endpoint is required.)
+const HELIUS_DEVNET_DAS =
+  (import.meta.env.VITE_HELIUS_DEVNET_DAS_URL as string | undefined) || null;
+
+const DAS_ENDPOINT = IS_DEVNET && HELIUS_DEVNET_DAS ? HELIUS_DEVNET_DAS : HELIUS_MAINNET_PROXY;
 
 /** Map a Helius DAS `interface` value to our standard classification. */
 function classifyStandard(daseInterface: string | undefined): NFTStandard {
@@ -89,6 +111,72 @@ function isDisplayableNFT(asset: any): boolean {
   return hasName || hasImage;
 }
 
+/** Heuristic spam-NFT detector. Returns true for assets that match known spam
+ *  patterns (claim-airdrop, voucher/ticket scams, URL-in-name, suspicious TLDs).
+ *  Pure client-side; complements DAS-level verified-collection filtering.
+ *
+ *  Tuned from real-world devnet wallet sample 2026-06-02 — caught these spam
+ *  groups: airdrop voucher scams (WEN/JUP/MEW/JITO), "claim ticket" passes,
+ *  drop-* dropper bots, redeem-* redeemer bots. */
+const SPAM_NAME_PATTERNS = [
+  /\bclaim\b/i,
+  /\bairdrop\b/i,
+  /\bvoucher[s]?\b/i,   // "WEN Voucher", "Redeem NFT Voucher"
+  /\bredeem\b/i,
+  /\bticket[s]?\b/i,    // "Distinguished Ticket #711"
+  /\bdrop[s]?\b/i,      // "$MEW DROP", "Jupdrop #3"
+  /\bwinner[s]?\b/i,
+  /\breward[s]?\b/i,
+  /\bpass\b/i,          // "TENSOR.MARKETS PASS"
+  /free\s*(sol|nft|mint)/i,
+  /\bgift\b.*(open|now|claim)/i,
+  /\$[\d.,]+/,          // dollar amounts in name ("$1000 USDC")
+  /https?:\/\//i,
+  // Bare-domain patterns (catches "TENSOR.MARKETS PASS", "GETDOGWIF.NET", etc.)
+  /\.com\b/i,
+  /\.xyz\b/i,
+  /\.gg\b/i,
+  /\.io\b/i,
+  /\.app\b/i,
+  /\.net\b/i,
+  /\.org\b/i,
+  /\.markets\b/i,
+  /\.fi\b/i,
+  /\.club\b/i,
+];
+const SPAM_URI_PATTERNS = [
+  /\bclaim\b/i,
+  /\bairdrop\b/i,
+  /\bvoucher[s]?\b/i,
+  /\bredeem\b/i,
+  /\bgift\b/i,
+  /\breward[s]?\b/i,
+  /\bdrop[s]?\b/i,
+  /\.netlify\.app\b/i,  // Common spammer free-hosting destination
+  /\.vercel\.app\b/i,
+];
+function isLikelySpamNFT(asset: any): boolean {
+  const name: string = asset?.content?.metadata?.name || '';
+  const uri: string = asset?.content?.json_uri || asset?.content?.files?.[0]?.uri || '';
+  if (!name) return false; // already filtered by isDisplayableNFT
+  // Stupidly long names are almost always spam
+  if (name.length > 80) return true;
+  if (SPAM_NAME_PATTERNS.some((p) => p.test(name))) return true;
+  if (uri && SPAM_URI_PATTERNS.some((p) => p.test(uri))) return true;
+  return false;
+}
+
+/** Whether the asset is in a Metaplex-verified collection. Phantom's main view
+ *  uses this as the primary filter — verified=true means the collection
+ *  creator cryptographically signed this asset during mint. Spammers can't
+ *  fake this. ~95% of spam falls out at this filter alone. */
+function isInVerifiedCollection(asset: any): boolean {
+  const groups: any[] = asset?.grouping ?? [];
+  return groups.some(
+    (g) => g?.group_key === 'collection' && g?.verified === true,
+  );
+}
+
 export function useWalletNFTs(walletAddress: string | null | undefined): {
   assets: WalletNFT[];
   status: FetchStatus;
@@ -112,7 +200,7 @@ export function useWalletNFTs(walletAddress: string | null | undefined): {
     setStatus('loading');
     (async () => {
       try {
-        const res = await fetch(HELIUS_RPC_PROXY_URL, {
+        const res = await fetch(DAS_ENDPOINT, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -141,6 +229,8 @@ export function useWalletNFTs(walletAddress: string | null | undefined): {
             thumbnail: pickThumbnail(a),
             standard: classifyStandard(a.interface),
             compressed: !!a.compression?.compressed,
+            isSpam: isLikelySpamNFT(a),
+            verified: isInVerifiedCollection(a),
           }));
 
         if (cancelled) return;

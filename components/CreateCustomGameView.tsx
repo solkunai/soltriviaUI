@@ -252,12 +252,15 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
         const expiresAtUnix = nowSec + Math.max(60, gameDurationMinutes * 60);
         const nftMintPk = new PublicKey(selectedNft.mint);
 
+        // Creator-funded NFT prize: entries are ALWAYS free for players.
+        // Creator already locks the prize (the NFT); charging extra entry fees
+        // on top would double-bill players, which doesn't match the design.
         const nftCreateIx = selectedNft.standard === 'core'
           ? buildCreateCustomGameNftIx({
               creator: publicKey,
               nextGameId,
               coreNftAsset: nftMintPk,
-              entryFeeLamports: activeEntryFee || 0,
+              entryFeeLamports: 0,
               expiresAtUnix,
               platformCutBps: CUSTOM_GAME_PLATFORM_CUT_BPS,
             })
@@ -269,7 +272,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
               // auth-rules sets. Most pNFTs (Mad Lads, DeGods) DO use them;
               // for an MVP we let the user retry if the tx fails (the error
               // surfaces the missing accounts). Future polish: derive automatically.
-              entryFeeLamports: activeEntryFee || 0,
+              entryFeeLamports: 0,
               expiresAtUnix,
               platformCutBps: CUSTOM_GAME_PLATFORM_CUT_BPS,
             });
@@ -296,17 +299,76 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
           new Promise((_, reject) => setTimeout(() => reject(new Error('Confirmation timeout')), 30000)),
         ]);
 
-        // TODO(backend-agent): extend createCustomGame EF to accept
-        // { prizeModel: 'nft', onChainGameId, nftMint, nftStandard, txSignature }
-        // and insert the game row into Supabase so the browse page can show it.
-        // Until then, NFT games exist ON-CHAIN but are not browseable via the UI.
-        // The escrow + game record are SAFE — creator can reclaim after expiry.
-        setError(
-          `Game created on-chain (id ${nextGameId}). NFT escrowed. Supabase metadata wiring pending — ` +
-          'this NFT game won\'t appear in browse yet. Backend agent needs to extend createCustomGame EF. ' +
-          `Tx: ${sig.slice(0, 8)}…`,
+        // Insert the Supabase metadata row via create-custom-game EF (v37+).
+        // The EF re-reads the on-chain custom_game_nft PDA on the right cluster
+        // and verifies it matches (creator + nftMint + standard) before insert.
+        // If verification fails or the row doesn't insert, the on-chain game
+        // remains safely escrowed and reclaimable by the creator after expiry.
+        const cluster = (import.meta.env.VITE_SOLANA_NETWORK as string | undefined) === 'devnet'
+          ? 'devnet'
+          : 'mainnet-beta';
+        const efPayload = {
+          cluster,
+          walletAddress: publicKey.toBase58(),
+          name: gameName.trim(),
+          slug: customSlug.trim() || undefined,
+          questionCount,
+          roundCount,
+          timeLimitSeconds: timeLimit,
+          questions: questions.map((q) => ({
+            questionText: q.questionText,
+            options: q.options,
+            correctIndex: q.correctIndex,
+          })),
+          contentDisclaimerAccepted: true,
+          txSignature: sig,
+          prizeModel: 'nft' as const,
+          nftMint: selectedNft.mint,
+          nftStandard: selectedNft.standard,
+          onChainGameId: Number(nextGameId),
+          nftEntryFeeLamports: 0,
+          nftExpiresAt: Number(expiresAtUnix),
+        };
+
+        const { data: efData, error: efError } = await supabase.functions.invoke(
+          'create-custom-game',
+          { body: efPayload },
         );
-        setCreatedSlug(`nft-game-${nextGameId}`);
+
+        if (efError || !efData?.success) {
+          // supabase.functions.invoke wraps the HTTP body in an opaque
+          // FunctionsHttpError. The real EF error string is inside
+          // .context (the Response). Extract it.
+          let errMsg = 'unknown error';
+          const ctx = (efError as any)?.context;
+          if (ctx && typeof ctx.text === 'function') {
+            try {
+              const bodyText = await ctx.text();
+              try {
+                const parsed = JSON.parse(bodyText);
+                errMsg = parsed?.error || parsed?.message || bodyText;
+              } catch {
+                errMsg = bodyText || (efError as any)?.message || 'unknown';
+              }
+            } catch {
+              errMsg = (efError as any)?.message || 'unknown';
+            }
+          } else if ((efData as any)?.error) {
+            errMsg = (efData as any).error;
+          } else if ((efError as any)?.message) {
+            errMsg = (efError as any).message;
+          }
+          console.error('NFT EF call failed:', errMsg, { efError, efData });
+          setError(
+            `Game created on-chain (id ${nextGameId}) and your NFT is escrowed safely, ` +
+            `but the lobby row failed to insert: ${errMsg}. ` +
+            `Your NFT can be reclaimed after expiry. Tx: ${sig.slice(0, 8)}…`,
+          );
+          setCreatedSlug(`nft-game-${nextGameId}`);
+          return;
+        }
+
+        setCreatedSlug(efData.slug || `nft-game-${nextGameId}`);
         return;
       } catch (err: any) {
         console.error('NFT custom game create failed:', err);
@@ -693,7 +755,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 {prizeModel === 'free' ? 'No entry fee. Players compete for XP and bragging rights.'
                   : prizeModel === 'player_funded' ? 'Players pay an entry fee. Winners split the prize pool.'
                   : prizeModel === 'creator_funded' ? 'You deposit the prize pool. Players join for 0.0025 SOL. Winners claim from your deposit.'
-                  : 'You escrow one of your NFTs as the prize. Single winner takes it. Optional SOL entry fee.'}
+                  : 'You escrow one of your NFTs as the prize. Single winner takes it. Free for players to enter.'}
               </p>
             </div>
 
@@ -719,35 +781,8 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   </div>
                 )}
                 <p className="text-zinc-600 text-[10px] mt-2">
-                  Single winner gets your NFT. Optional SOL entry fee below. If too few play, you can reclaim the NFT after expiry.
+                  Single winner gets your NFT. Free for players to enter. If too few play, you can reclaim the NFT after expiry.
                 </p>
-              </div>
-            )}
-
-            {/* NFT prize: optional entry fee — shown when nft_prize is selected */}
-            {isNftPrize && (
-              <div>
-                <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">
-                  Entry Fee (optional, SOL)
-                </label>
-                <div className="flex gap-2 flex-wrap mb-2">
-                  <button
-                    onClick={() => { setEntryFeeLamports(0); setCustomEntryFee(''); }}
-                    className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customEntryFee && entryFeeLamports === 0 ? 'bg-purple-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
-                  >
-                    Free
-                  </button>
-                  {CUSTOM_GAME_ENTRY_FEE_PRESETS.map((fee, i) => (
-                    <button
-                      key={fee}
-                      onClick={() => { setEntryFeeLamports(fee); setCustomEntryFee(''); }}
-                      className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customEntryFee && entryFeeLamports === fee ? 'bg-purple-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
-                    >
-                      {CUSTOM_GAME_ENTRY_FEE_LABELS[i]}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-zinc-600 text-[10px] mt-1">Optional. If you set an entry fee, you keep 90% of the SOL pot; 10% platform cut.</p>
               </div>
             )}
 
@@ -912,12 +947,19 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
               </>
             )}
 
-            <button
-              onClick={goToQuestions}
-              className="w-full min-h-[48px] px-6 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]"
-            >
-              Next: Write Questions
-            </button>
+            {/* Sticky Next button: hovers at the bottom of the viewport so
+                users with long forms (NFT picker, many fields) don't have to
+                scroll all the way down to advance. */}
+            <div className="sticky bottom-4 -mx-4 px-4 pt-3 pb-1 z-20">
+              <div className="rounded-xl bg-black/90 backdrop-blur-sm border border-white/10 shadow-[0_-8px_24px_rgba(0,0,0,0.6)] p-2">
+                <button
+                  onClick={goToQuestions}
+                  className="w-full min-h-[48px] px-6 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-lg hover:bg-[#7DD3FC] transition-all active:scale-[0.98]"
+                >
+                  Next: Write Questions
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1073,6 +1115,64 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                     <span className="text-zinc-400">Est. Prize Pool</span>
                     <span className="text-[#38BDF8] font-[1000] italic">{(prizePot / 1_000_000_000).toFixed(2)} SOL</span>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Prize Summary (NFT-funded games) */}
+            {isNftPrize && selectedNft && (
+              <div className="bg-[#38BDF8]/5 border border-[#38BDF8]/20 rounded-2xl p-6">
+                <p className="text-[#38BDF8] text-[9px] font-black uppercase tracking-[0.3em] mb-4">NFT Prize Game</p>
+
+                {/* Hero: NFT art + name. The asset IS the prize, so give it the headline treatment. */}
+                <div className="flex items-center gap-4 mb-5">
+                  {selectedNft.thumbnail ? (
+                    <img
+                      src={selectedNft.thumbnail}
+                      alt=""
+                      className="w-20 h-20 md:w-24 md:h-24 rounded-xl object-cover shrink-0 border border-[#38BDF8]/30 shadow-[0_8px_24px_-8px_rgba(56,189,248,0.45)]"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 md:w-24 md:h-24 rounded-xl bg-[#38BDF8]/10 border border-[#38BDF8]/30 flex items-center justify-center shrink-0">
+                      <span className="text-[#38BDF8] text-[10px] font-black uppercase tracking-widest">{selectedNft.standard.toUpperCase()}</span>
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white text-xl md:text-2xl font-[1000] italic uppercase tracking-tighter leading-none truncate">
+                      {selectedNft.name}
+                    </div>
+                    <div className="mt-1 text-zinc-400 text-xs font-bold italic uppercase tracking-wider truncate">
+                      {selectedNft.collectionName}
+                    </div>
+                    <div className="mt-2 inline-block text-[#38BDF8] text-[9px] font-black italic uppercase tracking-widest px-2 py-1 rounded-md bg-[#38BDF8]/10 border border-[#38BDF8]/30">
+                      {selectedNft.standard.toUpperCase()} NFT
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-zinc-500 text-[9px] font-black uppercase tracking-widest block mb-1">Entry</span>
+                    <span className="text-white text-base md:text-lg font-[1000] italic uppercase tracking-tighter">Free</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-500 text-[9px] font-black uppercase tracking-widest block mb-1">Max Players</span>
+                    <span className="text-white text-base md:text-lg font-[1000] italic uppercase tracking-tighter">{maxPlayers}</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-500 text-[9px] font-black uppercase tracking-widest block mb-1">Duration</span>
+                    <span className="text-white text-base md:text-lg font-[1000] italic uppercase tracking-tighter">{CUSTOM_GAME_DURATION_PRESETS.find(d => d.minutes === gameDurationMinutes)?.label || `${gameDurationMinutes}m`}</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-500 text-[9px] font-black uppercase tracking-widest block mb-1">Winner</span>
+                    <span className="text-white text-base md:text-lg font-[1000] italic uppercase tracking-tighter">Take All</span>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-[#38BDF8]/15">
+                  <p className="text-[#38BDF8] text-[11px] font-black italic">
+                    Top scorer takes the NFT. If too few play, you reclaim after expiry.
+                  </p>
                 </div>
               </div>
             )}

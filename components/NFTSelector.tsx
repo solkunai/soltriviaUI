@@ -82,15 +82,28 @@ const NFTSelector: React.FC<Props> = ({
   const { assets, status, refetch } = useWalletNFTs(walletAddress);
   const [chip, setChip] = useState<'all' | NFTStandard>(initialFilter);
   const [query, setQuery] = useState('');
+  // Spam filter (heuristic-only by default — verified flag is too strict
+  // because many legit collections like Y00ts/DeGods aren't formally
+  // Metaplex-verified). Hide assets matching airdrop/voucher/URL-in-name
+  // patterns. Power users can flip "Show all" to reveal them anyway.
+  const [showAll, setShowAll] = useState(false);
+
+  const isHiddenByDefault = (a: typeof assets[number]) => !!a.isSpam;
+
+  const hiddenCount = useMemo(
+    () => assets.filter(isHiddenByDefault).length,
+    [assets],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return assets.filter((a) => {
+      if (!showAll && isHiddenByDefault(a)) return false;
       if (chip !== 'all' && a.standard !== chip) return false;
       if (!q) return true;
       return (a.name + ' ' + a.collectionName).toLowerCase().includes(q);
     });
-  }, [assets, chip, query]);
+  }, [assets, chip, query, showAll]);
 
   const gridStyle: React.CSSProperties = {
     display: 'grid',
@@ -130,7 +143,7 @@ const NFTSelector: React.FC<Props> = ({
       </div>
 
       {/* ── Filter chips ─────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
         {(
           [
             ['all', 'ALL'],
@@ -162,6 +175,32 @@ const NFTSelector: React.FC<Props> = ({
           );
         })}
       </div>
+
+      {/* ── Spam toggle ──────────────────────────────────── */}
+      {hiddenCount > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <button
+            onClick={() => setShowAll((v) => !v)}
+            className="font-black italic uppercase"
+            style={{
+              appearance: 'none',
+              cursor: 'pointer',
+              fontSize: 9,
+              letterSpacing: '0.12em',
+              padding: '5px 10px',
+              borderRadius: 999,
+              background: showAll ? 'rgba(255,49,49,0.12)' : 'transparent',
+              color: showAll ? '#FF7676' : '#71717a',
+              border: `1px solid ${showAll ? 'rgba(255,49,49,0.35)' : COLORS.borderLight}`,
+            }}
+            title="Suspected spam NFTs (claim/airdrop voucher scams, URL-in-name patterns) are hidden by default. Toggle to reveal them."
+          >
+            {showAll
+              ? `▼ SHOWING ${hiddenCount} SUSPECTED SPAM`
+              : `▸ ${hiddenCount} HIDDEN (SUSPECTED SPAM)`}
+          </button>
+        </div>
+      )}
 
       {/* ── Status: loading shimmer ──────────────────────── */}
       {status === 'loading' && (
@@ -325,6 +364,27 @@ const NFTSelector: React.FC<Props> = ({
                   <div style={{ position: 'absolute', top: 5, left: 5 }}>
                     <StandardBadge standard={n.standard} sm />
                   </div>
+                  {n.isSpam && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: 5,
+                        left: 5,
+                        fontSize: 9,
+                        letterSpacing: '0.1em',
+                        padding: '2px 5px',
+                        borderRadius: 4,
+                        background: 'rgba(255,49,49,0.85)',
+                        color: '#fff',
+                        fontWeight: 900,
+                        fontStyle: 'italic',
+                        textTransform: 'uppercase',
+                      }}
+                      title="Matches client-side spam heuristics (claim/airdrop, URL in name, suspicious TLD)"
+                    >
+                      ⚠ SPAM?
+                    </div>
+                  )}
                   {isSel && (
                     <div
                       style={{
