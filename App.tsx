@@ -122,6 +122,10 @@ import {
   contractRoundIdFromDateAndNumber,
   buildCreateDuelIx,
   buildJoinDuelIx,
+  buildCreateDuelSplIx,
+  buildJoinDuelSplIx,
+  SPL_TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM,
   buildCancelDuelIx,
   buildExpireDuelIx,
   buildClaimDuelPrizeIx,
@@ -1538,8 +1542,193 @@ const App: React.FC = () => {
     }
   };
 
+  /**
+   * SPL-token duel creator. Mirrors handleCreateDuel but routes through
+   * buildCreateDuelSplIx + the SPL EF branch. The contract collects the
+   * 0.0025 SOL platform fee inside the ix (revenue_wallet account is
+   * writable), so no separate SystemProgram.transfer is needed.
+   *
+   * @param wagerDisplay  Decimal token units (e.g. 100 NERD, 25 USDC)
+   * @param token         Chosen token: mint, symbol, decimals, tokenProgram
+   * @param isPublic      Whether the duel is open to any joiner
+   */
+  const handleCreateDuelSpl = async (
+    wagerDisplay: number,
+    token: { mint: string; symbol: string; decimals: number; tokenProgram?: 'spl' | 'token2022' },
+    isPublic: boolean,
+  ) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    try {
+      const mintPk = new PublicKey(token.mint);
+
+      // Token-2022 vs classic SPL Token detection: read the mint account
+      // and check the owner program. The contract supports both via
+      // token_interface but we have to pass the correct program ID for
+      // the ATA derivation and ix CPI to line up.
+      const mintInfo = await connection.getAccountInfo(mintPk);
+      if (!mintInfo) throw new Error(`Mint not found: ${token.mint}`);
+      const tokenProgram = mintInfo.owner.equals(TOKEN_2022_PROGRAM)
+        ? TOKEN_2022_PROGRAM
+        : SPL_TOKEN_PROGRAM_ID;
+
+      // Convert display units to raw u64 using token's decimals.
+      // Floor to avoid sending a non-integer through u64 encoding.
+      const entryFeeAmount = BigInt(
+        Math.floor(wagerDisplay * Math.pow(10, token.decimals)),
+      );
+      if (entryFeeAmount <= 0n) throw new Error('Wager must be positive');
+
+      const config = await fetchGameConfig(connection);
+      if (!config) throw new Error('Failed to read on-chain config');
+      const nextDuelId = config.nextDuelId;
+
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
+      const ix = buildCreateDuelSplIx({
+        player1: publicKey,
+        nextDuelId,
+        mint: mintPk,
+        entryFeeAmount,
+        isPublic,
+        revenueWallet: new PublicKey(REVENUE_WALLET),
+        tokenProgram,
+      });
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+
+      // Call create-duel EF with SPL fields. The EF's SPL branch reads
+      // these to write the matching row in the duels table with token
+      // metadata for downstream display + join flow.
+      const result = await createDuel({
+        wallet_address: publicKey.toBase58(),
+        tx_signature: signature,
+        duel_id: nextDuelId,
+        entry_fee_lamports: 0,                    // SOL wager unused for SPL
+        is_public: isPublic,
+        mint: token.mint,
+        token_program: tokenProgram.equals(TOKEN_2022_PROGRAM) ? 'token2022' : 'spl',
+        entry_fee_token_amount: entryFeeAmount.toString(),
+        token_symbol: token.symbol,
+        token_decimals: token.decimals,
+      });
+
+      setDuelId(nextDuelId);
+      setDbDuelId(result.db_duel_id);
+      setDuelShareCode(result.share_code);
+      // For SPL duels, store the token amount in raw units in duelEntryFee.
+      // DuelWaitingView reads this together with the token info from the
+      // duel record so it can format "100 NERD" instead of "0.02 SOL".
+      setDuelEntryFee(Number(entryFeeAmount));
+      setDuelIsPublic(isPublic);
+      setDuelExpiresAt(result.expires_at);
+      setDuelOpponent(null);
+      setDuelResults(null);
+      setDuelIsPlayer1(true);
+      window.history.pushState({}, '', `/duel/${result.share_code}`);
+      setCurrentView(View.DUEL_WAITING);
+    } catch (err: any) {
+      console.error('Failed to create SPL duel:', err);
+      if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to create duel. Please try again.');
+      }
+    }
+  };
+
+  /**
+   * SPL-token duel joiner. Mirrors handleJoinDuel but routes through
+   * buildJoinDuelSplIx. Token program detection is the same as create.
+   */
+  const handleJoinDuelSpl = async (
+    onChainDuelId: number,
+    mint: string,
+    tokenProgramHint: 'spl' | 'token2022' | undefined,
+  ) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    try {
+      const mintPk = new PublicKey(mint);
+      // Re-detect token program even if the duel record has a hint, since
+      // the source of truth is the on-chain mint owner.
+      const mintInfo = await connection.getAccountInfo(mintPk);
+      if (!mintInfo) throw new Error(`Mint not found: ${mint}`);
+      const tokenProgram = mintInfo.owner.equals(TOKEN_2022_PROGRAM)
+        ? TOKEN_2022_PROGRAM
+        : SPL_TOKEN_PROGRAM_ID;
+      // tokenProgramHint is unused server-side detection won out, but
+      // surfaced as a param so callers can short-circuit if they trust
+      // the duel record (currently we don't, the RPC call is cheap).
+      void tokenProgramHint;
+
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
+      const ix = buildJoinDuelSplIx({
+        player2: publicKey,
+        duelId: onChainDuelId,
+        mint: mintPk,
+        revenueWallet: new PublicKey(REVENUE_WALLET),
+        tokenProgram,
+      });
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+
+      const result = await joinDuel({
+        wallet_address: publicKey.toBase58(),
+        tx_signature: signature,
+        duel_id: onChainDuelId,
+      });
+
+      setDuelId(onChainDuelId);
+      setDbDuelId(result.db_duel_id);
+      // entry_fee_token_amount comes back on the duel record, surfaced below.
+      setDuelIsPlayer1(false);
+      setDuelResults(null);
+
+      const duelInfo = await getDuel({ duel_id: onChainDuelId, wallet_address: publicKey.toBase58() });
+      setDuelOpponent({
+        wallet: duelInfo.player1.wallet,
+        username: duelInfo.player1.username ?? null,
+        avatar: duelInfo.player1.avatar ?? null,
+      });
+      if (duelInfo.share_code) setDuelShareCode(duelInfo.share_code);
+      // Raw token amount for display in waiting/play.
+      if (duelInfo.entry_fee_token_amount) {
+        setDuelEntryFee(Number(BigInt(duelInfo.entry_fee_token_amount)));
+      }
+
+      setCurrentView(View.DUEL_PLAY);
+    } catch (err: any) {
+      console.error('Failed to join SPL duel:', err);
+      if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to join duel. Please try again.');
+      }
+    }
+  };
+
   const handleJoinDuel = async (onChainDuelId: number, entryFee: number) => {
     if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+
+    // Detect SPL vs SOL by pre-fetching the duel record. The duel row
+    // populates `mint` + `token_program` when create-duel was called with
+    // SPL fields. For SOL duels these stay undefined.
+    try {
+      const pre = await getDuel({ duel_id: onChainDuelId, wallet_address: publicKey.toBase58() });
+      if (pre?.mint && pre.token_program) {
+        return handleJoinDuelSpl(onChainDuelId, pre.mint, pre.token_program);
+      }
+    } catch {
+      // getDuel may fail if the duel doesn't exist yet on the EF side; fall
+      // through to the SOL path which the EF will reject with a clearer error.
+    }
+
     try {
       const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildJoinDuelIx(
@@ -2395,18 +2584,10 @@ const App: React.FC = () => {
                 if (!token) {
                   // SOL path (unchanged).
                   handleCreateDuel(wager * 1_000_000_000, true);
-                  return;
+                } else {
+                  // SPL path (USDC + memecoins).
+                  handleCreateDuelSpl(wager, token, true);
                 }
-                // SPL path is wired in commit 2 (handleCreateDuelSpl).
-                // For now: alert + log so we don't silently no-op.
-                console.warn(
-                  '[duels] SPL wager UI is live but the on-chain path is not yet wired:',
-                  { wager, token },
-                );
-                alert(
-                  `SPL duel for ${wager} ${token.symbol} is coming next commit. ` +
-                  `UI is ready; the on-chain create_duel_spl handler ships in the follow-up.`,
-                );
               }}
             />
           </WebShell>

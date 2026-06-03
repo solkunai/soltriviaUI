@@ -2164,6 +2164,13 @@ export interface DuelInfo {
   created_at: string;
   resolved_at: string | null;
   my_session?: { current_question_index: number; score: number; correct_count: number; finished: boolean };
+  /** v2.1 SPL duel fields. Set when the duel is an SPL-token wager, undefined for SOL. */
+  mint?: string;
+  token_program?: 'spl' | 'token2022';
+  token_symbol?: string;
+  token_decimals?: number;
+  /** Raw u64 amount string in the token's smallest units. */
+  entry_fee_token_amount?: string;
 }
 
 export interface CreateDuelResponse {
@@ -2221,6 +2228,13 @@ export async function createDuel(params: {
   duel_id: number;
   entry_fee_lamports: number;
   is_public: boolean;
+  /** v2.1 SPL duel fields — pass these when the duel is an SPL wager. */
+  mint?: string;
+  token_program?: 'spl' | 'token2022';
+  /** Raw u64 amount string. */
+  entry_fee_token_amount?: string;
+  token_symbol?: string;
+  token_decimals?: number;
 }): Promise<CreateDuelResponse> {
   const res = await fetch(`${FUNCTIONS_URL}/create-duel`, {
     method: 'POST',
