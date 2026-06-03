@@ -416,11 +416,13 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
                     letterSpacing: '0.14em',
                   }}
                 >
-                  {r.prizeModel === 'creator_funded'
-                    ? 'CREATOR PRIZE'
-                    : r.prizeModel === 'player_funded'
-                      ? 'PRIZE POOL'
-                      : 'FREE'}
+                  {r.prizeModel === 'nft'
+                    ? `NFT PRIZE${r.nftStandard ? ` · ${r.nftStandard.toUpperCase()}` : ''}`
+                    : r.prizeModel === 'creator_funded'
+                      ? 'CREATOR PRIZE'
+                      : r.prizeModel === 'player_funded'
+                        ? 'PRIZE POOL'
+                        : 'FREE'}
                 </span>
                 {r.hot ? (
                   <span
