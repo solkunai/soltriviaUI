@@ -1512,7 +1512,11 @@ const App: React.FC = () => {
         entryFee,
         isPublic,
         nextDuelId,
-        new PublicKey(REVENUE_WALLET),
+        // CRITICAL: use the on-chain config's revenue wallet, NOT the hardcoded
+        // mainnet REVENUE_WALLET constant. Anchor's `address = config.revenue_wallet`
+        // constraint fails simulation otherwise (error 6041 InvalidRevenueWallet)
+        // when the on-chain config has a different wallet (e.g. devnet uses GRjf5...).
+        new PublicKey(config.revenueWallet),
       );
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -1602,7 +1606,8 @@ const App: React.FC = () => {
         mint: mintPk,
         entryFeeAmount,
         isPublic,
-        revenueWallet: new PublicKey(REVENUE_WALLET),
+        // On-chain config's revenue_wallet (see InvalidRevenueWallet note in handleCreateDuel).
+        revenueWallet: new PublicKey(config.revenueWallet),
         tokenProgram,
       });
       const messageV0 = new TransactionMessage({
@@ -1679,12 +1684,17 @@ const App: React.FC = () => {
       // the duel record (currently we don't, the RPC call is cheap).
       void tokenProgramHint;
 
+      // Fetch on-chain config for the correct revenue_wallet (see
+      // InvalidRevenueWallet note in handleCreateDuel).
+      const config = await fetchGameConfig(connection);
+      if (!config) throw new Error('Failed to read on-chain config');
+
       const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildJoinDuelSplIx({
         player2: publicKey,
         duelId: onChainDuelId,
         mint: mintPk,
-        revenueWallet: new PublicKey(REVENUE_WALLET),
+        revenueWallet: new PublicKey(config.revenueWallet),
         tokenProgram,
       });
       const messageV0 = new TransactionMessage({
@@ -1749,11 +1759,16 @@ const App: React.FC = () => {
     }
 
     try {
+      // Fetch on-chain config for the correct revenue_wallet (see
+      // InvalidRevenueWallet note in handleCreateDuel).
+      const config = await fetchGameConfig(connection);
+      if (!config) throw new Error('Failed to read on-chain config');
+
       const { blockhash } = await getRecentBlockhashWithRetry(connection);
       const ix = buildJoinDuelIx(
         publicKey,
         onChainDuelId,
-        new PublicKey(REVENUE_WALLET),
+        new PublicKey(config.revenueWallet),
       );
       const messageV0 = new TransactionMessage({
         payerKey: publicKey,
