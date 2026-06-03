@@ -1157,13 +1157,18 @@ export function getTmTokenRecordPda(mint: PublicKey, tokenAccount: PublicKey): P
 /**
  * Associated Token Account derivation. owner can be a PDA (use allowOwnerOffCurve=true).
  * seeds=[owner, TOKEN_PROGRAM_ID, mint], program=ATA_PROGRAM_ID.
+ *
+ * The optional `tokenProgram` arg supports Token-2022 mints. Default is the
+ * classic SPL Token program, preserving prior behavior for every existing
+ * caller. Pass `TOKEN_2022_PROGRAM` for Token-2022 mints.
  */
 export function getAssociatedTokenAddress(
   mint: PublicKey,
   owner: PublicKey,
+  tokenProgram: PublicKey = SPL_TOKEN_PROGRAM_ID,
 ): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [owner.toBytes(), SPL_TOKEN_PROGRAM_ID.toBytes(), mint.toBytes()],
+    [owner.toBytes(), tokenProgram.toBytes(), mint.toBytes()],
     SPL_ATA_PROGRAM_ID,
   )[0];
 }
@@ -1661,4 +1666,437 @@ export async function fetchRoundAccountData(
     winners: data.winners,
     claimed: data.claimed,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SPL DUEL INSTRUCTION BUILDERS (token-bet duels)
+// ═══════════════════════════════════════════════════════════════════
+// Mirrors `programs/soltrivia_v2/src/instructions/duel_spl.rs`.
+//
+// Design notes:
+//   - Both players bet the SAME token at the SAME raw amount. No oracle, no
+//     conversion. (e.g. 100 JUP vs 100 JUP, 1 USDC vs 1 USDC.)
+//   - SPL entry fee uses `token_interface::transfer_checked` on-chain, which
+//     supports BOTH the classic SPL Token program AND Token-2022. Pass the
+//     correct `tokenProgram` per-mint.
+//   - SOL platform fee is collected on top, separately, in lamports.
+//   - DUEL_WAITING_EXPIRY = 24h (matches DUEL_LOCKED_EXPIRY semantics).
+// ═══════════════════════════════════════════════════════════════════
+
+const DUEL_SPL_SEED       = new TextEncoder().encode('duel_spl');
+const DUEL_SPL_VAULT_SEED = new TextEncoder().encode('duel_spl_vault');
+
+/** Anchor discriminators for SPL duel ixs.
+ *  Derived from sha256("global:<fn_name>").slice(0, 8). */
+export const DUEL_SPL_DISC = {
+  createDuelSpl:        new Uint8Array([23, 1, 77, 84, 229, 187, 71, 141]),
+  joinDuelSpl:          new Uint8Array([115, 68, 46, 234, 37, 99, 109, 175]),
+  resolveDuelSpl:       new Uint8Array([191, 132, 188, 24, 43, 47, 101, 149]),
+  claimDuelPrizeSpl:    new Uint8Array([255, 202, 174, 184, 106, 125, 16, 191]),
+  cancelDuelSpl:        new Uint8Array([41, 166, 39, 254, 109, 218, 255, 44]),
+  expireDuelSpl:        new Uint8Array([185, 19, 56, 57, 20, 216, 203, 79]),
+  forfeitLockedDuelSpl: new Uint8Array([160, 249, 8, 178, 241, 156, 43, 233]),
+  closeDuelSpl:         new Uint8Array([40, 78, 209, 109, 33, 169, 166, 203]),
+} as const;
+
+/** PDA: `duel_spl` state account, derived from u64 LE-encoded duel_id. */
+export function getDuelSplPda(duelId: number | bigint, programId: PublicKey = SOLTRIVIA_PROGRAM_ID): PublicKey {
+  const n = typeof duelId === 'bigint' ? duelId : BigInt(duelId);
+  const buf = new Uint8Array(8);
+  new DataView(buf.buffer).setBigUint64(0, n, true);
+  return PublicKey.findProgramAddressSync([DUEL_SPL_SEED, buf], programId)[0];
+}
+
+/** PDA: SPL duel vault that owns the duel's token ATA. */
+export function getDuelSplVaultPda(duelId: number | bigint, programId: PublicKey = SOLTRIVIA_PROGRAM_ID): PublicKey {
+  const n = typeof duelId === 'bigint' ? duelId : BigInt(duelId);
+  const buf = new Uint8Array(8);
+  new DataView(buf.buffer).setBigUint64(0, n, true);
+  return PublicKey.findProgramAddressSync([DUEL_SPL_VAULT_SEED, buf], programId)[0];
+}
+
+/**
+ * create_duel_spl — Player 1 deposits SPL entry fee + SOL platform fee.
+ * Caller must read `config.next_duel_id` first and pass it as nextDuelId so
+ * PDAs match what the program will derive.
+ *
+ * Args: entry_fee_amount (u64), is_public (bool).
+ * Accounts (matches CreateDuelSpl struct in duel_spl.rs:13):
+ *   0. player1 (sig, mut)
+ *   1. config (PDA, mut)
+ *   2. duel (PDA, mut) — derived from next_duel_id
+ *   3. vault (PDA, mut) — derived from next_duel_id, holds token ATA
+ *   4. mint (readonly) — the SPL token mint
+ *   5. vault_token_account (mut) — ATA(vault, mint, tokenProgram)
+ *   6. player1_token_account (mut) — ATA(player1, mint, tokenProgram)
+ *   7. revenue_wallet (mut) — config.revenue_wallet
+ *   8. token_program — SPL Token OR Token-2022
+ *   9. associated_token_program
+ *  10. system_program
+ */
+export function buildCreateDuelSplIx(args: {
+  player1: PublicKey;
+  nextDuelId: number | bigint;
+  mint: PublicKey;
+  entryFeeAmount: number | bigint;
+  isPublic: boolean;
+  revenueWallet: PublicKey;
+  tokenProgram?: PublicKey; // defaults to SPL_TOKEN_PROGRAM_ID
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const duelPda = getDuelSplPda(args.nextDuelId, programId);
+  const vaultPda = getDuelSplVaultPda(args.nextDuelId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const player1Ata = getAssociatedTokenAddress(args.mint, args.player1, tokenProgram);
+  return makeIx(
+    programId,
+    DUEL_SPL_DISC.createDuelSpl,
+    concat(u64Le(args.entryFeeAmount), new Uint8Array([args.isPublic ? 1 : 0])),
+    [
+      { pubkey: args.player1,            isSigner: true,  isWritable: true  },
+      { pubkey: getConfigPda(programId), isSigner: false, isWritable: true  },
+      { pubkey: duelPda,                 isSigner: false, isWritable: true  },
+      { pubkey: vaultPda,                isSigner: false, isWritable: true  },
+      { pubkey: args.mint,               isSigner: false, isWritable: false },
+      { pubkey: vaultAta,                isSigner: false, isWritable: true  },
+      { pubkey: player1Ata,              isSigner: false, isWritable: true  },
+      { pubkey: args.revenueWallet,      isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,            isSigner: false, isWritable: false },
+      { pubkey: SPL_ATA_PROGRAM_ID,      isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * join_duel_spl — Player 2 deposits matching SPL entry fee + SOL platform fee.
+ *
+ * Args: duel_id (u64).
+ * Accounts (matches JoinDuelSpl struct in duel_spl.rs:167):
+ *   0. player2 (sig, mut)
+ *   1. config (PDA, readonly)
+ *   2. duel (PDA, mut)
+ *   3. mint (readonly)
+ *   4. player2_token_account (mut) — ATA(player2, mint, tokenProgram)
+ *   5. vault (PDA, readonly)
+ *   6. vault_token_account (mut) — ATA(vault, mint, tokenProgram)
+ *   7. revenue_wallet (mut)
+ *   8. token_program
+ *   9. system_program
+ */
+export function buildJoinDuelSplIx(args: {
+  player2: PublicKey;
+  duelId: number | bigint;
+  mint: PublicKey;
+  revenueWallet: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const duelPda = getDuelSplPda(args.duelId, programId);
+  const vaultPda = getDuelSplVaultPda(args.duelId, programId);
+  const player2Ata = getAssociatedTokenAddress(args.mint, args.player2, tokenProgram);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  return makeIx(
+    programId,
+    DUEL_SPL_DISC.joinDuelSpl,
+    u64Le(args.duelId),
+    [
+      { pubkey: args.player2,            isSigner: true,  isWritable: true  },
+      { pubkey: getConfigPda(programId), isSigner: false, isWritable: false },
+      { pubkey: duelPda,                 isSigner: false, isWritable: true  },
+      { pubkey: args.mint,               isSigner: false, isWritable: false },
+      { pubkey: player2Ata,              isSigner: false, isWritable: true  },
+      { pubkey: vaultPda,                isSigner: false, isWritable: false },
+      { pubkey: vaultAta,                isSigner: false, isWritable: true  },
+      { pubkey: args.revenueWallet,      isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,            isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * resolve_duel_spl — Operator/owner posts winner + sends SPL house cut.
+ *
+ * Args: duel_id (u64), winner (Pubkey).
+ * Accounts (matches ResolveDuelSpl struct in duel_spl.rs:280):
+ *   0. authority (sig, mut) — operator OR owner
+ *   1. config (PDA, readonly)
+ *   2. duel (PDA, mut)
+ *   3. mint (readonly)
+ *   4. vault (PDA, mut)
+ *   5. vault_token_account (mut)
+ *   6. revenue_wallet (mut)
+ *   7. revenue_token_account (mut) — ATA(revenue_wallet, mint), init_if_needed
+ *   8. token_program
+ *   9. associated_token_program
+ *  10. system_program
+ */
+export function buildResolveDuelSplIx(args: {
+  authority: PublicKey;
+  duelId: number | bigint;
+  winner: PublicKey;
+  mint: PublicKey;
+  revenueWallet: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const duelPda = getDuelSplPda(args.duelId, programId);
+  const vaultPda = getDuelSplVaultPda(args.duelId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const revenueAta = getAssociatedTokenAddress(args.mint, args.revenueWallet, tokenProgram);
+  return makeIx(
+    programId,
+    DUEL_SPL_DISC.resolveDuelSpl,
+    concat(u64Le(args.duelId), args.winner.toBytes()),
+    [
+      { pubkey: args.authority,          isSigner: true,  isWritable: true  },
+      { pubkey: getConfigPda(programId), isSigner: false, isWritable: false },
+      { pubkey: duelPda,                 isSigner: false, isWritable: true  },
+      { pubkey: args.mint,               isSigner: false, isWritable: false },
+      { pubkey: vaultPda,                isSigner: false, isWritable: true  },
+      { pubkey: vaultAta,                isSigner: false, isWritable: true  },
+      { pubkey: args.revenueWallet,      isSigner: false, isWritable: true  },
+      { pubkey: revenueAta,              isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,            isSigner: false, isWritable: false },
+      { pubkey: SPL_ATA_PROGRAM_ID,      isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * claim_duel_prize_spl — Winner claims the SPL pot (less house cut already taken).
+ *
+ * Args: duel_id (u64).
+ * Accounts (matches ClaimDuelPrizeSpl struct in duel_spl.rs:400):
+ *   0. winner (sig, mut)
+ *   1. duel (PDA, mut)
+ *   2. mint (readonly)
+ *   3. vault (PDA, mut)
+ *   4. vault_token_account (mut)
+ *   5. winner_token_account (mut) — ATA(winner, mint), init_if_needed
+ *   6. token_program
+ *   7. associated_token_program
+ *   8. system_program
+ */
+export function buildClaimDuelPrizeSplIx(args: {
+  winner: PublicKey;
+  duelId: number | bigint;
+  mint: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const duelPda = getDuelSplPda(args.duelId, programId);
+  const vaultPda = getDuelSplVaultPda(args.duelId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const winnerAta = getAssociatedTokenAddress(args.mint, args.winner, tokenProgram);
+  return makeIx(
+    programId,
+    DUEL_SPL_DISC.claimDuelPrizeSpl,
+    u64Le(args.duelId),
+    [
+      { pubkey: args.winner,             isSigner: true,  isWritable: true  },
+      { pubkey: duelPda,                 isSigner: false, isWritable: true  },
+      { pubkey: args.mint,               isSigner: false, isWritable: false },
+      { pubkey: vaultPda,                isSigner: false, isWritable: true  },
+      { pubkey: vaultAta,                isSigner: false, isWritable: true  },
+      { pubkey: winnerAta,               isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,            isSigner: false, isWritable: false },
+      { pubkey: SPL_ATA_PROGRAM_ID,      isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * cancel_duel_spl — Player 1 cancels (waiting only), SPL entry refunded.
+ *
+ * Args: duel_id (u64).
+ * Accounts (matches CancelDuelSpl struct in duel_spl.rs:486):
+ *   0. player1 (sig, mut)
+ *   1. duel (PDA, mut)
+ *   2. mint (readonly)
+ *   3. vault (PDA, mut)
+ *   4. vault_token_account (mut)
+ *   5. player1_token_account (mut)
+ *   6. token_program
+ */
+export function buildCancelDuelSplIx(args: {
+  player1: PublicKey;
+  duelId: number | bigint;
+  mint: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const duelPda = getDuelSplPda(args.duelId, programId);
+  const vaultPda = getDuelSplVaultPda(args.duelId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const player1Ata = getAssociatedTokenAddress(args.mint, args.player1, tokenProgram);
+  return makeIx(
+    programId,
+    DUEL_SPL_DISC.cancelDuelSpl,
+    u64Le(args.duelId),
+    [
+      { pubkey: args.player1,   isSigner: true,  isWritable: true  },
+      { pubkey: duelPda,        isSigner: false, isWritable: true  },
+      { pubkey: args.mint,      isSigner: false, isWritable: false },
+      { pubkey: vaultPda,       isSigner: false, isWritable: true  },
+      { pubkey: vaultAta,       isSigner: false, isWritable: true  },
+      { pubkey: player1Ata,     isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,   isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * expire_duel_spl — Permissionless: if waiting + past expiry, refund SPL to P1.
+ *
+ * Args: duel_id (u64).
+ * Accounts (matches ExpireDuelSpl struct in duel_spl.rs:565):
+ *   0. cranker (sig)
+ *   1. duel (PDA, mut)
+ *   2. mint (readonly)
+ *   3. vault (PDA, mut)
+ *   4. vault_token_account (mut)
+ *   5. player1 (mut)
+ *   6. player1_token_account (mut)
+ *   7. token_program
+ */
+export function buildExpireDuelSplIx(args: {
+  cranker: PublicKey;
+  duelId: number | bigint;
+  player1: PublicKey;
+  mint: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const duelPda = getDuelSplPda(args.duelId, programId);
+  const vaultPda = getDuelSplVaultPda(args.duelId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const player1Ata = getAssociatedTokenAddress(args.mint, args.player1, tokenProgram);
+  return makeIx(
+    programId,
+    DUEL_SPL_DISC.expireDuelSpl,
+    u64Le(args.duelId),
+    [
+      { pubkey: args.cranker,   isSigner: true,  isWritable: false },
+      { pubkey: duelPda,        isSigner: false, isWritable: true  },
+      { pubkey: args.mint,      isSigner: false, isWritable: false },
+      { pubkey: vaultPda,       isSigner: false, isWritable: true  },
+      { pubkey: vaultAta,       isSigner: false, isWritable: true  },
+      { pubkey: args.player1,   isSigner: false, isWritable: true  },
+      { pubkey: player1Ata,     isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,   isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * forfeit_locked_duel_spl — Permissionless: a Locked SPL duel past its 24h
+ * expiry with no resolution refunds (token) to BOTH players.
+ *
+ * Args: duel_id (u64).
+ * Accounts (matches ForfeitLockedDuelSpl struct in duel_spl.rs:655):
+ *   0. cranker (sig)
+ *   1. duel (PDA, mut)
+ *   2. mint (readonly)
+ *   3. vault (PDA, mut)
+ *   4. vault_token_account (mut)
+ *   5. player1 (readonly)
+ *   6. player1_token_account (mut)
+ *   7. player2 (readonly)
+ *   8. player2_token_account (mut)
+ *   9. token_program
+ */
+export function buildForfeitLockedDuelSplIx(args: {
+  cranker: PublicKey;
+  duelId: number | bigint;
+  player1: PublicKey;
+  player2: PublicKey;
+  mint: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const duelPda = getDuelSplPda(args.duelId, programId);
+  const vaultPda = getDuelSplVaultPda(args.duelId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const player1Ata = getAssociatedTokenAddress(args.mint, args.player1, tokenProgram);
+  const player2Ata = getAssociatedTokenAddress(args.mint, args.player2, tokenProgram);
+  return makeIx(
+    programId,
+    DUEL_SPL_DISC.forfeitLockedDuelSpl,
+    u64Le(args.duelId),
+    [
+      { pubkey: args.cranker,  isSigner: true,  isWritable: false },
+      { pubkey: duelPda,       isSigner: false, isWritable: true  },
+      { pubkey: args.mint,     isSigner: false, isWritable: false },
+      { pubkey: vaultPda,      isSigner: false, isWritable: true  },
+      { pubkey: vaultAta,      isSigner: false, isWritable: true  },
+      { pubkey: args.player1,  isSigner: false, isWritable: false },
+      { pubkey: player1Ata,    isSigner: false, isWritable: true  },
+      { pubkey: args.player2,  isSigner: false, isWritable: false },
+      { pubkey: player2Ata,    isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,  isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * close_duel_spl — Operator/owner reclaims rent after a settled duel. Closes
+ * the vault token ATA and the DuelSpl state account, drains the vault PDA's
+ * remaining SOL rent to the authority.
+ *
+ * Args: duel_id (u64).
+ * Accounts (matches CloseDuelSpl struct in duel_spl.rs:765):
+ *   0. authority (sig, mut) — operator OR owner
+ *   1. config (PDA, readonly)
+ *   2. duel (PDA, mut) — closed to authority
+ *   3. mint (readonly)
+ *   4. vault (PDA, mut)
+ *   5. vault_token_account (mut)
+ *   6. token_program
+ *   7. system_program
+ */
+export function buildCloseDuelSplIx(args: {
+  authority: PublicKey;
+  duelId: number | bigint;
+  mint: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const duelPda = getDuelSplPda(args.duelId, programId);
+  const vaultPda = getDuelSplVaultPda(args.duelId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  return makeIx(
+    programId,
+    DUEL_SPL_DISC.closeDuelSpl,
+    u64Le(args.duelId),
+    [
+      { pubkey: args.authority,          isSigner: true,  isWritable: true  },
+      { pubkey: getConfigPda(programId), isSigner: false, isWritable: false },
+      { pubkey: duelPda,                 isSigner: false, isWritable: true  },
+      { pubkey: args.mint,               isSigner: false, isWritable: false },
+      { pubkey: vaultPda,                isSigner: false, isWritable: true  },
+      { pubkey: vaultAta,                isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,            isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
 }
