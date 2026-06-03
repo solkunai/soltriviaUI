@@ -267,7 +267,7 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
         </div>
       </div>
 
-      {/* FEATURED strip — free always-on official games */}
+      {/* FEATURED strip — free always-on official games (horizontal carousel) */}
       <div className="mb-5">
         <div
           className="font-black italic uppercase mb-2 flex items-center gap-2"
@@ -276,7 +276,24 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
           <span>★</span> FEATURED · BY SOL TRIVIA
         </div>
         <div
-          style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(5,1fr)', gap: 10 }}
+          className="[&::-webkit-scrollbar]:hidden"
+          style={{
+            display: 'flex',
+            gap: 10,
+            overflowX: 'auto',
+            scrollSnapType: 'x mandatory',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            paddingBottom: 2,
+            // Negative side padding so cards align flush with the page edge on
+            // mobile, then padding inside restores breathing room before the
+            // first/after the last card. Lets the next card peek subtly.
+            marginLeft: isMobile ? -16 : 0,
+            marginRight: isMobile ? -16 : 0,
+            paddingLeft: isMobile ? 16 : 0,
+            paddingRight: isMobile ? 16 : 0,
+          } as React.CSSProperties}
         >
           {OFFICIAL_TOPICS.map((r) => {
             const live = officialBySlug[r.slug];
@@ -294,6 +311,14 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
                   cursor: exists ? 'pointer' : 'default',
                   color: '#fff',
                   opacity: exists ? 1 : 0.55,
+                  // Carousel sizing: mobile reveals one full card with the next
+                  // peeking (~78% viewport); desktop fits all 5 visible with
+                  // even spacing (no scroll needed in practice but gracefully
+                  // supports future additions).
+                  flex: '0 0 auto',
+                  width: isMobile ? '78%' : 'calc((100% - 40px) / 5)',
+                  minWidth: isMobile ? 220 : 160,
+                  scrollSnapAlign: 'start',
                 }}
               >
                 <div
