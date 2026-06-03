@@ -13,9 +13,32 @@ interface DuelWaitingViewProps {
   onCancel: () => Promise<void>;
   onClaimRefund: (duelId: number, player1Wallet: string) => Promise<void>;
   onBack: () => void;
+  /**
+   * v2.1 SPL: token info for SPL duels. When tokenSymbol is set, entryFee
+   * is interpreted as raw units of that token and tokenDecimals is used
+   * to convert to display units. All three undefined = legacy SOL duel.
+   */
+  tokenSymbol?: string | null;
+  tokenDecimals?: number | null;
 }
 
-const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, shareCode, entryFee, isPublic, expiresAt, walletAddress, onDuelJoined, onCancel, onClaimRefund, onBack }) => {
+/** Format the wager for display. Branches on tokenSymbol presence. */
+function formatWager(entryFee: number, tokenSymbol?: string | null, tokenDecimals?: number | null): string {
+  if (tokenSymbol && typeof tokenDecimals === 'number') {
+    const display = entryFee / Math.pow(10, tokenDecimals);
+    // For SPL: 2 decimal places for sub-1 amounts, no trailing zeros for whole
+    // numbers, 2 for the rest. Avoids weird strings like "100.00000000 NERD".
+    const formatted = display < 1
+      ? display.toLocaleString(undefined, { maximumFractionDigits: 6 })
+      : display.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return `${formatted} ${tokenSymbol}`;
+  }
+  // SOL legacy formatting.
+  return `${(entryFee / 1_000_000_000).toFixed(2)} SOL`;
+}
+
+const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, shareCode, entryFee, isPublic, expiresAt, walletAddress, onDuelJoined, onCancel, onClaimRefund, onBack, tokenSymbol, tokenDecimals }) => {
+  const wagerLabel = formatWager(entryFee, tokenSymbol, tokenDecimals);
   const [timeLeft, setTimeLeft] = useState('');
   const [expired, setExpired] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -88,7 +111,7 @@ const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, sha
   };
 
   const handleShareX = () => {
-    const text = `1v1 me on @soltrivia_app for ${(entryFee / 1_000_000_000).toFixed(2)} SOL. trivia. on-chain. winner takes all.\n\nyou're ngmi if you dodge this\n\n${shareUrl}`;
+    const text = `1v1 me on @soltrivia_app for ${wagerLabel}. trivia. on-chain. winner takes all.\n\nyou're ngmi if you dodge this\n\n${shareUrl}`;
     window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -118,7 +141,7 @@ const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, sha
 
         <p className="text-[#FF3131] text-[10px] font-black uppercase tracking-[0.4em] mb-2">Waiting for Opponent</p>
         <h2 className="text-3xl font-[1000] italic text-white uppercase tracking-tighter mb-2">
-          {(entryFee / 1_000_000_000).toFixed(2)} SOL Duel
+          {wagerLabel} Duel
         </h2>
         <p className="text-zinc-500 text-xs font-bold uppercase mb-1">
           {isPublic ? 'Public — visible in lobby' : 'Private — share link only'}

@@ -2298,11 +2298,26 @@ export async function submitDuelAnswer(params: SubmitDuelAnswerParams): Promise<
   return data;
 }
 
-export async function getOpenDuels(): Promise<Array<{ id: string; duel_id: number; player1_wallet: string; entry_fee_lamports: number; is_public: boolean; share_code: string; created_at: string; expires_at: string }>> {
+export async function getOpenDuels(): Promise<Array<{
+  id: string;
+  duel_id: number;
+  player1_wallet: string;
+  entry_fee_lamports: number;
+  is_public: boolean;
+  share_code: string;
+  created_at: string;
+  expires_at: string;
+  /** v2.1 SPL duel fields. Null/undefined for SOL duels. */
+  mint?: string | null;
+  token_program?: 'spl' | 'token2022' | null;
+  token_symbol?: string | null;
+  token_decimals?: number | null;
+  entry_fee_token_amount?: string | null;
+}>> {
   if (!isSupabaseConfigured) return [];
   const { data, error } = await supabase
     .from('duels')
-    .select('id, duel_id, player1_wallet, entry_fee_lamports, is_public, share_code, created_at, expires_at')
+    .select('id, duel_id, player1_wallet, entry_fee_lamports, is_public, share_code, created_at, expires_at, mint, token_program, token_symbol, token_decimals, entry_fee_token_amount')
     .eq('status', 'waiting')
     .eq('is_public', true)
     .gt('expires_at', new Date().toISOString())

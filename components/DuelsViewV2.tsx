@@ -60,7 +60,30 @@ interface Props {
 const SOL = 1_000_000_000;
 const AVATAR_COLORS = ['#FFC857', '#FF8C42', '#A78BFA', '#22D3EE', '#FACC15', '#F472B6', '#14F195'];
 
-type OpenRow = { duelId: number; user: string; wager: number; expires: string; avatar: string; hot?: boolean };
+type OpenRow = {
+  duelId: number;
+  user: string;
+  /** Wager amount in DISPLAY units (SOL or token, e.g. 0.1 or 100). */
+  wager: number;
+  /** Token symbol; undefined = SOL. */
+  tokenSymbol?: string;
+  /** Token decimals; undefined = SOL. */
+  tokenDecimals?: number;
+  expires: string;
+  avatar: string;
+  hot?: boolean;
+};
+
+/** Format an open-row wager: SPL when symbol present, SOL otherwise. */
+function formatRowWager(row: OpenRow): string {
+  if (row.tokenSymbol) {
+    const v = row.wager < 1
+      ? row.wager.toLocaleString(undefined, { maximumFractionDigits: 6 })
+      : row.wager.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return `${v} ${row.tokenSymbol}`;
+  }
+  return `${row.wager.toFixed(2)} SOL`;
+}
 type RecentRow = { winner: string; loser: string; pot: number; when: string };
 
 function shortWallet(w: string): string {
@@ -197,14 +220,27 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
         }
         if (!mounted) return;
         setOpenRows(
-          others.map((d) => ({
-            duelId: d.duel_id,
-            user: nameByWallet[d.player1_wallet] || shortWallet(d.player1_wallet),
-            wager: (d.entry_fee_lamports ?? 0) / SOL,
-            expires: countdown(d.expires_at),
-            avatar: colorFor(d.player1_wallet),
-            hot: (d.entry_fee_lamports ?? 0) / SOL >= 0.25,
-          })),
+          others.map((d) => {
+            const isSpl = !!(d.mint && d.token_symbol && typeof d.token_decimals === 'number');
+            // SPL: convert raw token amount to display units using decimals.
+            // SOL: lamports → SOL.
+            const wagerDisplay = isSpl
+              ? Number(BigInt(d.entry_fee_token_amount ?? '0')) / Math.pow(10, d.token_decimals as number)
+              : (d.entry_fee_lamports ?? 0) / SOL;
+            return {
+              duelId: d.duel_id,
+              user: nameByWallet[d.player1_wallet] || shortWallet(d.player1_wallet),
+              wager: wagerDisplay,
+              tokenSymbol: isSpl ? (d.token_symbol as string) : undefined,
+              tokenDecimals: isSpl ? (d.token_decimals as number) : undefined,
+              expires: countdown(d.expires_at),
+              avatar: colorFor(d.player1_wallet),
+              // "Hot" heuristic: SOL ≥ 0.25, SPL when raw amount looks large
+              // relative to base unit (≥ 100 of the display unit). Heuristic
+              // only; doesn't claim USD equivalence.
+              hot: isSpl ? wagerDisplay >= 100 : wagerDisplay >= 0.25,
+            };
+          }),
         );
 
         setRecentRows(
@@ -608,7 +644,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
                       letterSpacing: '-0.02em',
                     }}
                   >
-                    {o.wager.toFixed(2)} SOL
+                    {formatRowWager(o)}
                   </span>
                   <button
                     onClick={() => onJoinDuel?.(o.duelId)}

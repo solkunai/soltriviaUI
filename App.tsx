@@ -229,6 +229,15 @@ const App: React.FC = () => {
     return null;
   });
   const [duelEntryFee, setDuelEntryFee] = useState(0);
+  /**
+   * v2.1: SPL token info for the active duel. All three set together when the
+   * duel is an SPL wager; left as null/undefined for SOL duels. The display
+   * components (DuelWaitingView, DuelsViewV2 rows) branch on whether
+   * duelTokenSymbol is present.
+   */
+  const [duelTokenSymbol, setDuelTokenSymbol] = useState<string | null>(null);
+  const [duelTokenDecimals, setDuelTokenDecimals] = useState<number | null>(null);
+  const [duelTokenMint, setDuelTokenMint] = useState<string | null>(null);
   const [duelIsPublic, setDuelIsPublic] = useState(true);
   const [duelExpiresAt, setDuelExpiresAt] = useState('');
   const [duelOpponent, setDuelOpponent] = useState<{ wallet: string; username: string | null; avatar: string | null } | null>(null);
@@ -1527,6 +1536,10 @@ const App: React.FC = () => {
       setDbDuelId(result.db_duel_id);
       setDuelShareCode(result.share_code);
       setDuelEntryFee(entryFee);
+      // SOL duel: clear any leftover SPL token state from a prior SPL session.
+      setDuelTokenSymbol(null);
+      setDuelTokenDecimals(null);
+      setDuelTokenMint(null);
       setDuelIsPublic(isPublic);
       setDuelExpiresAt(result.expires_at);
       setDuelOpponent(null);
@@ -1621,9 +1634,12 @@ const App: React.FC = () => {
       setDbDuelId(result.db_duel_id);
       setDuelShareCode(result.share_code);
       // For SPL duels, store the token amount in raw units in duelEntryFee.
-      // DuelWaitingView reads this together with the token info from the
-      // duel record so it can format "100 NERD" instead of "0.02 SOL".
+      // DuelWaitingView reads this together with duelTokenSymbol/Decimals so
+      // it can format "100 NERD" instead of "0.02 SOL".
       setDuelEntryFee(Number(entryFeeAmount));
+      setDuelTokenSymbol(token.symbol);
+      setDuelTokenDecimals(token.decimals);
+      setDuelTokenMint(token.mint);
       setDuelIsPublic(isPublic);
       setDuelExpiresAt(result.expires_at);
       setDuelOpponent(null);
@@ -1699,10 +1715,13 @@ const App: React.FC = () => {
         avatar: duelInfo.player1.avatar ?? null,
       });
       if (duelInfo.share_code) setDuelShareCode(duelInfo.share_code);
-      // Raw token amount for display in waiting/play.
+      // Raw token amount + token info for display in waiting / play / results.
       if (duelInfo.entry_fee_token_amount) {
         setDuelEntryFee(Number(BigInt(duelInfo.entry_fee_token_amount)));
       }
+      if (duelInfo.token_symbol) setDuelTokenSymbol(duelInfo.token_symbol);
+      if (typeof duelInfo.token_decimals === 'number') setDuelTokenDecimals(duelInfo.token_decimals);
+      if (duelInfo.mint) setDuelTokenMint(duelInfo.mint);
 
       setCurrentView(View.DUEL_PLAY);
     } catch (err: any) {
@@ -1755,6 +1774,10 @@ const App: React.FC = () => {
       setDuelId(onChainDuelId);
       setDbDuelId(result.db_duel_id);
       setDuelEntryFee(entryFee);
+      // SOL duel: clear any leftover SPL token state.
+      setDuelTokenSymbol(null);
+      setDuelTokenDecimals(null);
+      setDuelTokenMint(null);
       setDuelIsPlayer1(false);
       setDuelResults(null);
 
@@ -2618,6 +2641,8 @@ const App: React.FC = () => {
               onCancel={handleCancelDuel}
               onClaimRefund={handleClaimDuelRefund}
               onBack={() => setCurrentView(View.DUEL_LOBBY)}
+              tokenSymbol={duelTokenSymbol}
+              tokenDecimals={duelTokenDecimals}
             />
           </WebShell>
         ) : null;
