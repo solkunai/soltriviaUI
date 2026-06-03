@@ -15,6 +15,23 @@ import { supabase } from '../src/utils/supabase';
 import { getOpenDuels, fetchCompletedDuels } from '../src/utils/api';
 import SPLSelector from './SPLSelector';
 import type { TokenAsset } from '../src/hooks/useWalletSPL';
+import { USDC_MINT } from '../src/utils/constants';
+
+// USDC is a fixed pill (no picker). Pre-built TokenAsset so the SPL path
+// in handleCreateClick gets the same shape it would from the picker.
+// Mainnet mint only — devnet USDC has a different address and is handled
+// by Commit 2's handleCreateDuelSpl when we add cluster-aware mints.
+const USDC_TOKEN: TokenAsset = {
+  mint: USDC_MINT,
+  symbol: 'USDC',
+  name: 'USD Coin',
+  logo: null,
+  balance: '—',
+  usd: null,
+  held: false,
+  tint: '#2775CA',
+  decimals: 6,
+};
 
 /**
  * Token info passed back to the parent's onCreateDuel callback when the user
@@ -82,13 +99,32 @@ const PLATFORM_FEE_SOL = 0.0025;
 
 const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
   const [wager, setWager] = useState(0.1);
-  // v2.1 SPL: token mode + selected token + picker visibility + free-form
-  // SPL amount input (presets are SOL-only since 0.01-1 is meaningful for SOL
-  // but not for arbitrary tokens like BONK or NERD).
-  const [tokenMode, setTokenMode] = useState<'sol' | 'spl'>('sol');
+  // v2.1 SPL: three-pill toggle (SOL / USDC / SPL memecoins).
+  //   sol  — native SOL wager, classic preset grid (0.01 → 1).
+  //   usdc — fixed USDC mint, free-form $ amount input (no picker needed).
+  //   spl  — any SPL token via SPLSelector picker, free-form token-unit input.
+  // selectedToken holds whichever token applies (USDC pre-set in usdc mode,
+  // user-picked in spl mode). Presets are SOL-only since 0.01-1 isn't a
+  // meaningful range for BONK / NERD.
+  const [tokenMode, setTokenMode] = useState<'sol' | 'usdc' | 'spl'>('sol');
   const [selectedToken, setSelectedToken] = useState<TokenAsset | null>(null);
   const [splWagerInput, setSplWagerInput] = useState<string>('');
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // When user switches to USDC, pre-select the USDC token. Clear it when
+  // switching back so SPL mode starts fresh (forces a deliberate pick).
+  useEffect(() => {
+    if (tokenMode === 'usdc') {
+      setSelectedToken(USDC_TOKEN);
+    } else if (tokenMode === 'sol') {
+      setSelectedToken(null);
+      setSplWagerInput('');
+    } else if (tokenMode === 'spl' && selectedToken?.mint === USDC_MINT) {
+      // Coming from USDC → SPL: clear so picker opens cleanly.
+      setSelectedToken(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenMode]);
   const isMobile = useIsMobile();
   const { publicKey } = useWallet();
   const walletAddress = publicKey?.toBase58() ?? null;
@@ -111,7 +147,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
       onCreateDuel?.(splWager, {
         mint: selectedToken.mint,
         symbol: selectedToken.symbol,
-        decimals: selectedToken.decimals ?? 9,
+        decimals: selectedToken.decimals ?? (tokenMode === 'usdc' ? 6 : 9),
         // Token-2022 detection happens server-side / in the handler via RPC.
         // Default to classic SPL Token; handler upgrades to token2022 if the
         // mint owner is the Token-2022 program.
@@ -126,7 +162,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
       const total = wager + PLATFORM_FEE_SOL;
       return `CREATE DUEL · ${total.toFixed(4)} SOL →`;
     }
-    if (!selectedToken) return 'PICK A TOKEN →';
+    if (!selectedToken) return tokenMode === 'usdc' ? 'ENTER WAGER →' : 'PICK A TOKEN →';
     if (splWager <= 0) return 'ENTER WAGER →';
     const display = splWager < 1
       ? splWager.toLocaleString(undefined, { maximumFractionDigits: 6 })
@@ -264,8 +300,8 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
           </button>
         </div>
 
-        {/* SOL / SPL toggle */}
-        <div className="flex items-center gap-2 mt-5">
+        {/* SOL / USDC / SPL three-pill toggle */}
+        <div className="flex items-center gap-2 mt-5 flex-wrap">
           <div
             className="font-black italic uppercase"
             style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
@@ -273,12 +309,16 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
             TOKEN
           </div>
           <div className="flex" style={{ gap: 6 }}>
-            {(['sol', 'spl'] as const).map((mode) => {
-              const on = tokenMode === mode;
+            {([
+              { key: 'sol',  label: 'SOL' },
+              { key: 'usdc', label: 'USDC' },
+              { key: 'spl',  label: 'SPL (MEMECOINS)' },
+            ] as const).map(({ key, label }) => {
+              const on = tokenMode === key;
               return (
                 <button
-                  key={mode}
-                  onClick={() => setTokenMode(mode)}
+                  key={key}
+                  onClick={() => setTokenMode(key)}
                   className="font-black italic uppercase rounded-full active:opacity-90"
                   style={{
                     appearance: 'none',
@@ -289,9 +329,10 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
                     color: on ? '#FF3131' : '#000',
                     border: 'none',
                     letterSpacing: '0.14em',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  {mode === 'sol' ? 'SOL' : 'ANY TOKEN'}
+                  {label}
                 </button>
               );
             })}
@@ -303,8 +344,38 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
           className="font-black italic uppercase mt-4"
           style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
         >
-          WAGER · {tokenMode === 'sol' ? 'SOL' : (selectedToken?.symbol ?? 'PICK TOKEN')}
+          WAGER · {
+            tokenMode === 'sol'  ? 'SOL'  :
+            tokenMode === 'usdc' ? 'USDC' :
+            (selectedToken?.symbol ?? 'PICK TOKEN')
+          }
         </div>
+
+        {/* USDC mode: just the free-form $ amount input (no picker needed) */}
+        {tokenMode === 'usdc' && (
+          <div className="mt-2">
+            <input
+              type="text"
+              inputMode="decimal"
+              value={splWagerInput}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (/^\d*\.?\d*$/.test(v)) setSplWagerInput(v);
+              }}
+              placeholder="Amount in USDC (e.g. 25)"
+              className="font-black italic rounded-lg"
+              style={{
+                background: '#000',
+                color: '#fff',
+                padding: '12px 16px',
+                fontSize: 18,
+                border: 'none',
+                outline: 'none',
+                width: '100%',
+              }}
+            />
+          </div>
+        )}
 
         {/* SPL mode: token picker button + free-form amount input */}
         {tokenMode === 'spl' && (
