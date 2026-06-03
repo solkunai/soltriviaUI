@@ -238,6 +238,18 @@ const App: React.FC = () => {
   const [duelTokenSymbol, setDuelTokenSymbol] = useState<string | null>(null);
   const [duelTokenDecimals, setDuelTokenDecimals] = useState<number | null>(null);
   const [duelTokenMint, setDuelTokenMint] = useState<string | null>(null);
+  /**
+   * v2.1 hybrid: solo mode for DUEL_PLAY — creator pre-playing before any
+   * opponent has joined. When true, DuelQuizView skips opponent subscription
+   * and onFinish routes back to DUEL_WAITING instead of DUEL_RESULTS.
+   */
+  const [duelSoloMode, setDuelSoloMode] = useState<boolean>(false);
+  /**
+   * v2.1 hybrid: tracks whether the creator has banked their score for the
+   * active duel. Sourced from the duel record (player1.finished). Passed to
+   * DuelWaitingView so the screen renders the right pre/post-play state.
+   */
+  const [duelCreatorFinished, setDuelCreatorFinished] = useState<boolean>(false);
   const [duelIsPublic, setDuelIsPublic] = useState(true);
   const [duelExpiresAt, setDuelExpiresAt] = useState('');
   const [duelOpponent, setDuelOpponent] = useState<{ wallet: string; username: string | null; avatar: string | null } | null>(null);
@@ -1551,6 +1563,10 @@ const App: React.FC = () => {
       setDuelOpponent(null);
       setDuelResults(null);
       setDuelIsPlayer1(true);
+      // v2.1 hybrid: brand-new duel starts clean. Creator hasn't pre-played
+      // yet; soloMode is reserved for when they tap PLAY NOW on waiting view.
+      setDuelCreatorFinished(false);
+      setDuelSoloMode(false);
       window.history.pushState({}, '', `/duel/${result.share_code}`);
       setCurrentView(View.DUEL_WAITING);
     } catch (err: any) {
@@ -1654,6 +1670,9 @@ const App: React.FC = () => {
       setDuelOpponent(null);
       setDuelResults(null);
       setDuelIsPlayer1(true);
+      // v2.1 hybrid: brand-new duel starts clean.
+      setDuelCreatorFinished(false);
+      setDuelSoloMode(false);
       window.history.pushState({}, '', `/duel/${result.share_code}`);
       setCurrentView(View.DUEL_WAITING);
     } catch (err: any) {
@@ -1906,6 +1925,10 @@ const App: React.FC = () => {
       setDuelExpiresAt(duelInfo.expires_at);
       setDuelResults(null);
       setDuelIsPlayer1(true);
+      // v2.1 hybrid: capture whether the creator already banked their score.
+      // DuelWaitingView reads this to render the right pre/post-play state.
+      setDuelCreatorFinished(!!duelInfo.player1?.finished);
+      setDuelSoloMode(false);
       // Token info (SPL duel vs SOL duel).
       if (duelInfo.token_mint && typeof duelInfo.token_decimals === 'number') {
         setDuelTokenMint(duelInfo.token_mint);
@@ -1996,11 +2019,81 @@ const App: React.FC = () => {
     opponentScore: number; opponentCorrect: number;
     winner: string | null; duelComplete: boolean;
   }) => {
+    // v2.1 hybrid: in soloMode (creator pre-playing), the duel isn't done —
+    // opponent hasn't joined yet. Route back to DUEL_WAITING with the
+    // creatorFinished flag set so the screen renders the "score banked"
+    // state. The actual result (winner determined) lands later when the
+    // opponent joins + finishes + completion poll fires onResultsReady.
+    if (duelSoloMode) {
+      setDuelCreatorFinished(true);
+      setDuelSoloMode(false);
+      setCurrentView(View.DUEL_WAITING);
+      return;
+    }
     setDuelResults({
       ...results,
       totalPot: duelEntryFee * 2,
     });
     setCurrentView(View.DUEL_RESULTS);
+  };
+
+  /**
+   * v2.1 hybrid: creator pre-plays their 5 questions before any opponent
+   * has joined. Sets soloMode + routes to DUEL_PLAY. submit-duel-answer
+   * v25 accepts answers while status='waiting' as long as the wallet is
+   * the creator. create-duel v29 inserted the creator's session row at
+   * create time, so the quiz can start answering immediately.
+   */
+  const handleCreatorPrePlay = () => {
+    if (!connected || !publicKey || duelId == null || !dbDuelId) {
+      setShowWalletRequired(true);
+      return;
+    }
+    setDuelSoloMode(true);
+    // Clear opponent state so DuelQuizView doesn't try to render an opponent
+    // overlay before the soloMode prop takes effect on first render.
+    setDuelOpponent({ wallet: '', username: null, avatar: null });
+    setCurrentView(View.DUEL_PLAY);
+  };
+
+  /**
+   * v2.1 hybrid: called from DuelWaitingView when the poll/realtime sub
+   * detects the duel transitioned to completed/resolved (opponent joined +
+   * finished after creator pre-played). Routes to the result screen.
+   */
+  const handleDuelResultsReady = async () => {
+    if (!connected || !publicKey || duelId == null) return;
+    try {
+      const duelInfo = await getDuel({
+        duel_id: duelId,
+        wallet_address: publicKey.toBase58(),
+        cluster: SOLANA_NETWORK,
+      });
+      if (duelInfo.player2) {
+        setDuelOpponent({
+          wallet: duelInfo.player2.wallet,
+          username: duelInfo.player2.username ?? null,
+          avatar: duelInfo.player2.avatar ?? null,
+        });
+      }
+      const myIsP1 = publicKey.toBase58() === duelInfo.player1.wallet;
+      const myScore = myIsP1 ? duelInfo.player1.score : (duelInfo.player2?.score ?? 0);
+      const myCorrect = myIsP1 ? duelInfo.player1.correct : (duelInfo.player2?.correct ?? 0);
+      const opponentScore = myIsP1 ? (duelInfo.player2?.score ?? 0) : duelInfo.player1.score;
+      const opponentCorrect = myIsP1 ? (duelInfo.player2?.correct ?? 0) : duelInfo.player1.correct;
+      setDuelResults({
+        myScore,
+        myCorrect,
+        opponentScore,
+        opponentCorrect,
+        winner: duelInfo.winner_wallet,
+        duelComplete: ['completed', 'resolved'].includes(duelInfo.status),
+        totalPot: duelEntryFee * 2,
+      });
+      setCurrentView(View.DUEL_RESULTS);
+    } catch (err) {
+      console.error('Failed to fetch duel results:', err);
+    }
   };
 
   const handleClaimDuelPrize = async (claimDuelId?: number) => {
@@ -2715,19 +2808,26 @@ const App: React.FC = () => {
               onBack={() => setCurrentView(View.DUEL_LOBBY)}
               tokenSymbol={duelTokenSymbol}
               tokenDecimals={duelTokenDecimals}
+              creatorFinished={duelCreatorFinished}
+              onPlayNow={handleCreatorPrePlay}
+              onResultsReady={handleDuelResultsReady}
             />
           </WebShell>
         ) : null;
       case View.DUEL_PLAY:
-        return connected && dbDuelId && duelId != null && duelOpponent ? (
+        // v2.1 hybrid: soloMode allows DUEL_PLAY to render without an
+        // opponent present (creator pre-playing). For real-time race
+        // (classic), opponent is required as before.
+        return connected && dbDuelId && duelId != null && (duelSoloMode || duelOpponent) ? (
           <DuelQuizView
             dbDuelId={dbDuelId}
             duelId={duelId}
             walletAddress={publicKey!.toBase58()}
-            opponentWallet={duelOpponent.wallet}
-            opponentUsername={duelOpponent.username}
-            opponentAvatar={duelOpponent.avatar}
+            opponentWallet={duelOpponent?.wallet ?? ''}
+            opponentUsername={duelOpponent?.username ?? null}
+            opponentAvatar={duelOpponent?.avatar ?? null}
             isPlayer1={duelIsPlayer1}
+            soloMode={duelSoloMode}
             onFinish={handleDuelFinish}
             onQuit={() => setCurrentView(View.DUEL_LOBBY)}
           />
