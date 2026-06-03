@@ -1885,6 +1885,61 @@ const App: React.FC = () => {
     setCurrentView(View.DUEL_WAITING);
   };
 
+  /**
+   * View own duel from the lobby: fetches the duel info and routes the user
+   * back into the appropriate screen (waiting room while still 'waiting',
+   * quiz if opponent already joined). Lets creators grab their share link,
+   * see the countdown, etc. without having to remember the URL.
+   */
+  const handleViewOwnDuel = async (onChainDuelId: number) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    try {
+      const duelInfo = await getDuel({
+        duel_id: onChainDuelId,
+        wallet_address: publicKey.toBase58(),
+        cluster: SOLANA_NETWORK,
+      });
+      setDuelId(onChainDuelId);
+      setDbDuelId(duelInfo.db_duel_id);
+      setDuelShareCode(duelInfo.share_code);
+      setDuelIsPublic(duelInfo.is_public);
+      setDuelExpiresAt(duelInfo.expires_at);
+      setDuelResults(null);
+      setDuelIsPlayer1(true);
+      // Token info (SPL duel vs SOL duel).
+      if (duelInfo.token_mint && typeof duelInfo.token_decimals === 'number') {
+        setDuelTokenMint(duelInfo.token_mint);
+        setDuelTokenSymbol(duelInfo.token_symbol ?? null);
+        setDuelTokenDecimals(duelInfo.token_decimals);
+        setDuelEntryFee(Number(duelInfo.entry_token_amount ?? 0));
+      } else {
+        setDuelTokenMint(null);
+        setDuelTokenSymbol(null);
+        setDuelTokenDecimals(null);
+        setDuelEntryFee(duelInfo.entry_fee_lamports);
+      }
+      if (duelInfo.share_code) {
+        window.history.pushState({}, '', `/duel/${duelInfo.share_code}`);
+      }
+      if (duelInfo.status === 'playing' && duelInfo.player2) {
+        setDuelOpponent({
+          wallet: duelInfo.player2.wallet,
+          username: duelInfo.player2.username ?? null,
+          avatar: duelInfo.player2.avatar ?? null,
+        });
+        setCurrentView(View.DUEL_PLAY);
+      } else if (duelInfo.status === 'waiting') {
+        setDuelOpponent(null);
+        setCurrentView(View.DUEL_WAITING);
+      } else {
+        alert(`This duel is already ${duelInfo.status}.`);
+      }
+    } catch (err: any) {
+      console.error('Failed to view own duel:', err);
+      alert(err.message || 'Failed to load duel.');
+    }
+  };
+
   const handleCancelDuel = async () => {
     if (!connected || !publicKey || duelId == null) return;
     try {
@@ -2628,6 +2683,7 @@ const App: React.FC = () => {
                   handleCreateDuelSpl(wager, token, true);
                 }
               }}
+              onViewOwnDuel={handleViewOwnDuel}
             />
           </WebShell>
         );

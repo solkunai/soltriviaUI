@@ -55,6 +55,9 @@ interface Props {
    */
   onCreateDuel?: (wager: number, token?: DuelTokenChoice) => void;
   onJoinDuel?: (duelId: number) => void;
+  /** Tap your own duel row → reopen the waiting room (grab share link,
+   *  see countdown, etc.). Parent fetches duel info + navigates. */
+  onViewOwnDuel?: (duelId: number) => void;
 }
 
 const SOL = 1_000_000_000;
@@ -76,6 +79,10 @@ type OpenRow = {
    *  colored-letter fallback. Falsy after onError too. */
   avatarUrl?: string | null;
   hot?: boolean;
+  /** True when this duel was created by the connected wallet — used to swap
+   *  the JOIN button for a VIEW button + show a "YOU" badge. Lets creators
+   *  pop back into their own waiting room to grab the share link. */
+  isMine?: boolean;
 };
 
 /** Format an open-row wager: SPL when symbol present, SOL otherwise. */
@@ -124,7 +131,7 @@ const WAGER_PRESETS = [0.01, 0.05, 0.1, 0.25, 0.5, 1];
 // SOL platform fee charged on top of every duel entry (matches contract).
 const PLATFORM_FEE_SOL = 0.0025;
 
-const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
+const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel, onViewOwnDuel }) => {
   const [wager, setWager] = useState(0.1);
   // v2.1 SPL: three-pill toggle (SOL / USDC / SPL memecoins).
   //   sol  — native SOL wager, classic preset grid (0.01 → 1).
@@ -229,10 +236,12 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
         ]);
         if (!mounted) return;
 
-        // Open duels: hide my own (can't duel yourself). Resolve player1
-        // usernames AND avatar URLs in one round-trip.
-        const others = open.filter((d) => d.player1_wallet !== walletAddress);
-        const wallets = [...new Set(others.map((d) => d.player1_wallet))];
+        // Open duels: SHOW your own (you need to see your created duels to
+        // grab the share link / countdown / reopen waiting room). The render
+        // branches per-row on isMine so your duel gets a YOU badge + VIEW
+        // button instead of JOIN.
+        const allOpen = open;
+        const wallets = [...new Set(allOpen.map((d) => d.player1_wallet))];
         let nameByWallet: Record<string, string | null> = {};
         let avatarByWallet: Record<string, string | null> = {};
         if (wallets.length > 0) {
@@ -245,7 +254,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
         }
         if (!mounted) return;
         setOpenRows(
-          others.map((d) => {
+          allOpen.map((d: any) => {
             const isSpl = !!(d.token_mint && d.token_symbol && typeof d.token_decimals === 'number');
             // SPL: convert raw token amount to display units using decimals.
             // SOL: lamports → SOL.
@@ -261,6 +270,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
               expires: countdown(d.expires_at),
               avatar: colorFor(d.player1_wallet),
               avatarUrl: avatarByWallet[d.player1_wallet] ?? null,
+              isMine: !!walletAddress && d.player1_wallet === walletAddress,
               // "Hot" heuristic: SOL ≥ 0.25, SPL when raw amount looks large
               // relative to base unit (≥ 100 of the display unit). Heuristic
               // only; doesn't claim USD equivalence.
@@ -687,6 +697,21 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
                       >
                         {o.user}
                       </span>
+                      {o.isMine ? (
+                        <span
+                          className="font-black italic uppercase rounded-full"
+                          style={{
+                            fontSize: 7,
+                            color: '#FFD700',
+                            background: 'rgba(255,215,0,0.18)',
+                            border: '1px solid rgba(255,215,0,0.4)',
+                            padding: '2px 6px',
+                            letterSpacing: '0.14em',
+                          }}
+                        >
+                          YOU
+                        </span>
+                      ) : null}
                       {o.hot ? (
                         <span
                           className="font-black italic uppercase rounded-full"
@@ -727,10 +752,10 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
                     {formatRowWager(o)}
                   </span>
                   <button
-                    onClick={() => onJoinDuel?.(o.duelId)}
+                    onClick={() => (o.isMine ? onViewOwnDuel?.(o.duelId) : onJoinDuel?.(o.duelId))}
                     className="font-black italic uppercase rounded-full active:opacity-90"
                     style={{
-                      background: '#FF3131',
+                      background: o.isMine ? '#FFD700' : '#FF3131',
                       color: '#000',
                       padding: '8px 16px',
                       fontSize: 11,
@@ -739,7 +764,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
                       cursor: 'pointer',
                     }}
                   >
-                    JOIN
+                    {o.isMine ? 'VIEW' : 'JOIN'}
                   </button>
                 </div>
               ))
