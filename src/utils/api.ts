@@ -29,6 +29,54 @@ export const getAdminHeaders = (): Record<string, string> => {
   };
 };
 
+/**
+ * Thrown when an Edge Function returns a non-2xx response. The error message
+ * is the parsed body's `error` field (or generic fallback). The full HTTP
+ * status + raw body are attached as properties for callers that want to
+ * branch on specific failure modes (e.g. 409 = duel already exists).
+ */
+export class EdgeFunctionError extends Error {
+  status: number;
+  body: any;
+  constructor(slug: string, status: number, body: any) {
+    const msg = body?.error || body?.message || `${slug} HTTP ${status}`;
+    super(msg);
+    this.name = 'EdgeFunctionError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
+/**
+ * Shared POST-to-Edge-Function helper. Mirrors the native repo's `efPost<T>`
+ * convention so error handling is consistent across both apps. PREFER this
+ * over `supabase.functions.invoke()` — the supabase-js wrapper hides the
+ * response body inside an opaque `FunctionsHttpError`, which makes 500
+ * debugging painful (we hit this with create-custom-game v37/v38 tonight).
+ *
+ * Throws EdgeFunctionError on non-2xx so callers can `try {} catch (err)` and
+ * read `err.message` to get the EF's actual error string. Pass `{admin: true}`
+ * for EFs that need x-admin-secret.
+ */
+export async function efPost<T = any>(
+  slug: string,
+  body: Record<string, any>,
+  options?: { admin?: boolean; signal?: AbortSignal },
+): Promise<T> {
+  const headers = options?.admin ? getAdminHeaders() : getAuthHeaders();
+  const res = await fetch(`${FUNCTIONS_URL}/${slug}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal: options?.signal,
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new EdgeFunctionError(slug, res.status, errBody);
+  }
+  return res.json() as Promise<T>;
+}
+
 // Authenticate admin via server-side edge function (returns admin_secret on success)
 export const adminLogin = async (username: string, password: string): Promise<{ admin_secret: string }> => {
   const res = await fetch(`${FUNCTIONS_URL}/admin-login`, {

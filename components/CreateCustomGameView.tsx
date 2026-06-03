@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
-import { createCustomGame, recordCustomGameFunding } from '../src/utils/api';
+import { createCustomGame, recordCustomGameFunding, efPost } from '../src/utils/api';
 import {
   buildFundCustomGameIx,
   buildCreateCustomGameNftIx,
@@ -330,35 +330,19 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
           nftExpiresAt: Number(expiresAtUnix),
         };
 
-        const { data: efData, error: efError } = await supabase.functions.invoke(
-          'create-custom-game',
-          { body: efPayload },
-        );
-
-        if (efError || !efData?.success) {
-          // supabase.functions.invoke wraps the HTTP body in an opaque
-          // FunctionsHttpError. The real EF error string is inside
-          // .context (the Response). Extract it.
-          let errMsg = 'unknown error';
-          const ctx = (efError as any)?.context;
-          if (ctx && typeof ctx.text === 'function') {
-            try {
-              const bodyText = await ctx.text();
-              try {
-                const parsed = JSON.parse(bodyText);
-                errMsg = parsed?.error || parsed?.message || bodyText;
-              } catch {
-                errMsg = bodyText || (efError as any)?.message || 'unknown';
-              }
-            } catch {
-              errMsg = (efError as any)?.message || 'unknown';
-            }
-          } else if ((efData as any)?.error) {
-            errMsg = (efData as any).error;
-          } else if ((efError as any)?.message) {
-            errMsg = (efError as any).message;
-          }
-          console.error('NFT EF call failed:', errMsg, { efError, efData });
+        // Use efPost (shared helper). It throws on non-2xx with the EF's
+        // actual error string surfaced as err.message — no FunctionsHttpError
+        // opaque wrapping to unpack.
+        try {
+          const efData = await efPost<{ success: boolean; slug?: string; game_id?: string }>(
+            'create-custom-game',
+            efPayload,
+          );
+          setCreatedSlug(efData.slug || `nft-game-${nextGameId}`);
+          return;
+        } catch (efErr: any) {
+          const errMsg = efErr?.message || 'unknown error';
+          console.error('NFT EF call failed:', errMsg, efErr);
           setError(
             `Game created on-chain (id ${nextGameId}) and your NFT is escrowed safely, ` +
             `but the lobby row failed to insert: ${errMsg}. ` +
@@ -367,9 +351,6 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
           setCreatedSlug(`nft-game-${nextGameId}`);
           return;
         }
-
-        setCreatedSlug(efData.slug || `nft-game-${nextGameId}`);
-        return;
       } catch (err: any) {
         console.error('NFT custom game create failed:', err);
         const msg = err?.message?.includes('User rejected') || err?.message?.includes('user reject')
