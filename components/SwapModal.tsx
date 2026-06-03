@@ -30,6 +30,7 @@ import {
 } from '../src/utils/jupiterTokens';
 import { fetchPumpFunToken, looksLikeMintCA } from '../src/utils/pumpFunFallback';
 import { fetchPrices, type JupiterPriceEntry } from '../src/utils/jupiterPrice';
+import { fetchBirdeyeData, type BirdeyePriceEntry } from '../src/utils/birdeyeData';
 
 interface Props {
   isOpen: boolean;
@@ -671,8 +672,10 @@ function TokenPickerSheet({
   // External token (pump.fun, bags, etc.) fetched on CA-paste fallback.
   const [externalToken, setExternalToken] = useState<JupiterToken | null>(null);
   const [externalLookup, setExternalLookup] = useState<'idle' | 'looking' | 'notfound'>('idle');
-  // Map of mint → live USD price (lazy-fetched).
+  // Map of mint → live USD price (lazy-fetched from Jupiter Price API).
   const [prices, setPrices] = useState<Record<string, JupiterPriceEntry>>({});
+  // Map of mint → Birdeye-enriched data (price + 24h change).
+  const [birdeye, setBirdeye] = useState<Record<string, BirdeyePriceEntry>>({});
 
   const recent = useMemo(() => {
     const mints = getRecentTokenMints();
@@ -728,6 +731,11 @@ function TokenPickerSheet({
       if (cancelled) return;
       setPrices((prev) => ({ ...prev, ...map }));
     });
+    // Birdeye batch (24h change) — silently degrades if EF or key are down.
+    fetchBirdeyeData(visible).then((map) => {
+      if (cancelled) return;
+      setBirdeye((prev) => ({ ...prev, ...map }));
+    });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, tokens.length, externalToken?.address]);
@@ -771,19 +779,22 @@ function TokenPickerSheet({
           {!tokensLoading && !query && recent.length > 0 && (
             <>
               <div className="st-uplabel" style={{ fontSize: 9, color: '#52525b', padding: '8px 14px 4px' }}>RECENTLY USED</div>
-              {recent.map((t) => <TokenRow key={'r' + t.address} t={t} price={prices[t.address]?.price} onPick={onPick} />)}
+              {recent.map((t) => <TokenRow key={'r' + t.address} t={t} price={prices[t.address]?.price}
+                  change24h={birdeye[t.address]?.priceChange24h} onPick={onPick} />)}
             </>
           )}
           {!tokensLoading && wl.length > 0 && (
             <>
               <div className="st-uplabel" style={{ fontSize: 9, color: '#52525b', padding: '10px 14px 4px' }}>WHITELISTED</div>
-              {wl.map((t) => <TokenRow key={t.address} t={t} price={prices[t.address]?.price} onPick={onPick} />)}
+              {wl.map((t) => <TokenRow key={t.address} t={t} price={prices[t.address]?.price}
+                  change24h={birdeye[t.address]?.priceChange24h} onPick={onPick} />)}
             </>
           )}
           {!tokensLoading && rest.length > 0 && (
             <>
               <div className="st-uplabel" style={{ fontSize: 9, color: '#52525b', padding: '10px 14px 4px' }}>ALL TOKENS</div>
-              {rest.slice(0, 80).map((t) => <TokenRow key={t.address} t={t} price={prices[t.address]?.price} onPick={onPick} />)}
+              {rest.slice(0, 80).map((t) => <TokenRow key={t.address} t={t} price={prices[t.address]?.price}
+                  change24h={birdeye[t.address]?.priceChange24h} onPick={onPick} />)}
             </>
           )}
           {!tokensLoading && externalToken && (
@@ -836,10 +847,11 @@ function TokenPickerSheet({
 }
 
 function TokenRow({
-  t, price, onPick, pumpFun = false,
+  t, price, change24h, onPick, pumpFun = false,
 }: {
   t: JupiterToken;
   price?: number;
+  change24h?: number;
   onPick: (t: JupiterToken) => void;
   pumpFun?: boolean;
 }) {
@@ -879,6 +891,17 @@ function TokenRow({
           <div className="st-mono" style={{ fontSize: 12, color: '#cfcfd6', fontVariantNumeric: 'tabular-nums' }}>
             ${price < 0.01 ? price.toExponential(2) : price.toLocaleString(undefined, { maximumFractionDigits: price < 1 ? 6 : 2 })}
           </div>
+          {change24h !== undefined && (
+            <div
+              className="st-num"
+              style={{
+                fontSize: 10, marginTop: 1, fontVariantNumeric: 'tabular-nums', fontWeight: 700,
+                color: change24h >= 0 ? '#14F195' : '#FF3131',
+              }}
+            >
+              {change24h >= 0 ? '+' : ''}{change24h.toFixed(2)}%
+            </div>
+          )}
         </div>
       )}
     </button>
