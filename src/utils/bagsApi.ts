@@ -27,6 +27,14 @@ export interface SwapQuote {
   }>;
   platformFee?: { amount: string; feeBps: number };
   requestId: string;
+  /**
+   * v14 fields, set by swap-quote v14. Older v13 quotes omit these and the
+   * UI falls back to legacy display. Frontend must NOT depend on these
+   * being present until the v14 backend is live for the request path.
+   */
+  platformFeeSolLamports?: string;
+  feeWallet?: string;
+  _provider?: 'jupiter' | 'bags';
   /** Full raw response — passed back to createSwapTransaction */
   _raw: Record<string, unknown>;
 }
@@ -113,6 +121,7 @@ export async function getSwapQuoteFor(
   outputMint: string,
   amount: number | bigint,
   slippageBps?: number,
+  inputDecimals?: number,
 ): Promise<SwapQuote | null> {
   const amt = typeof amount === 'bigint' ? amount.toString() : String(Math.round(amount));
   if (!amt || amt === '0' || amt.startsWith('-')) {
@@ -126,6 +135,7 @@ export async function getSwapQuoteFor(
     slippageMode: slippageBps !== undefined ? 'manual' : 'auto',
   };
   if (slippageBps !== undefined) body.slippageBps = slippageBps;
+  if (inputDecimals !== undefined) body.inputDecimals = inputDecimals;
 
   const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/swap-quote`, {
     method: 'POST',
@@ -161,6 +171,9 @@ export async function getSwapQuoteFor(
     routePlan: (r.routePlan as SwapQuote['routePlan']) || [],
     platformFee: r.platformFee as SwapQuote['platformFee'] | undefined,
     requestId: r.requestId as string,
+    platformFeeSolLamports: r.platformFeeSolLamports as string | undefined,
+    feeWallet: r.feeWallet as string | undefined,
+    _provider: r._provider as 'jupiter' | 'bags' | undefined,
     _raw: r,
   };
 }

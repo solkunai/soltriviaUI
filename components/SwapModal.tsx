@@ -176,7 +176,7 @@ const SwapModal: React.FC<Props> = ({ isOpen, onClose }) => {
       const controller = new AbortController();
       quoteAbortRef.current = controller;
       try {
-        const q = await getSwapQuoteFor(fromMint, toMint, requestedRaw, slippagePct * 100);
+        const q = await getSwapQuoteFor(fromMint, toMint, requestedRaw, slippagePct * 100, fromT.decimals);
         if (controller.signal.aborted) return;
         if (q === null) {
           setQuote(null);
@@ -416,16 +416,34 @@ const SwapModal: React.FC<Props> = ({ isOpen, onClose }) => {
               marginTop: 14, borderRadius: 12, padding: '12px 14px',
               background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.06)',
             }}>
-              {[
-                ['Rate', `1 ${fromT.symbol} ≈ ${rate.toLocaleString(undefined, { maximumFractionDigits: rate > 1000 ? 0 : 6 })} ${toT.symbol}`],
-                ['Best route', toT.symbol === 'NERD' || fromT.symbol === 'NERD' ? 'Bags · direct' : 'Jupiter · best'],
-                ['Min received', `${minReceived.toLocaleString(undefined, { maximumFractionDigits: minReceived > 1000 ? 0 : 6 })} ${toT.symbol} · ${slippagePct}% slip`],
-              ].map(([l, v]) => (
-                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12 }}>
-                  <span style={{ color: '#71717a' }}>{l}</span>
-                  <span className="st-num" style={{ color: '#cfcfd6' }}>{v}</span>
-                </div>
-              ))}
+              {(() => {
+                // Prefer the server-tagged provider (v14+); fall back to the
+                // legacy NERD-symbol heuristic when the EF doesn't tag yet.
+                const routeLabel = quote._provider === 'bags'
+                  ? 'Bags · direct'
+                  : quote._provider === 'jupiter'
+                    ? 'Jupiter · best'
+                    : (toT.symbol === 'NERD' || fromT.symbol === 'NERD' ? 'Bags · direct' : 'Jupiter · best');
+                const rows: Array<[string, string]> = [
+                  ['Rate', `1 ${fromT.symbol} ≈ ${rate.toLocaleString(undefined, { maximumFractionDigits: rate > 1000 ? 0 : 6 })} ${toT.symbol}`],
+                  ['Best route', routeLabel],
+                  ['Min received', `${minReceived.toLocaleString(undefined, { maximumFractionDigits: minReceived > 1000 ? 0 : 6 })} ${toT.symbol} · ${slippagePct}% slip`],
+                ];
+                // Platform fee row, only when the v14 EF tagged a fee value.
+                if (quote.platformFeeSolLamports) {
+                  const feeSol = Number(BigInt(quote.platformFeeSolLamports)) / 1e9;
+                  const feeStr = feeSol < 0.0001
+                    ? feeSol.toExponential(2)
+                    : feeSol.toLocaleString(undefined, { maximumFractionDigits: 6 });
+                  rows.push(['Platform fee', `${feeStr} SOL · 1%`]);
+                }
+                return rows.map(([l, v]) => (
+                  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12 }}>
+                    <span style={{ color: '#71717a' }}>{l}</span>
+                    <span className="st-num" style={{ color: '#cfcfd6' }}>{v}</span>
+                  </div>
+                ));
+              })()}
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12 }}>
                 <span style={{ color: '#71717a' }}>Price impact</span>
                 <span className="st-num" style={{ color: impactColor, fontWeight: 700 }}>
