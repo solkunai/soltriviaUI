@@ -2391,7 +2391,23 @@ const App: React.FC = () => {
           >
             <DuelsViewV2
               walletConnected={connected}
-              onCreateDuel={(w) => handleCreateDuel(w * 1_000_000_000, true)}
+              onCreateDuel={(wager, token) => {
+                if (!token) {
+                  // SOL path (unchanged).
+                  handleCreateDuel(wager * 1_000_000_000, true);
+                  return;
+                }
+                // SPL path is wired in commit 2 (handleCreateDuelSpl).
+                // For now: alert + log so we don't silently no-op.
+                console.warn(
+                  '[duels] SPL wager UI is live but the on-chain path is not yet wired:',
+                  { wager, token },
+                );
+                alert(
+                  `SPL duel for ${wager} ${token.symbol} is coming next commit. ` +
+                  `UI is ready; the on-chain create_duel_spl handler ships in the follow-up.`,
+                );
+              }}
             />
           </WebShell>
         );

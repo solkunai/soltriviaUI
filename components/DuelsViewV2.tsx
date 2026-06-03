@@ -2,16 +2,41 @@
  * DuelsViewV2 — web W4. Editorial header + red CREATE gradient hero with
  * inline wager picker + 2-col (open duels list + recent duels). Real data
  * via getOpenDuels + fetchCompletedDuels, polled every 10s.
+ *
+ * v2.1: added SOL/SPL toggle in the create hero. SPL path opens the
+ * SPLSelector, then renders a free-form amount input (presets only make
+ * sense for SOL where 0.01-1 is a meaningful range). The on-chain ix is
+ * always create_duel_spl when an SPL token is chosen; SOL flow unchanged.
  */
 import React, { useState, useEffect } from 'react';
 import { useIsMobile } from '../src/hooks/useIsMobile';
 import { useWallet } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
 import { getOpenDuels, fetchCompletedDuels } from '../src/utils/api';
+import SPLSelector from './SPLSelector';
+import type { TokenAsset } from '../src/hooks/useWalletSPL';
+
+/**
+ * Token info passed back to the parent's onCreateDuel callback when the user
+ * picked an SPL token wager. When undefined, the parent uses the SOL path.
+ */
+export interface DuelTokenChoice {
+  mint: string;
+  symbol: string;
+  decimals: number;
+  /** 'spl' (classic SPL Token program) or 'token2022'. Defaults to 'spl'. */
+  tokenProgram?: 'spl' | 'token2022';
+}
 
 interface Props {
   walletConnected: boolean;
-  onCreateDuel?: (wagerSol: number) => void;
+  /**
+   * Create-duel callback. `wager` is in DISPLAY units:
+   *  - SOL path (token=undefined): decimal SOL (e.g. 0.1)
+   *  - SPL path (token defined):  decimal token units (e.g. 100 NERD)
+   * Parent converts to raw units using the appropriate decimals.
+   */
+  onCreateDuel?: (wager: number, token?: DuelTokenChoice) => void;
   onJoinDuel?: (duelId: number) => void;
 }
 
@@ -52,11 +77,62 @@ function relativeAgo(iso: string | null): string {
 
 const WAGER_PRESETS = [0.01, 0.05, 0.1, 0.25, 0.5, 1];
 
+// SOL platform fee charged on top of every duel entry (matches contract).
+const PLATFORM_FEE_SOL = 0.0025;
+
 const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
   const [wager, setWager] = useState(0.1);
+  // v2.1 SPL: token mode + selected token + picker visibility + free-form
+  // SPL amount input (presets are SOL-only since 0.01-1 is meaningful for SOL
+  // but not for arbitrary tokens like BONK or NERD).
+  const [tokenMode, setTokenMode] = useState<'sol' | 'spl'>('sol');
+  const [selectedToken, setSelectedToken] = useState<TokenAsset | null>(null);
+  const [splWagerInput, setSplWagerInput] = useState<string>('');
+  const [pickerOpen, setPickerOpen] = useState(false);
   const isMobile = useIsMobile();
   const { publicKey } = useWallet();
   const walletAddress = publicKey?.toBase58() ?? null;
+
+  // Numeric SPL wager (display units). Empty / invalid → 0 (disables CTA).
+  const splWager = (() => {
+    const n = parseFloat(splWagerInput);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  })();
+
+  const canCreate = tokenMode === 'sol'
+    ? wager > 0
+    : !!selectedToken && splWager > 0;
+
+  const handleCreateClick = () => {
+    if (!canCreate) return;
+    if (tokenMode === 'sol') {
+      onCreateDuel?.(wager);
+    } else if (selectedToken) {
+      onCreateDuel?.(splWager, {
+        mint: selectedToken.mint,
+        symbol: selectedToken.symbol,
+        decimals: selectedToken.decimals ?? 9,
+        // Token-2022 detection happens server-side / in the handler via RPC.
+        // Default to classic SPL Token; handler upgrades to token2022 if the
+        // mint owner is the Token-2022 program.
+        tokenProgram: 'spl',
+      });
+    }
+  };
+
+  // Formatted CTA text depending on mode.
+  const ctaText = (() => {
+    if (tokenMode === 'sol') {
+      const total = wager + PLATFORM_FEE_SOL;
+      return `CREATE DUEL · ${total.toFixed(4)} SOL →`;
+    }
+    if (!selectedToken) return 'PICK A TOKEN →';
+    if (splWager <= 0) return 'ENTER WAGER →';
+    const display = splWager < 1
+      ? splWager.toLocaleString(undefined, { maximumFractionDigits: 6 })
+      : splWager.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return `CREATE DUEL · ${display} ${selectedToken.symbol} + ${PLATFORM_FEE_SOL} SOL →`;
+  })();
 
   const [openRows, setOpenRows] = useState<OpenRow[]>([]);
   const [recentRows, setRecentRows] = useState<RecentRow[]>([]);
@@ -170,7 +246,8 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
             </div>
           </div>
           <button
-            onClick={() => onCreateDuel?.(wager)}
+            onClick={handleCreateClick}
+            disabled={!canCreate}
             className="font-black italic uppercase rounded-full active:opacity-90"
             style={{
               background: '#000',
@@ -179,18 +256,105 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
               fontSize: 13,
               letterSpacing: '0.14em',
               border: 'none',
-              cursor: 'pointer',
+              cursor: canCreate ? 'pointer' : 'not-allowed',
+              opacity: canCreate ? 1 : 0.55,
             }}
           >
-            CREATE DUEL · {(wager + 0.0025).toFixed(4)} SOL →
+            {ctaText}
           </button>
         </div>
+
+        {/* SOL / SPL toggle */}
+        <div className="flex items-center gap-2 mt-5">
+          <div
+            className="font-black italic uppercase"
+            style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
+          >
+            TOKEN
+          </div>
+          <div className="flex" style={{ gap: 6 }}>
+            {(['sol', 'spl'] as const).map((mode) => {
+              const on = tokenMode === mode;
+              return (
+                <button
+                  key={mode}
+                  onClick={() => setTokenMode(mode)}
+                  className="font-black italic uppercase rounded-full active:opacity-90"
+                  style={{
+                    appearance: 'none',
+                    cursor: 'pointer',
+                    fontSize: 10,
+                    padding: '6px 14px',
+                    background: on ? '#000' : 'rgba(0,0,0,0.15)',
+                    color: on ? '#FF3131' : '#000',
+                    border: 'none',
+                    letterSpacing: '0.14em',
+                  }}
+                >
+                  {mode === 'sol' ? 'SOL' : 'ANY TOKEN'}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* WAGER label adapts to mode */}
         <div
-          className="font-black italic uppercase mt-5"
+          className="font-black italic uppercase mt-4"
           style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
         >
-          WAGER · SOL
+          WAGER · {tokenMode === 'sol' ? 'SOL' : (selectedToken?.symbol ?? 'PICK TOKEN')}
         </div>
+
+        {/* SPL mode: token picker button + free-form amount input */}
+        {tokenMode === 'spl' && (
+          <div className="mt-2 flex flex-col gap-2">
+            <button
+              onClick={() => setPickerOpen(true)}
+              className="font-black italic uppercase rounded-lg active:opacity-90 flex items-center justify-between"
+              style={{
+                background: '#000',
+                color: '#fff',
+                padding: '12px 16px',
+                fontSize: 13,
+                letterSpacing: '0.12em',
+                border: 'none',
+                cursor: 'pointer',
+                width: '100%',
+              }}
+            >
+              <span>
+                {selectedToken ? `${selectedToken.symbol} · ${selectedToken.balance} held` : 'CHOOSE TOKEN'}
+              </span>
+              <span style={{ opacity: 0.55, fontSize: 11 }}>▾</span>
+            </button>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={splWagerInput}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (/^\d*\.?\d*$/.test(v)) setSplWagerInput(v);
+              }}
+              placeholder={selectedToken ? `Amount in ${selectedToken.symbol}` : 'Pick a token first'}
+              disabled={!selectedToken}
+              className="font-black italic rounded-lg"
+              style={{
+                background: '#000',
+                color: '#fff',
+                padding: '12px 16px',
+                fontSize: 18,
+                border: 'none',
+                outline: 'none',
+                width: '100%',
+                opacity: selectedToken ? 1 : 0.55,
+              }}
+            />
+          </div>
+        )}
+
+        {/* SOL mode: classic 6-preset grid */}
+        {tokenMode === 'sol' && (
         <div
           className="mt-2"
           style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(4, 1fr)' : 'repeat(7, 1fr)', gap: 8 }}
@@ -231,6 +395,40 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel }) => {
             CUSTOM
           </button>
         </div>
+        )}
+
+        {/* Mount the SPL picker as an absolute overlay on the hero so it
+            stays scoped to the create flow. */}
+        {pickerOpen && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, zIndex: 200,
+              background: 'rgba(0,0,0,0.7)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 16,
+            }}
+            onClick={() => setPickerOpen(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%', maxWidth: 480, maxHeight: '85vh',
+                background: '#050505', borderRadius: 20, padding: 0,
+                border: '1px solid rgba(255,255,255,0.08)',
+                overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              }}
+            >
+              <SPLSelector
+                walletAddress={walletAddress}
+                selectedMint={selectedToken?.mint ?? null}
+                onSelect={(t) => {
+                  setSelectedToken(t);
+                  setPickerOpen(false);
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 2-col: Open duels + Recent */}
