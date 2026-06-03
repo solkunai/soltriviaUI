@@ -137,6 +137,10 @@ import {
   buildReclaimCustomNftIx,
   buildReclaimCustomTmPnftIx,
   buildEnterCustomGameNftIx,
+  // Referral on-chain claim (v2.1 upgrade) — credits accumulate in a PDA when
+  // the referee buys Lives/Pass; the referrer claims via this ix.
+  buildClaimReferralBalanceIx,
+  fetchReferralBalance,
   fetchGameConfig,
   fetchTierRound,
   fetchCustomGame as fetchCustomGameOnChain,
@@ -1739,6 +1743,24 @@ const App: React.FC = () => {
     }
   };
 
+  // Referral on-chain claim: drains the referrer's accumulated PDA to wallet.
+  // The ProfileViewV2 card calls this and refetches its balance on success.
+  // Throws on user-cancel (caller surfaces); throws other errors with the
+  // ix-level message ("NothingToSweep" if the PDA is empty, etc).
+  const handleClaimReferralBalance = async () => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    const ix = buildClaimReferralBalanceIx({ referrer: publicKey });
+    const { blockhash } = await getRecentBlockhashWithRetry(connection);
+    const messageV0 = new TransactionMessage({
+      payerKey: publicKey,
+      recentBlockhash: blockhash,
+      instructions: [ix],
+    }).compileToV0Message();
+    const tx = new VersionedTransaction(messageV0);
+    const signature = await sendTransaction(tx, connection);
+    await connection.confirmTransaction(signature, 'confirmed');
+  };
+
   // Handle direct duel link: /duel/:shareCode on page load
   useEffect(() => {
     if (currentView !== View.DUEL_WAITING || !duelShareCode || dbDuelId) return;
@@ -2040,6 +2062,7 @@ const App: React.FC = () => {
                 onClaimRoundRefund={handleClaimRefund}
                 onClaimCustomRefund={handleClaimCGRefundById}
                 onClaimDuelRefund={handleClaimDuelRefund}
+                onClaimReferralBalance={handleClaimReferralBalance}
                 onAvatarUpdated={(url: string) => {
                   setProfile((prev) => ({ ...prev, avatar: url }));
                   setProfileCacheBuster(Date.now());

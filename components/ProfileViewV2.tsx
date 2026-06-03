@@ -37,6 +37,7 @@ import {
   fetchClaimableRefundCustoms,
   fetchClaimableRefundDuels,
 } from '../src/utils/claims';
+import { fetchReferralBalance } from '../src/utils/soltriviaContract';
 import {
   getReferralStats,
   getSeekerProfile,
@@ -89,6 +90,10 @@ interface Props {
   onClaimRoundRefund?: (entry: RefundableEntry) => Promise<void>;
   onClaimCustomRefund?: (onChainGameId: number) => Promise<void>;
   onClaimDuelRefund?: (duelId: number, player1Wallet: string) => Promise<void>;
+  // v2.1: referrer drains accumulated commission PDA. The card auto-renders
+  // when on-chain balance > 0 (PDA doesn't exist on pre-upgrade clusters,
+  // returns 0 → card hidden → zero regression).
+  onClaimReferralBalance?: () => Promise<void>;
   // Optional: when null/undefined, mock values are used
   totalXp?: number | null;
   gamesPlayed?: number | null;
@@ -191,6 +196,7 @@ const ProfileViewV2: React.FC<Props> = ({
   onClaimRoundRefund,
   onClaimCustomRefund,
   onClaimDuelRefund,
+  onClaimReferralBalance,
   totalXp,
   gamesPlayed,
   winRate,
@@ -264,6 +270,11 @@ const ProfileViewV2: React.FC<Props> = ({
   const [referralStats, setReferralStats] = useState<ReferralStatsResponse | null>(null);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
 
+  // v2.1 on-chain referral commission PDA balance (in lamports). 0 means
+  // either: a) wallet has never been credited, b) PDA is empty, c) the V2.1
+  // upgrade hasn't shipped to this cluster. The card only renders when > 0.
+  const [referralBalanceLamports, setReferralBalanceLamports] = useState<number>(0);
+
   useEffect(() => {
     const wallet = publicKey?.toBase58();
     if (!wallet) {
@@ -277,6 +288,7 @@ const ProfileViewV2: React.FC<Props> = ({
       setNerdBalance(null);
       setReferralStats(null);
       setActivity([]);
+      setReferralBalanceLamports(0);
       return;
     }
     let cancelled = false;
@@ -298,6 +310,16 @@ const ProfileViewV2: React.FC<Props> = ({
         })
         .catch(() => {
           // Silent — referral card falls back to '—' display
+        });
+
+      // v2.1 on-chain referral commission balance (PDA lamports).
+      // Returns 0 if PDA never credited or V2.1 not on this cluster.
+      fetchReferralBalance(connection, publicKey!)
+        .then((lamports) => {
+          if (!cancelled) setReferralBalanceLamports(lamports);
+        })
+        .catch(() => {
+          // Silent — card just stays hidden if RPC blips.
         });
 
       // Seeker profile — to show Verified state or VERIFY button
@@ -492,11 +514,49 @@ const ProfileViewV2: React.FC<Props> = ({
   }, [publicKey, connection]);
 
   const hasAnyClaims =
-    roundPayouts.length > 0 || duelWins.length > 0 || customWins.length > 0;
+    roundPayouts.length > 0 || duelWins.length > 0 || customWins.length > 0
+    || referralBalanceLamports > 0;
   const totalClaimableLamports =
     roundPayouts.reduce((s, p) => s + p.prize_lamports, 0) +
     duelWins.reduce((s, d) => s + d.total_pot_lamports, 0) +
-    customWins.reduce((s, c) => s + c.prize_lamports, 0);
+    customWins.reduce((s, c) => s + c.prize_lamports, 0) +
+    referralBalanceLamports;
+
+  const handleClaimReferral = async () => {
+    if (!onClaimReferralBalance) return;
+    const key = 'referral-balance';
+    setClaimingKey(key);
+    try {
+      await onClaimReferralBalance();
+      // Refetch the on-chain balance — should now be 0.
+      const wallet = publicKey;
+      if (wallet) {
+        const fresh = await fetchReferralBalance(connection, wallet);
+        setReferralBalanceLamports(fresh);
+      } else {
+        setReferralBalanceLamports(0);
+      }
+    } catch (err: any) {
+      // User-cancel: silent. Other errors: brief alert; PDA-empty races
+      // get the friendlier "already withdrawn" framing.
+      const msg = (err?.message || '').toString();
+      if (msg.includes('User rejected') || msg.includes('user reject')) {
+        // Silent on user cancel.
+      } else if (msg.includes('NothingToSweep') || msg.includes('nothing to sweep')) {
+        alert('Nothing to claim — your referral balance may have already been withdrawn.');
+        // Reflect on-chain truth either way.
+        const wallet = publicKey;
+        if (wallet) {
+          const fresh = await fetchReferralBalance(connection, wallet);
+          setReferralBalanceLamports(fresh);
+        }
+      } else {
+        alert(msg || 'Failed to claim referral balance. Please try again.');
+      }
+    } finally {
+      setClaimingKey(null);
+    }
+  };
 
   const handleClaimRound = async (payout: ClaimablePayout) => {
     if (!onClaimRoundPrize) return;
@@ -816,7 +876,7 @@ const ProfileViewV2: React.FC<Props> = ({
               </div>
             </div>
             <div style={{ ...baseLabel, fontSize: 10, color: C.gold }}>
-              {roundPayouts.length + duelWins.length + customWins.length} READY
+              {roundPayouts.length + duelWins.length + customWins.length + (referralBalanceLamports > 0 ? 1 : 0)} READY
             </div>
           </div>
 
@@ -1028,6 +1088,74 @@ const ProfileViewV2: React.FC<Props> = ({
               </div>
             );
           })}
+
+          {/* Referral commission (v2.1 on-chain PDA). Renders only when balance > 0. */}
+          {referralBalanceLamports > 0 && (() => {
+            const key = 'referral-balance';
+            const isClaiming = claimingKey === key;
+            const otherClaiming = claimingKey !== null && claimingKey !== key;
+            return (
+              <div
+                key={key}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '12px 18px',
+                  gap: 12,
+                  borderTop: `1px solid ${C.borderLight}`,
+                }}
+              >
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 6,
+                    background: C.gold,
+                    display: 'grid',
+                    placeItems: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Icon name="sparkles" size={14} color="#000" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ ...baseLabel, fontSize: 11, color: '#fff' }}>
+                    REFERRAL EARNINGS
+                  </div>
+                  <div
+                    style={{
+                      ...baseLabel,
+                      fontSize: 10,
+                      color: C.gold,
+                      marginTop: 2,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    +{(referralBalanceLamports / 1_000_000_000).toFixed(4)} SOL · COMMISSIONS
+                  </div>
+                </div>
+                <button
+                  onClick={handleClaimReferral}
+                  disabled={isClaiming || otherClaiming || !onClaimReferralBalance}
+                  style={{
+                    ...baseLabel,
+                    appearance: 'none',
+                    border: 'none',
+                    background: C.gold,
+                    color: '#000',
+                    fontSize: 11,
+                    padding: '8px 16px',
+                    borderRadius: 999,
+                    cursor: isClaiming || otherClaiming || !onClaimReferralBalance ? 'not-allowed' : 'pointer',
+                    opacity: isClaiming || otherClaiming || !onClaimReferralBalance ? 0.5 : 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  {isClaiming ? 'CLAIMING…' : 'CLAIM'}
+                </button>
+              </div>
+            );
+          })()}
         </div>
       )}
 

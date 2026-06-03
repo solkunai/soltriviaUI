@@ -2100,3 +2100,65 @@ export function buildCloseDuelSplIx(args: {
     ],
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// REFERRAL CLAIM (v2.1 upgrade)
+// ═══════════════════════════════════════════════════════════════════
+// The ReferralBalance PDA is a system-owned account (no struct, no data).
+// Its lamports ARE the referrer's accumulated SOL commission. The credit
+// side is the buyer's purchase tx itself (SOL transfer to PDA); the program
+// only owns the CLAIM side, which drains the PDA back to the referrer.
+//
+// Discriminator: `NFT_DISC.claimReferralBalance` (above).
+// PDA helper:    `getReferralBalancePda(referrer)` (above).
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * claim_referral_balance — referrer drains their accumulated commission PDA.
+ *
+ * No ix args. Three accounts (matches ClaimReferralBalance struct in
+ * referral.rs:22):
+ *   0. referrer (sig, mut)
+ *   1. referral_balance (PDA, mut) — seeds=[REFERRAL_BALANCE_SEED, referrer]
+ *   2. system_program
+ */
+export function buildClaimReferralBalanceIx(args: {
+  referrer: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  return makeIx(
+    programId,
+    NFT_DISC.claimReferralBalance,
+    new Uint8Array(0),
+    [
+      { pubkey: args.referrer,                          isSigner: true,  isWritable: true  },
+      { pubkey: getReferralBalancePda(args.referrer, programId), isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId,                isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * Read the referrer's accumulated commission balance (in lamports).
+ *
+ * The PDA is a plain system account whose lamports == balance. Returns 0 if
+ * the PDA has never been credited (account doesn't exist) OR is empty.
+ *
+ * Safe to call on either cluster; on current mainnet (pre-V2.1 upgrade) this
+ * returns 0 because the PDA isn't credited by any active ix yet.
+ */
+export async function fetchReferralBalance(
+  connection: Connection,
+  referrer: PublicKey,
+  programId: PublicKey = SOLTRIVIA_PROGRAM_ID,
+): Promise<number> {
+  const pda = getReferralBalancePda(referrer, programId);
+  const info = await connection.getAccountInfo(pda);
+  if (!info) return 0;
+  // The on-chain account stores no data; rent-exempt minimum lamports are
+  // subtracted so the displayed claimable balance is what the user actually
+  // sweeps. The contract's NothingToSweep check uses `lamports() > 0` so we
+  // mirror that: if account exists, full lamports is the balance.
+  return info.lamports;
+}
