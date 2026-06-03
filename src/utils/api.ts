@@ -1,6 +1,6 @@
 // API utility functions for Supabase Edge Functions
 import { supabase, isSupabaseConfigured } from './supabase';
-import { SUPABASE_FUNCTIONS_URL } from './constants';
+import { SUPABASE_FUNCTIONS_URL, SOLANA_NETWORK } from './constants';
 
 const FUNCTIONS_URL = SUPABASE_FUNCTIONS_URL;
 
@@ -2230,6 +2230,10 @@ export async function createDuel(params: {
   duel_id: number;
   entry_fee_lamports: number;
   is_public: boolean;
+  /** v2.1 cluster scope. EF v28+ filters existing-row lookup by cluster so
+   *  mainnet duel_id=N and devnet duel_id=N don't collide. Defaults
+   *  server-side to 'mainnet' (and accepts 'mainnet-beta' as alias). */
+  cluster?: 'mainnet' | 'devnet' | 'mainnet-beta';
   /** v2.1 SPL duel fields — pass these when the duel is an SPL wager. Column
    *  names match the create-duel EF v27+ expected request shape. */
   token_mint?: string;
@@ -2253,6 +2257,9 @@ export async function joinDuel(params: {
   wallet_address: string;
   tx_signature: string;
   duel_id: number;
+  /** v2.1 cluster scope. EF v23+ filters duel lookup by cluster AND
+   *  uses cluster-correct RPC URL for tx_signature verification. */
+  cluster?: 'mainnet' | 'devnet' | 'mainnet-beta';
 }): Promise<JoinDuelResponse> {
   const res = await fetch(`${FUNCTIONS_URL}/join-duel`, {
     method: 'POST',
@@ -2268,6 +2275,9 @@ export async function getDuel(params: {
   duel_id?: number;
   share_code?: string;
   wallet_address?: string;
+  /** v2.1 cluster scope. EF v22+ scopes duel_id lookups by cluster.
+   *  share_code lookups are not cluster-filtered (globally unique). */
+  cluster?: 'mainnet' | 'devnet' | 'mainnet-beta';
 }): Promise<DuelInfo> {
   const res = await fetch(`${FUNCTIONS_URL}/get-duel`, {
     method: 'POST',
@@ -2318,11 +2328,17 @@ export async function getOpenDuels(): Promise<Array<{
   entry_token_amount?: number | null;
 }>> {
   if (!isSupabaseConfigured) return [];
+  // Cluster scope: localhost on devnet sees only devnet duels; production
+  // mainnet sees only mainnet duels. SOLANA_NETWORK comes from
+  // VITE_SOLANA_NETWORK env (defaults to 'mainnet-beta' which the EF +
+  // schema treat as 'mainnet').
+  const clusterFilter = SOLANA_NETWORK === 'devnet' ? 'devnet' : 'mainnet';
   const { data, error } = await supabase
     .from('duels')
     .select('id, duel_id, player1_wallet, entry_fee_lamports, is_public, share_code, created_at, expires_at, token_mint, token_symbol, token_decimals, entry_token_amount')
     .eq('status', 'waiting')
     .eq('is_public', true)
+    .eq('cluster', clusterFilter)
     .gt('expires_at', new Date().toISOString())
     .order('created_at', { ascending: false })
     .limit(20);

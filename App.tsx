@@ -1527,13 +1527,15 @@ const App: React.FC = () => {
       const signature = await sendTransaction(tx, connection);
       await connection.confirmTransaction(signature, 'confirmed');
 
-      // Call create-duel EF
+      // Call create-duel EF. SOLANA_NETWORK feeds the cluster scope so
+      // mainnet duel_id=N and devnet duel_id=N don't collide.
       const result = await createDuel({
         wallet_address: publicKey.toBase58(),
         tx_signature: signature,
         duel_id: nextDuelId,
         entry_fee_lamports: entryFee,
         is_public: isPublic,
+        cluster: SOLANA_NETWORK,
       });
 
       setDuelId(nextDuelId);
@@ -1630,6 +1632,7 @@ const App: React.FC = () => {
         duel_id: nextDuelId,
         entry_fee_lamports: 0,                    // SOL wager unused for SPL
         is_public: isPublic,
+        cluster: SOLANA_NETWORK,
         token_mint: token.mint,
         entry_token_amount: entryFeeAmount.toString(),
         token_symbol: token.symbol,
@@ -1705,6 +1708,7 @@ const App: React.FC = () => {
         wallet_address: publicKey.toBase58(),
         tx_signature: signature,
         duel_id: onChainDuelId,
+        cluster: SOLANA_NETWORK,
       });
 
       setDuelId(onChainDuelId);
@@ -1713,7 +1717,7 @@ const App: React.FC = () => {
       setDuelIsPlayer1(false);
       setDuelResults(null);
 
-      const duelInfo = await getDuel({ duel_id: onChainDuelId, wallet_address: publicKey.toBase58() });
+      const duelInfo = await getDuel({ duel_id: onChainDuelId, wallet_address: publicKey.toBase58(), cluster: SOLANA_NETWORK });
       setDuelOpponent({
         wallet: duelInfo.player1.wallet,
         username: duelInfo.player1.username ?? null,
@@ -1745,7 +1749,7 @@ const App: React.FC = () => {
     // populates `token_mint` when create-duel was called with SPL fields.
     // For SOL duels it stays undefined/null.
     try {
-      const pre = await getDuel({ duel_id: onChainDuelId, wallet_address: publicKey.toBase58() });
+      const pre = await getDuel({ duel_id: onChainDuelId, wallet_address: publicKey.toBase58(), cluster: SOLANA_NETWORK });
       if (pre?.token_mint) {
         return handleJoinDuelSpl(onChainDuelId, pre.token_mint);
       }
@@ -1780,6 +1784,7 @@ const App: React.FC = () => {
         wallet_address: publicKey.toBase58(),
         tx_signature: signature,
         duel_id: onChainDuelId,
+        cluster: SOLANA_NETWORK,
       });
 
       setDuelId(onChainDuelId);
@@ -1793,7 +1798,7 @@ const App: React.FC = () => {
       setDuelResults(null);
 
       // Fetch duel details for opponent info
-      const duelInfo = await getDuel({ duel_id: onChainDuelId, wallet_address: publicKey.toBase58() });
+      const duelInfo = await getDuel({ duel_id: onChainDuelId, wallet_address: publicKey.toBase58(), cluster: SOLANA_NETWORK });
       setDuelOpponent({
         wallet: duelInfo.player1.wallet,
         username: duelInfo.player1.username ?? null,
@@ -1813,7 +1818,7 @@ const App: React.FC = () => {
   const handleJoinByShareCode = async (shareCode: string) => {
     if (!connected || !publicKey) { setShowWalletRequired(true); return; }
     try {
-      const duelInfo = await getDuel({ share_code: shareCode, wallet_address: publicKey.toBase58() });
+      const duelInfo = await getDuel({ share_code: shareCode, wallet_address: publicKey.toBase58(), cluster: SOLANA_NETWORK });
       if (duelInfo.status !== 'waiting') {
         alert('This duel is no longer available.');
         return;
@@ -1828,7 +1833,7 @@ const App: React.FC = () => {
   const handleDuelJoined = async (opponentWallet: string, joinedDbDuelId: string) => {
     // Called when opponent joins our waiting duel (Realtime or poll)
     try {
-      const duelInfo = await getDuel({ duel_id: duelId!, wallet_address: publicKey!.toBase58() });
+      const duelInfo = await getDuel({ duel_id: duelId!, wallet_address: publicKey!.toBase58(), cluster: SOLANA_NETWORK });
       setDuelOpponent({
         wallet: opponentWallet,
         username: duelInfo.player2?.username ?? null,
@@ -1858,7 +1863,7 @@ const App: React.FC = () => {
     if (duel.status === 'playing') {
       try {
         const walletAddr = publicKey?.toBase58();
-        const duelInfo = await getDuel({ duel_id: duel.duel_id, wallet_address: walletAddr });
+        const duelInfo = await getDuel({ duel_id: duel.duel_id, wallet_address: walletAddr, cluster: SOLANA_NETWORK });
         if (duelInfo.status === 'playing' && duelInfo.player2) {
           setDuelOpponent({
             wallet: duelInfo.player2.wallet,
@@ -1991,7 +1996,7 @@ const App: React.FC = () => {
     (async () => {
       try {
         const walletAddr = publicKey?.toBase58();
-        const duelInfo = await getDuel({ share_code: duelShareCode, wallet_address: walletAddr });
+        const duelInfo = await getDuel({ share_code: duelShareCode, wallet_address: walletAddr, cluster: SOLANA_NETWORK });
         setDuelId(duelInfo.duel_id);
         setDbDuelId(duelInfo.db_duel_id);
         setDuelEntryFee(duelInfo.entry_fee_lamports);
