@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toPng } from 'html-to-image';
+import RoundShareCard, { getRoundTier } from './RoundShareCard';
+import { pickTweet, xIntentUrl } from '../src/utils/tweetVariants';
 
 interface ResultsViewProps {
   results: { score: number, points: number, time: number, rank?: number; scoreSaveFailed?: boolean };
@@ -14,39 +17,83 @@ interface ResultsViewProps {
 const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesLeft, roundEntriesMax, onRestart, onGoHome, onBuyLives }) => {
   const { t } = useTranslation();
   const [showShareCard, setShowShareCard] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const isPerfect = results.score === 10;
   const canPlayAgain = roundEntriesLeft > 0 || (lives ?? 0) > 0;
 
-  const handleShare = () => {
-    const score = results.score;
-    const pts = results.points;
-    const t = results.time;
-    const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+  // Off-screen RoundShareCard , render target for html-to-image capture.
+  // Tier + tweet bank picked from final score + rank; falls back to score
+  // tier when rank not yet known (round still finalizing).
+  const shareCardRef = useRef<HTMLDivElement>(null);
+  const { tier, moment } = getRoundTier(results.score, results.rank ?? null);
 
-    let text: string;
-    if (score === 10) {
-      text = pick([
-        `10/10 on @soltrivia_app. flawless. ${pts} XP.\n\ni am simply built different.\n\nyour move, anon.\n\nsoltrivia.app`,
-        `perfect score on @soltrivia_app. few understand.\n\n${pts} XP | ${t}s | not a single miss\n\ncope and seethe or come try to beat it\n\nsoltrivia.app`,
-      ]);
-    } else if (score >= 8) {
-      text = pick([
-        `just dropped ${pts} XP on @soltrivia_app\n\n${score}/10 | ${t}s | on-chain\n\nskill issue if you can't beat this\n\nsoltrivia.app`,
-        `${score}/10 on today's @soltrivia_app round. ${pts} XP.\n\nser, this is what peak performance looks like on Solana.\n\nprove you're built different\n\nsoltrivia.app`,
-      ]);
-    } else if (score >= 5) {
-      text = pick([
-        `${score}/10 on @soltrivia_app... not my finest hour ngl\n\nstill mogging most of you tho. come prove me wrong\n\nsoltrivia.app`,
-        `${score}/10 on @soltrivia_app. ${pts} XP. probably nothing.\n\nbet you can't do better tho\n\nsoltrivia.app`,
-      ]);
-    } else {
-      text = pick([
-        `got absolutely cooked on @soltrivia_app today. ${score}/10.\n\nthe trenches are brutal ser.\n\nsomeone please avenge me\n\nsoltrivia.app`,
-        `${score}/10 on @soltrivia_app and honestly i deserve this\n\nthis is what happens when you ape into trivia at 3am\n\nsurely you can do better... right?\n\nsoltrivia.app`,
-      ]);
+  const captureCard = async (): Promise<Blob | null> => {
+    if (!shareCardRef.current) return null;
+    try {
+      const dataUrl = await toPng(shareCardRef.current, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: '#08080a',
+      });
+      const res = await fetch(dataUrl);
+      return await res.blob();
+    } catch (err) {
+      console.error('Round share card capture failed:', err);
+      return null;
     }
+  };
 
-    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleShare = async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const tweet = pickTweet(moment, {
+        rank: results.rank ?? '',
+        correct: results.score,
+        time: `${results.time}s`,
+        prize: '',
+      });
+      const blob = await captureCard();
+      const filename = `sol-trivia-round-${Date.now()}.png`;
+      if (blob && typeof navigator.share === 'function') {
+        const file = new File([blob], filename, { type: 'image/png' });
+        const navAny = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
+        if (!navAny.canShare || navAny.canShare({ files: [file] })) {
+          try {
+            await navigator.share({ text: tweet, files: [file] });
+            return;
+          } catch {
+            // user dismissed sheet, fall through to download + intent fallback
+          }
+        }
+      }
+      if (blob) downloadBlob(blob, filename);
+      window.open(xIntentUrl(tweet), '_blank');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleSaveImage = async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const blob = await captureCard();
+      if (blob) downloadBlob(blob, `sol-trivia-round-${Date.now()}.png`);
+    } finally {
+      setSharing(false);
+    }
   };
 
   return (
@@ -211,18 +258,56 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
                  </div>
               </div>
 
-              <button 
+              <button
                 onClick={handleShare}
-                className="w-full py-5 bg-[#1DA1F2] text-white font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_15px_40_rgba(29,161,242,0.3)] active:scale-95 transition-all flex items-center justify-center gap-3 rounded-full"
+                disabled={sharing}
+                className="w-full py-5 bg-[#1DA1F2] text-white font-[1000] text-xl italic uppercase tracking-tighter shadow-[0_15px_40_rgba(29,161,242,0.3)] active:scale-95 transition-all flex items-center justify-center gap-3 rounded-full disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.84 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z" />
                 </svg>
-                {t('results.broadcastToX')}
+                {sharing ? 'Capturing…' : t('results.broadcastToX')}
+              </button>
+
+              <button
+                onClick={handleSaveImage}
+                disabled={sharing}
+                className="w-full mt-3 py-3 bg-white/5 border border-white/10 text-zinc-300 hover:text-white font-black text-xs uppercase tracking-[0.3em] italic transition-all rounded-full disabled:opacity-60 disabled:cursor-not-allowed"
+                title="Save stats card as PNG"
+              >
+                Save Image
               </button>
            </div>
         </div>
       )}
+
+      {/*
+        Off-screen RoundShareCard , render target for html-to-image capture.
+        Always mounted (regardless of modal state) so the ref is populated
+        the moment the user hits Share/Save. Lives well outside the viewport
+        so it does not affect layout.
+      */}
+      <div
+        aria-hidden
+        style={{
+          position: 'fixed',
+          left: -10000,
+          top: 0,
+          width: 480,
+          height: 600,
+          pointerEvents: 'none',
+          opacity: 0,
+        }}
+      >
+        <RoundShareCard
+          ref={shareCardRef}
+          tier={tier}
+          score={results.score}
+          points={results.points}
+          timeSec={results.time}
+          rank={results.rank ?? null}
+        />
+      </div>
     </div>
   );
 };
