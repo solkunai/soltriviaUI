@@ -18,6 +18,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useIsMobile } from '../src/hooks/useIsMobile';
 import { useWallet } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
+import { getFreePlaysRemaining } from '../src/utils/api';
 import { CATEGORY_COLORS, getCategoryColor, categoryLabel } from '../src/utils/categoryColors';
 
 interface Props {
@@ -95,6 +96,10 @@ const FreePlayViewV2: React.FC<Props> = ({
   const [pick, setPick] = useState<string>('mixed');
   const [playedCounts, setPlayedCounts] = useState<Counts>({});
   const [profile, setProfile] = useState<ProfileStats>(null);
+  /** Server-side practice plays remaining (0-5) from get_free_plays_remaining
+   *  RPC. null = not fetched yet (guest mode or pre-fetch). Falls back to
+   *  the prop-passed practiceRunsLeft (localStorage-based) when null. */
+  const [serverFreePlays, setServerFreePlays] = useState<number | null>(null);
 
   // ── Per-category PLAYED count (Q ANSWERED + BEST CAT derived) ─────────
   useEffect(() => {
@@ -119,6 +124,27 @@ const FreePlayViewV2: React.FC<Props> = ({
     })();
     return () => { mounted = false; };
   }, [connected, wallet]);
+
+  // ── Server-side free plays remaining (5/24h rolling cap per Kyle
+  //     2026-06-04). Replaces the localStorage-derived prop when wallet
+  //     is connected. Game Pass holders skip the RPC (always unlimited). ─
+  useEffect(() => {
+    let mounted = true;
+    if (!connected || !wallet || hasGamePass) {
+      setServerFreePlays(null);
+      return;
+    }
+    (async () => {
+      try {
+        const remaining = await getFreePlaysRemaining(wallet);
+        if (mounted) setServerFreePlays(remaining);
+      } catch (err) {
+        console.warn('[FreePlay] getFreePlaysRemaining failed:', err);
+        if (mounted) setServerFreePlays(null);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [connected, wallet, hasGamePass]);
 
   // ── Streak (real number for the CatTag) ────────────────────────────────
   useEffect(() => {
@@ -155,7 +181,13 @@ const FreePlayViewV2: React.FC<Props> = ({
   }, [playedCounts]);
   const maxPlayed = bestCat.played || 1; // progress-bar normalization
 
-  const freeGamesRemaining = hasGamePass ? Infinity : Math.max(0, practiceRunsLeft);
+  // Server-side count (if wallet connected, from get_free_plays_remaining RPC)
+  // takes precedence over localStorage prop. Game Pass = always unlimited.
+  const freeGamesRemaining = hasGamePass
+    ? Infinity
+    : serverFreePlays != null
+    ? Math.max(0, serverFreePlays)
+    : Math.max(0, practiceRunsLeft);
   const canPickCategory = !!hasGamePass;
   const canPlayMixed = hasGamePass || freeGamesRemaining > 0;
 

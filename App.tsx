@@ -735,7 +735,15 @@ const App: React.FC = () => {
       setCurrentView(View.PRACTICE);
     } catch (err: any) {
       console.error('❌ Failed to start practice game:', err);
-      if (err.requires_pass) {
+      // v2.1: practice-game EF v29 returns 429 with code='PRACTICE_CAP_REACHED'
+      // when the wallet has hit the 5/24h rolling cap. Server-side enforcement;
+      // can't be bypassed by clearing localStorage. Game Pass holders bypass.
+      if (err.code === 'PRACTICE_CAP_REACHED' || err.status === 429) {
+        alert(
+          err.message ||
+          `Daily practice cap reached (${err.cap ?? 5}/24h). Come back in 24h or get a Game Pass for unlimited plays.`
+        );
+      } else if (err.requires_pass) {
         alert('Game Pass required for this category. Get a Game Pass to unlock all categories!');
         setShowCategorySelector(true);
       } else {

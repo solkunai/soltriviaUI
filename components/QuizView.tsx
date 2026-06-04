@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Question } from '../types';
 import { HapticFeedback } from '../src/utils/haptics';
 import { playCorrectSound, playWrongSound } from '../src/utils/sounds';
-import { getQuestions, submitAnswer, getPracticeQuestions, getPlayerLives, type PracticeQuestion } from '../src/utils/api';
+import { getQuestions, submitAnswer, submitPracticeAnswer, getPracticeQuestions, getPlayerLives, type PracticeQuestion } from '../src/utils/api';
 import { CATEGORY_COLORS, DEFAULT_CATEGORY_COLOR, getCategoryColor, categoryLabel } from '../src/utils/categoryColors';
 import { useWallet } from '../src/contexts/WalletContext';
 import UseALifePopup from './UseALifePopup';
@@ -332,11 +332,30 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
     let serverQAttemptsUsed: number | null = null;
 
     if (isPracticeMode) {
-      actualCorrectIndex = currentQuestion.correctAnswer;
-      correct = optionIdx === actualCorrectIndex;
-      if (correct) {
-        const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / speedDecaySec)));
-        pointsEarned = BASE_POINTS + speedBonus;
+      // v2.1 (2026-06-04): server-side scoring via submit-practice-answer EF.
+      // Closes the dev-tools answer leak from get-practice-questions , the
+      // client no longer needs correct_index for scoring, the EF returns it
+      // AFTER the user picks. Fallback to client-side scoring only if the
+      // EF call fails (graceful degradation during outage; practice has no
+      // rewards so the fallback's "leak" is bounded).
+      try {
+        if (!currentQuestion.id) throw new Error('Missing practice question ID');
+        const practiceResponse = await submitPracticeAnswer({
+          question_id: String(currentQuestion.id),
+          selected_index: optionIdx,
+          time_taken_ms: Math.floor(timeTaken * 1000),
+        });
+        correct = practiceResponse.correct;
+        pointsEarned = practiceResponse.pointsEarned || 0;
+        actualCorrectIndex = practiceResponse.correctIndex;
+      } catch (err) {
+        console.warn('[practice] submit-practice-answer EF failed, falling back to client scoring:', err);
+        actualCorrectIndex = currentQuestion.correctAnswer;
+        correct = optionIdx === actualCorrectIndex;
+        if (correct) {
+          const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / speedDecaySec)));
+          pointsEarned = BASE_POINTS + speedBonus;
+        }
       }
     } else {
       try {

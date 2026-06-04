@@ -1508,6 +1508,12 @@ export async function startPracticeGame(options?: { category?: string; wallet_ad
     const err = new Error(error.error || 'Failed to start practice game');
     (err as any).requires_pass = error.requires_pass ?? false;
     (err as any).category = error.category ?? null;
+    // v29 EF: 429 PRACTICE_CAP_REACHED when at 5/24h cap. Surface the code
+    // so callers can show a "buy Game Pass" CTA instead of a generic error.
+    (err as any).code = error.code ?? null;
+    (err as any).cap = error.cap ?? null;
+    (err as any).remaining = error.remaining ?? null;
+    (err as any).status = response.status;
     throw err;
   }
 
@@ -1528,6 +1534,59 @@ export async function getPracticeQuestions(question_ids: string[]): Promise<GetP
   }
 
   return response.json();
+}
+
+// ─── Practice mode , v2.1 server-side scoring + 5/24h cap ───────────────
+
+/**
+ * Server-side scoring for practice mode. Mirrors submit-answer v52 formula
+ * (100 base + 900 speed bonus over 15s). Closes the dev-tools answer leak:
+ * the client no longer reads correct_index from get-practice-questions for
+ * scoring , it sends the picked index to this EF and gets the verdict back.
+ *
+ * Stateless: no session row, no persisted answer. Practice has no rewards.
+ */
+export interface SubmitPracticeAnswerParams {
+  question_id: string;
+  selected_index?: number;
+  time_taken_ms: number;
+  time_expired?: boolean;
+}
+export interface SubmitPracticeAnswerResponse {
+  correct: boolean;
+  correctIndex: number;
+  pointsEarned: number;
+  timeMs: number;
+  timedOut: boolean;
+}
+export async function submitPracticeAnswer(params: SubmitPracticeAnswerParams): Promise<SubmitPracticeAnswerResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/submit-practice-answer`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to submit practice answer');
+  }
+  return response.json();
+}
+
+/**
+ * Get remaining practice plays in the current 24h rolling window for this
+ * wallet. Returns 0-5. Game Pass holders should bypass this RPC on the
+ * frontend and treat as Infinity (the RPC itself doesn't special-case GP).
+ */
+export async function getFreePlaysRemaining(wallet_address: string): Promise<number> {
+  if (!isSupabaseConfigured) return 5;
+  const { data, error } = await supabase.rpc('get_free_plays_remaining', { p_wallet: wallet_address });
+  if (error) {
+    console.warn('[practice] get_free_plays_remaining RPC failed:', error);
+    // Soft fail: assume 5 remaining if RPC is down. Client gates secondary
+    // via the cap check on the next practice-game call.
+    return 5;
+  }
+  return Math.max(0, Math.min(5, Number(data ?? 0)));
 }
 
 // ─── Game Pass (Category Unlock) ──────────────────────────────────────────
