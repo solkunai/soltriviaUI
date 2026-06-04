@@ -4,6 +4,17 @@ import { getReEntryFeeLamports } from '../src/utils/constants';
 import CustomGameShareCard, { getCustomGameTier } from './CustomGameShareCard';
 import { pickTweet, xIntentUrl } from '../src/utils/tweetVariants';
 
+// Gate 4 results polish , teens-trap handled (11/12/13 → TH).
+function ordinalSuffix(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return 'TH';
+  const mod10 = n % 10;
+  if (mod10 === 1) return 'ST';
+  if (mod10 === 2) return 'ND';
+  if (mod10 === 3) return 'RD';
+  return 'TH';
+}
+
 interface CustomGameResultsViewProps {
   results: {
     score: number;
@@ -151,27 +162,88 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
           {results.gameName}
         </h2>
 
-        {/* Prize Pool Banner (paid games) */}
+        {/* ── YOU PLACED hero (Gate 4 polish: rank + ordinal in gold) ── */}
+        {results.rank != null && (
+          <div className="text-center mb-6">
+            <span
+              className="font-black italic text-white"
+              style={{
+                fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+                fontSize: 'clamp(28px, 6vw, 36px)',
+                letterSpacing: '-0.01em',
+                lineHeight: 1,
+              }}
+            >
+              YOU PLACED{' '}
+            </span>
+            <span
+              className="font-black italic"
+              style={{
+                fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+                fontSize: 'clamp(28px, 6vw, 36px)',
+                color: '#FFD700',
+                letterSpacing: '-0.01em',
+                lineHeight: 1,
+              }}
+            >
+              {results.rank}
+            </span>
+            <span
+              className="font-black italic"
+              style={{
+                fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+                fontSize: 'clamp(20px, 4.5vw, 26px)',
+                color: '#FFD700',
+                letterSpacing: '-0.01em',
+                lineHeight: 1,
+                verticalAlign: 'baseline',
+              }}
+            >
+              {ordinalSuffix(results.rank)}
+            </span>
+          </div>
+        )}
+
+        {/* ── PRIZE POOL HERO V2 (gold-tinted diagonal 150° per decision D) ── */}
         {isPaidGame && prizePotSol != null && (
-          <div className="bg-[#38BDF8]/10 border border-[#38BDF8]/20 rounded-xl p-4 mb-6 text-center">
-            <span className="text-zinc-400 text-[9px] font-black uppercase tracking-widest block mb-1">Prize Pool</span>
-            <span className="text-[#38BDF8] text-2xl font-[1000] italic">{prizePotSol.toFixed(2)} SOL</span>
-            <p className="text-zinc-400 text-[10px] font-black mt-2">
-              Visit the leaderboard after the game ends to claim your prize!
+          <div
+            className="rounded-2xl p-4 sm:p-5 mb-6 text-center"
+            style={{
+              background:
+                'linear-gradient(150deg, rgba(255,215,0,0.18) 0%, rgba(255,215,0,0.05) 60%, transparent 100%)',
+              border: '1px solid rgba(255,215,0,0.35)',
+            }}
+          >
+            <span
+              className="font-black italic uppercase tracking-[0.2em] block text-[10px] sm:text-[11px]"
+              style={{ color: '#FFD700', fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+            >
+              Prize Pool
+            </span>
+            <span
+              className="font-black italic tabular-nums block mt-1"
+              style={{
+                color: '#FFD700',
+                fontSize: 'clamp(34px, 7vw, 46px)',
+                letterSpacing: '-0.02em',
+                fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+                fontWeight: 900,
+                lineHeight: 1,
+              }}
+            >
+              {prizePotSol.toFixed(2)} SOL
+            </span>
+            <p
+              className="text-zinc-400 font-black italic uppercase tracking-[0.16em] mt-3 text-[10px]"
+              style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+            >
+              Claim from the leaderboard when the game ends
             </p>
           </div>
         )}
 
-        {/* Score Card */}
+        {/* Score Card — YOUR RANK tile DROPPED per Gate 4 (hero above owns it) */}
         <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6 md:p-8 mb-6">
-          {/* Rank */}
-          {results.rank != null && (
-            <div className="text-center mb-6">
-              <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest block mb-1">Your Rank</span>
-              <span className="text-[#38BDF8] text-5xl font-[1000] italic">#{results.rank}</span>
-            </div>
-          )}
-
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 text-center">
               <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Score</span>

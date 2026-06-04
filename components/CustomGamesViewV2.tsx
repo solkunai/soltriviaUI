@@ -422,17 +422,43 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3,1fr)', gap: 12 }}>
-          {rooms.map((r) => (
+          {rooms.map((r) => {
+            // ── Gate 4 row accent rule (cross-platform locked color mapping
+            //     mirror of native commit e256721 2026-06-04) ──
+            //  r.ended           → zinc #71717a (archive)
+            //  r.hot             → yellow #FCD34D (urgent / in-progress feel)
+            //  tab === MY GAMES  → cyan #38BDF8 (yours)
+            //  default joinable  → green #14F195 (playable now)
+            const accentColor: string = r.ended
+              ? '#71717a'
+              : r.hot
+              ? '#FCD34D'
+              : tab === 'MY GAMES'
+              ? '#38BDF8'
+              : '#14F195';
+            return (
             <div
               key={r.slug}
-              className="rounded-xl"
+              className="rounded-xl relative overflow-hidden"
               style={{
                 background: '#0a0a0a',
-                border: `1.5px solid ${r.hot ? '#FFD700' : 'rgba(56,189,248,0.3)'}`,
-                padding: '14px 16px',
+                border: '1px solid rgba(255,255,255,0.08)',
+                padding: '14px 16px 14px 19px',
                 opacity: r.ended ? 0.6 : 1,
               }}
             >
+              {/* Solid color LEFT-RULE , the Gate 4 cross-screen visual signature */}
+              <div
+                aria-hidden
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  left: 0,
+                  width: 3,
+                  background: accentColor,
+                }}
+              />
               <div className="flex items-center justify-between">
                 <span
                   className="font-black italic uppercase rounded-full"
@@ -533,7 +559,8 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
                 {r.ended ? 'VIEW →' : 'JOIN →'}
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

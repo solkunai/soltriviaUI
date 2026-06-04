@@ -7,6 +7,155 @@ import {
 } from '../src/utils/constants';
 import NftPrizeCard from './NftPrizeCard';
 
+// ── Gate 4 cross-platform locked decisions (per Sol Trivia design 2026-06-04) ──
+//  D: diagonal 150° gold-tinted prize hero (lobby + setup wizard + results)
+//  B: top-3 medal colors , 1st gold, 2nd silver, 3rd bronze, 4+ zinc
+//  C: JOINED FOOTER pill below leaderboard with 3-variant copy
+const MEDAL_GOLD = '#FFD700';
+const MEDAL_SILVER = '#cfcfd6';
+const MEDAL_BRONZE = '#E8A36B';
+const ZINC_DIM = '#a1a1aa';
+
+/** Handles the teens-trap (11/12/13 → TH, not ST/ND/RD). */
+function ordinalSuffix(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return 'TH';
+  const mod10 = n % 10;
+  if (mod10 === 1) return 'ST';
+  if (mod10 === 2) return 'ND';
+  if (mod10 === 3) return 'RD';
+  return 'TH';
+}
+
+function medalColorForRank(rank: number): string {
+  if (rank === 1) return MEDAL_GOLD;
+  if (rank === 2) return MEDAL_SILVER;
+  if (rank === 3) return MEDAL_BRONZE;
+  return ZINC_DIM;
+}
+
+/**
+ * Bold gold-tinted diagonal 150° prize hero. Same component shape used by
+ * setup wizard (step 2/4) and results screen per decision D. Adapts copy
+ * for paid / creator-funded / free. Countdown ticker on the right when
+ * lobby is still active.
+ */
+function PrizeHeroV2(props: {
+  prizeSol: number;
+  entryFeeSol: number;
+  playerCount: number;
+  maxPlayers: number | null;
+  maxWinners: number;
+  prizeSplitBps: number[];
+  isCreatorFunded: boolean;
+  isFree: boolean;
+  countdown: string | null;
+  countdownLabel: string;
+}) {
+  const { prizeSol, entryFeeSol, playerCount, maxPlayers, maxWinners, prizeSplitBps, isCreatorFunded, isFree, countdown, countdownLabel } = props;
+  const subtitle = isFree
+    ? 'FREE ENTRY · GLORY ONLY'
+    : isCreatorFunded
+    ? 'CREATOR FUNDED · WINNER TAKES ALL'
+    : `${entryFeeSol.toFixed(3)} SOL ENTRY · ${playerCount}${maxPlayers ? ` OF ${maxPlayers} MAX` : ''}`;
+  const winnersChips: Array<{ rank: number; sol: number }> = [];
+  for (let i = 0; i < maxWinners; i++) {
+    const bps = prizeSplitBps[i] || 0;
+    if (bps > 0) winnersChips.push({ rank: i + 1, sol: (prizeSol * bps) / 10000 });
+  }
+  const heroLabel = isFree ? 'GLORY · NO PRIZE' : isCreatorFunded ? 'PRIZE · CREATOR FUNDED' : 'PRIZE POOL · GROWS PER PLAYER';
+  return (
+    <div
+      className="rounded-2xl p-5 sm:p-6 mb-6 relative overflow-hidden"
+      style={{
+        background:
+          'linear-gradient(150deg, rgba(255,215,0,0.18) 0%, rgba(255,215,0,0.05) 60%, transparent 100%)',
+        border: '1px solid rgba(255,215,0,0.35)',
+      }}
+    >
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <div
+            className="font-black italic uppercase tracking-[0.2em] text-[10px] sm:text-[11px]"
+            style={{ color: MEDAL_GOLD, fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+          >
+            {heroLabel}
+          </div>
+          <div
+            className="font-black italic mt-2 tabular-nums"
+            style={{
+              color: MEDAL_GOLD,
+              fontSize: 'clamp(38px, 8vw, 52px)',
+              letterSpacing: '-0.02em',
+              fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+              fontWeight: 900,
+              lineHeight: 1,
+            }}
+          >
+            {isFree ? '— SOL' : `${prizeSol.toFixed(prizeSol >= 1 ? 2 : 3)} SOL`}
+          </div>
+          <div
+            className="font-black italic uppercase tracking-[0.16em] text-[10px] sm:text-[11px] text-zinc-400 mt-3"
+            style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+          >
+            {subtitle}
+          </div>
+        </div>
+        {countdown && (
+          <div
+            className="rounded-lg px-3 py-2 text-right"
+            style={{ background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <div
+              className="text-zinc-500 font-black italic uppercase tracking-[0.18em] text-[9px]"
+              style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+            >
+              {countdownLabel}
+            </div>
+            <div
+              className="text-white font-black italic tabular-nums text-base sm:text-lg"
+              style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif', fontWeight: 900, letterSpacing: '-0.02em' }}
+            >
+              {countdown}
+            </div>
+          </div>
+        )}
+      </div>
+      {winnersChips.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-4">
+          {winnersChips.map((c) => {
+            const color = medalColorForRank(c.rank);
+            const isFirst = c.rank === 1;
+            return (
+              <div
+                key={c.rank}
+                className="rounded-md px-2.5 py-1.5 flex items-baseline gap-1.5"
+                style={{
+                  background: isFirst ? 'rgba(255,215,0,0.18)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${isFirst ? 'rgba(255,215,0,0.45)' : 'rgba(255,255,255,0.10)'}`,
+                }}
+              >
+                <span
+                  className="font-black italic uppercase tracking-[0.14em] text-[9px]"
+                  style={{ color, fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+                >
+                  {c.rank}{ordinalSuffix(c.rank)}
+                </span>
+                <span
+                  className="font-black italic tabular-nums text-[11px]"
+                  style={{ color: isFirst ? MEDAL_GOLD : '#fff', fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+                >
+                  {c.sol.toFixed(3)} SOL
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface CustomGameLobbyViewProps {
   slug: string;
   walletAddress: string | null;
@@ -474,10 +623,10 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           </div>
         )}
 
-        {/* Game Info Card */}
-        <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6 md:p-8 mb-6">
+        {/* \u2500\u2500 Editorial header (Gate 4 lobby polish per design 2026-06-04) \u2500\u2500 */}
+        <div className="mb-5">
           <div className="flex items-center justify-between mb-2">
-            <p className={`text-[9px] font-black uppercase tracking-[0.4em] ${isCreatorFunded ? 'text-amber-400' : 'text-[#38BDF8]'}`}>
+            <p className={`text-[9px] font-black uppercase tracking-[0.4em] ${isCreatorFunded ? 'text-amber-400' : isPaid ? 'text-[#38BDF8]' : 'text-zinc-400'}`}>
               {isCreatorFunded ? 'Creator-Funded Game' : isPaid ? 'Prize Game' : 'Custom Game'}
             </p>
             {isPaid && (
@@ -487,11 +636,17 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             )}
           </div>
 
-          <h1 className="text-3xl md:text-5xl font-[1000] italic text-white uppercase tracking-tighter mb-4 leading-tight">
+          <h1 className="text-3xl md:text-5xl font-[1000] italic text-white uppercase tracking-tighter mb-3 leading-tight">
             {gameData.name}
           </h1>
 
-          <div className="flex flex-wrap gap-2 mb-4">
+          <p className="text-zinc-500 text-[10px] sm:text-xs font-black italic uppercase tracking-[0.2em] mb-3">
+            HOSTED BY <span className="text-zinc-300">{creatorShort}</span>
+            <span className="text-zinc-700 mx-2">\u00b7</span>
+            <span className="text-zinc-300 tabular-nums">{gameData.player_count}</span> IN
+          </p>
+
+          <div className="flex flex-wrap gap-2">
             <span className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-zinc-400 text-[10px] font-black uppercase tracking-wider">
               {gameData.question_count} Q's
             </span>
@@ -507,41 +662,73 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
               </span>
             )}
           </div>
-
-          {/* Compact stats row for paid games */}
-          {isPaid && (
-            <div className="flex items-center gap-4 mb-4 text-center">
-              <div className="flex-1">
-                <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block">
-                  {isCreatorFunded ? 'Prize' : 'Pool'}
-                </span>
-                <span className="text-[#38BDF8] text-base font-[1000] italic">{prizePotSOL.toFixed(2)} SOL</span>
-              </div>
-              <div className="w-px h-8 bg-white/10"></div>
-              <div className="flex-1">
-                <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block">Players</span>
-                <span className="text-white text-base font-[1000] italic">{gameData.player_count}{gameData.max_players ? `/${gameData.max_players}` : ''}</span>
-              </div>
-              <div className="w-px h-8 bg-white/10"></div>
-              <div className="flex-1">
-                <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block">
-                  {gameData.status === 'started' ? 'Left' : 'Duration'}
-                </span>
-                {gameData.status === 'started' && countdown ? (
-                  <span className="text-yellow-400 text-base font-[1000] italic">{countdown}</span>
-                ) : (
-                  <span className="text-white text-base font-[1000] italic">{durationLabel || '\u2014'}</span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {isCreatorFunded && (
-            <div className={`flex items-center gap-2 mb-4 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider ${isFunded ? 'bg-green-500/10 border border-green-500/20 text-green-400' : 'bg-amber-400/10 border border-amber-400/20 text-amber-400'}`}>
-              <span>{isFunded ? 'Prize Pool Funded' : 'Awaiting Creator Funding'}</span>
-            </div>
-          )}
         </div>
+
+        {/* \u2500\u2500 PRIZE HERO V2 (gold-tinted diagonal 150\u00b0 per decision D) \u2500\u2500 */}
+        {(isPaid || isCreatorFunded) && (
+          <PrizeHeroV2
+            prizeSol={prizePotSOL}
+            entryFeeSol={entryFeeSOL ? Number(entryFeeSOL) : 0}
+            playerCount={gameData.player_count}
+            maxPlayers={gameData.max_players ?? null}
+            maxWinners={gameData.max_winners}
+            prizeSplitBps={gameData.prize_split_bps ?? []}
+            isCreatorFunded={isCreatorFunded}
+            isFree={!isPaid}
+            countdown={gameData.status === 'started' && countdown ? countdown : (gameData.status === 'active' ? expiryLabel : null)}
+            countdownLabel={gameData.status === 'started' ? 'TIME LEFT' : 'CLOSES IN'}
+          />
+        )}
+
+        {isCreatorFunded && !isFunded && (
+          <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider bg-amber-400/10 border border-amber-400/20 text-amber-400">
+            <span>Awaiting Creator Funding</span>
+          </div>
+        )}
+
+        {/* \u2500\u2500 YOU HAVEN'T PLAYED callout (cyan dashed, per 3:10am screenshot) \u2500\u2500 */}
+        {gameData.status === 'active' && !hasEntered && !isCreator && (
+          <div
+            className="rounded-xl px-4 py-3 mb-6 flex items-center justify-between gap-3"
+            style={{
+              background: 'rgba(56,189,248,0.06)',
+              border: '1.5px dashed rgba(56,189,248,0.45)',
+            }}
+          >
+            <div className="min-w-0">
+              <p className="text-[#38BDF8] font-black italic uppercase tracking-[0.18em] text-[10px] sm:text-[11px]" style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}>
+                You haven't played
+              </p>
+              <p className="text-zinc-400 text-[11px] sm:text-xs font-bold italic mt-0.5">
+                {gameData.question_count} Q's \u00b7 {gameData.time_limit_seconds}s each
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* \u2500\u2500 3-COL COMPACT STATS V3 (PLAYED / ENTRIES / ENTRY FEE per
+            decision aligned with native commit 1B 2026-06-05) \u2500\u2500 */}
+        {(isPaid || isCreatorFunded) && (
+          <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 mb-6 grid grid-cols-3 gap-3">
+            <div className="text-center">
+              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Played</span>
+              <span className="text-white text-base sm:text-lg font-[1000] italic tabular-nums">{gameData.player_count}</span>
+            </div>
+            <div className="text-center border-x border-white/5">
+              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Entries</span>
+              <span className="text-white text-base sm:text-lg font-[1000] italic">
+                1<span className="text-xs">\u00d7</span>
+              </span>
+              <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest block mt-0.5">per player</span>
+            </div>
+            <div className="text-center">
+              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Entry Fee</span>
+              <span className={`text-base sm:text-lg font-[1000] italic ${isCreatorFunded || !isPaid ? 'text-[#14F195]' : 'text-[#FFD700]'}`}>
+                {isCreatorFunded || !isPaid ? 'FREE' : `${entryFeeSOL} SOL`}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Winner Hero Card — shown for finalized paid games with at least one winner */}
         {isPaid && gameData.status === 'finalized' && gameData.winner_wallets && gameData.winner_wallets.length > 0 && (
@@ -910,23 +1097,9 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           )}
         </div>
 
-        {/* Game Details (below CTA) */}
-        {isPaid && prizeBreakdown.length > 0 && (
-          <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 md:p-6 mb-4">
-            <p className="text-zinc-600 text-[8px] font-black uppercase tracking-widest mb-2">Prize Split (Top {gameData.max_winners})</p>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-              {prizeBreakdown.map((p) => (
-                <div key={p.rank} className="bg-white/[0.03] border border-white/5 rounded-lg p-2 text-center">
-                  <span className={`text-[10px] font-black block ${p.rank === 1 ? 'text-[#38BDF8]' : 'text-zinc-400'}`}>
-                    #{p.rank} ({p.pct})
-                  </span>
-                  <span className="text-white text-xs font-[1000] italic">{p.sol.toFixed(3)}</span>
-                  <span className="text-zinc-600 text-[8px] block">SOL</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Game Details (below CTA) , standalone Prize Split card DROPPED
+            per Gate 4 decision , the winners-split chips inside PrizeHeroV2
+            own that data now. */}
 
         <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-4 md:p-6 mb-4">
           <div className="grid grid-cols-3 gap-4 mb-4">
@@ -959,24 +1132,57 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           </div>
         </div>
 
-        {/* Leaderboard */}
+        {/* ── LIVE LEADERBOARD (Gate 4 polish: gold/silver/bronze medals +
+            tinted top-N rows + +PAYOUT chip per row + OUT past cutoff) ── */}
         {gameData.leaderboard.length > 0 && (
           <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6 md:p-8">
-            <h3 className="text-lg font-[1000] italic text-white uppercase tracking-tighter mb-4">Leaderboard</h3>
+            <div className="flex items-baseline justify-between mb-4">
+              <h3 className="text-lg font-[1000] italic text-white uppercase tracking-tighter">
+                Live Leaderboard
+              </h3>
+              <span className="text-zinc-500 font-black italic uppercase tracking-[0.18em] text-[10px] tabular-nums">
+                {gameData.leaderboard.length} {gameData.leaderboard.length === 1 ? 'ENTRY' : 'ENTRIES'}
+              </span>
+            </div>
             <div className="space-y-2">
               {gameData.leaderboard.map((entry, i) => {
                 const isYou = walletAddress && entry.wallet_address === walletAddress;
                 const entryWinnerIdx = (isPaid && gameData.winner_wallets)
                   ? gameData.winner_wallets.indexOf(entry.wallet_address)
                   : -1;
-                const prizeAmount = entryWinnerIdx >= 0 ? (gameData.winner_amounts?.[entryWinnerIdx] ?? 0) / 1e9 : 0;
+                const finalizedPrizeSol = entryWinnerIdx >= 0 ? (gameData.winner_amounts?.[entryWinnerIdx] ?? 0) / 1e9 : 0;
+
+                // Live projection: while game is active/started/completed-not-yet-
+                // finalized, show "if-now" payout using the same prize_split_bps.
+                const isInWinningZone = isPaid && entry.rank <= gameData.max_winners;
+                const splitBps = (gameData.prize_split_bps?.[entry.rank - 1] ?? 0);
+                const livePrizeSol = isInWinningZone && gameData.status !== 'finalized'
+                  ? (prizePotSOL * splitBps) / 10000
+                  : 0;
+                const showLivePrize = isPaid && livePrizeSol > 0 && gameData.status !== 'finalized';
+                const showFinalPrize = isPaid && finalizedPrizeSol > 0 && gameData.status === 'finalized';
+                const isOut = isPaid && !isInWinningZone && gameData.max_winners > 0;
+
+                const medalColor = medalColorForRank(entry.rank);
+                const topNTint = isInWinningZone && entry.rank <= 3 && !isYou;
 
                 return (
                   <div
                     key={entry.wallet_address}
-                    className={`flex items-center gap-3 p-3 rounded-xl transition-all ${isYou ? 'bg-[#38BDF8]/10 border border-[#38BDF8]/20' : 'bg-white/[0.02] border border-white/5'}`}
+                    className="flex items-center gap-3 p-3 rounded-xl transition-all"
+                    style={{
+                      background: isYou
+                        ? 'rgba(56,189,248,0.10)'
+                        : topNTint
+                        ? 'rgba(255,215,0,0.06)'
+                        : 'rgba(255,255,255,0.02)',
+                      border: `1px solid ${isYou ? 'rgba(56,189,248,0.30)' : topNTint ? 'rgba(255,215,0,0.20)' : 'rgba(255,255,255,0.05)'}`,
+                    }}
                   >
-                    <span className={`w-8 text-center font-[1000] italic text-sm ${i < 3 ? 'text-[#38BDF8]' : 'text-zinc-500'}`}>
+                    <span
+                      className="w-8 text-center font-[1000] italic text-base tabular-nums"
+                      style={{ color: medalColor }}
+                    >
                       #{entry.rank}
                     </span>
                     <img
@@ -992,13 +1198,28 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                       </span>
                     </div>
                     <div className="text-right">
-                      <span className="text-[#38BDF8] font-[1000] italic text-sm">{entry.score.toLocaleString()}</span>
+                      <span className="text-[#38BDF8] font-[1000] italic text-sm tabular-nums">{entry.score.toLocaleString()}</span>
                       <span className="text-zinc-600 text-[8px] font-black uppercase block">XP</span>
                     </div>
-                    {isPaid && prizeAmount > 0 && gameData.status === 'finalized' && (
-                      <div className="text-right ml-2">
-                        <span className="text-yellow-400 font-[1000] italic text-xs">{prizeAmount.toFixed(3)}</span>
+                    {showFinalPrize && (
+                      <div className="text-right ml-1 sm:ml-2">
+                        <span className="font-[1000] italic text-xs tabular-nums" style={{ color: MEDAL_GOLD }}>
+                          +{finalizedPrizeSol.toFixed(3)}
+                        </span>
                         <span className="text-zinc-600 text-[8px] font-black uppercase block">SOL</span>
+                      </div>
+                    )}
+                    {showLivePrize && (
+                      <div className="text-right ml-1 sm:ml-2">
+                        <span className="font-[1000] italic text-xs tabular-nums" style={{ color: MEDAL_GOLD }}>
+                          +{livePrizeSol.toFixed(3)}
+                        </span>
+                        <span className="text-zinc-600 text-[7px] sm:text-[8px] font-black uppercase block">SOL · IF NOW</span>
+                      </div>
+                    )}
+                    {isOut && !showLivePrize && !showFinalPrize && (
+                      <div className="text-right ml-1 sm:ml-2">
+                        <span className="text-zinc-500 font-[1000] italic text-[10px] uppercase tracking-wider">Out</span>
                       </div>
                     )}
                     {entry.is_seeker_verified && (
@@ -1008,6 +1229,43 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                 );
               })}
             </div>
+
+            {/* JOINED FOOTER pill , 3-variant copy per decision C */}
+            {hasEntered && (gameData.status === 'active' || gameData.status === 'started') && (() => {
+              const myEntry = gameData.leaderboard.find((e) => e.wallet_address === walletAddress);
+              const myRank = myEntry?.rank;
+              const inWinZone = isPaid && myRank != null && myRank <= gameData.max_winners;
+              const notYetRanked = myRank == null;
+              let line2: string;
+              if (notYetRanked) {
+                line2 = "Play your attempts before the timer ends.";
+              } else if (inWinZone) {
+                line2 = "You're in the winning zone. Hold your spot until the timer ends.";
+              } else {
+                line2 = `Climb into the top ${gameData.max_winners} before the timer ends to win.`;
+              }
+              return (
+                <div
+                  className="rounded-xl px-4 py-3 mt-4 flex items-center justify-between gap-3"
+                  style={{
+                    background: 'rgba(56,189,248,0.06)',
+                    border: '1px solid rgba(56,189,248,0.30)',
+                  }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className="text-[#38BDF8] font-black italic uppercase tracking-[0.18em] text-[10px] sm:text-[11px]"
+                      style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+                    >
+                      {notYetRanked ? "You're in" : `You're in · Rank ${myRank} of ${gameData.leaderboard.length}`}
+                    </p>
+                    <p className="text-zinc-400 text-[11px] sm:text-xs font-bold italic mt-1 leading-snug">
+                      {line2}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
