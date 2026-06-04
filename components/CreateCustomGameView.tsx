@@ -10,6 +10,7 @@ import {
   fetchGameConfig,
 } from '../src/utils/soltriviaContract';
 import { getJupiterToken, looksLikeMintCA, type JupiterToken } from '../src/utils/jupiterTokens';
+import { useWalletSPL } from '../src/hooks/useWalletSPL';
 import {
   listDrafts,
   saveDraft as saveDraftToStorage,
@@ -139,6 +140,15 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
       });
     return () => { cancelled = true; };
   }, [customSplMint]);
+
+  // Wallet SPL holdings (only fetched when an SPL sub-picker is active — saves
+  // a Helius proxy call for SOL/Free/Creator-SOL paths). Passing null disables
+  // the hook's network request.
+  const isSplSubPickActive = (gameType === 'players_fund' && playerFundTokenType === 'spl')
+    || (gameType === 'creator_funds' && creatorPrizeType === 'spl');
+  const { assets: walletSplAssets, status: walletSplStatus } = useWalletSPL(
+    isSplSubPickActive && publicKey ? publicKey.toBase58() : null,
+  );
 
   // Resolve the picked token from the (gameType, sub-pick) pair. Returns null
   // for SOL games / free games / NFT games (NFT is handled via selectedNft).
@@ -1126,19 +1136,77 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
               )}
 
               {/* Custom SPL mint input + Jupiter auto-resolve (visible when EITHER
-                  sub-picker is set to 'spl'). Manual fallback for unverified
-                  tokens only renders if Jupiter doesn't know the mint. */}
-              {((gameType === 'players_fund' && playerFundTokenType === 'spl') ||
-                (gameType === 'creator_funds' && creatorPrizeType === 'spl')) && (
-                <div className="mt-3 rounded-xl bg-white/[0.03] border border-white/5 p-3 space-y-2">
-                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block">SPL Token Mint</label>
-                  <input
-                    type="text"
-                    value={customSplMint}
-                    onChange={(e) => setCustomSplMint(e.target.value.trim())}
-                    placeholder="Paste mint address (e.g. DezX...BONK)"
-                    className="w-full min-h-[44px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white font-mono text-xs placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
-                  />
+                  sub-picker is set to 'spl'). Wallet holdings list above the
+                  paste input so the user can one-tap fill from their own bag.
+                  Manual fallback for unverified tokens only renders if Jupiter
+                  doesn't know the mint. */}
+              {isSplSubPickActive && (
+                <div className="mt-3 rounded-xl bg-white/[0.03] border border-white/5 p-3 space-y-3">
+                  {/* WALLET HOLDINGS LIST , click to auto-fill */}
+                  <div>
+                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Tokens in Your Wallet</label>
+                    {!publicKey ? (
+                      <p className="text-zinc-600 text-[10px] italic">Connect your wallet to see your SPL tokens.</p>
+                    ) : walletSplStatus === 'loading' ? (
+                      <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-bold">
+                        <div className="w-3 h-3 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin" />
+                        Loading your tokens...
+                      </div>
+                    ) : walletSplStatus === 'error' ? (
+                      <p className="text-amber-400 text-[10px]">Couldn't load wallet tokens. Paste a mint below instead.</p>
+                    ) : walletSplAssets.length === 0 ? (
+                      <p className="text-zinc-600 text-[10px] italic">No SPL tokens in wallet , paste a mint below.</p>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto -mx-1 pr-1 space-y-1">
+                        {walletSplAssets.map((a) => {
+                          const isSelected = customSplMint === a.mint;
+                          return (
+                            <button
+                              key={a.mint}
+                              onClick={() => setCustomSplMint(a.mint)}
+                              className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-all text-left ${
+                                isSelected
+                                  ? 'bg-[#38BDF8]/15 border border-[#38BDF8]/40'
+                                  : 'bg-white/[0.03] border border-white/5 hover:bg-white/[0.07] hover:border-white/10'
+                              }`}
+                            >
+                              {a.logo ? (
+                                <img src={a.logo} alt="" className="w-7 h-7 rounded-full bg-white/5 shrink-0" />
+                              ) : (
+                                <div
+                                  className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center font-[1000] italic text-[10px] text-white shrink-0"
+                                  style={a.tint ? { background: a.tint } : undefined}
+                                >
+                                  {a.symbol.slice(0, 2)}
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-1.5">
+                                  <span className="text-white font-[1000] italic text-xs">{a.symbol}</span>
+                                  <span className="text-zinc-600 text-[9px] truncate">{a.name}</span>
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className="text-white text-[10px] font-bold tabular-nums">{a.balance}</div>
+                                {a.usd && <div className="text-zinc-600 text-[8px] tabular-nums">{a.usd}</div>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t border-white/5 pt-3">
+                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Or Enter Contract Address</label>
+                    <input
+                      type="text"
+                      value={customSplMint}
+                      onChange={(e) => setCustomSplMint(e.target.value.trim())}
+                      placeholder="Paste mint address (e.g. DezX...BONK)"
+                      className="w-full min-h-[44px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white font-mono text-xs placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
+                    />
+                  </div>
 
                   {jupiterLoading && (
                     <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-bold">
