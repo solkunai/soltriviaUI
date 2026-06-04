@@ -1879,6 +1879,9 @@ export interface CreateCustomGameParams {
   tokenDecimals?: number;
   tokenSymbol?: string;
   tokenProgram?: string;
+  // v2.1 admin-only: marks game as "Featured by Sol Trivia". EF v41+ verifies
+  // walletAddress is in the admin allowlist before honoring this flag.
+  isFeatured?: boolean;
 }
 
 export interface CreateCustomGameResponse {

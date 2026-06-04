@@ -17,17 +17,19 @@ interface Props {
 type Tab = 'JOIN' | 'MY GAMES' | 'ENDED';
 
 // Canonical free always-on official games. Slugs match the custom_games rows
-// created server-side; total_plays + clickability come from real data.
-// Canonical roster per [[project-official-custom-games]] (locked 4 games):
-// degen crypto CT, current events, NFT topic, sports. Native matches; web
-// previously drifted with 5 (added ct-lore + memecoins + wrong NFT slug)
-// which would have shown different OFFICIAL games per platform. Aligned now.
-const OFFICIAL_TOPICS = [
-  { slug: 'official-degen-ct', name: 'Degen Crypto CT', blurb: 'Crypto Twitter drama, legends, ticker chaos' },
-  { slug: 'official-current-events', name: 'Current Events', blurb: 'Biggest crypto + tech news' },
-  { slug: 'official-nft-topic', name: 'NFT Topic', blurb: 'Collections, floors, mint mechanics' },
-  { slug: 'official-sports', name: 'Sports', blurb: 'Broad sports trivia' },
-];
+// Featured strip is now driven by custom_games.is_featured = true (admin-only,
+// EF-enforced). v2.1 dropped the hardcoded OFFICIAL_TOPICS slug list in favor
+// of the is_featured boolean column so admin can pick any slug + toggle
+// featured on/off via the wizard. Cards render the real game name + plays.
+type FeaturedGame = {
+  slug: string;
+  name: string;
+  plays: number;
+  status: string;
+  entryFeeLamports: number;
+  expiresAt: string | null;
+  prizeModel: string;
+};
 
 // Display shape the room grid renders. Mapped from custom_games rows.
 type RoomRow = {
@@ -72,8 +74,8 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
   const [joinable, setJoinable] = useState<RoomRow[]>([]);
   const [myGames, setMyGames] = useState<RoomRow[]>([]);
   const [ended, setEnded] = useState<RoomRow[]>([]);
-  // Real official games keyed by slug → { plays, exists }. Drives the strip.
-  const [officialBySlug, setOfficialBySlug] = useState<Record<string, { plays: number }>>({});
+  // Featured-by-Sol-Trivia games (admin-curated). Drives the swipeable strip.
+  const [featuredGames, setFeaturedGames] = useState<FeaturedGame[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -102,16 +104,24 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
             .limit(20),
           supabase
             .from('custom_games')
-            .select('slug, total_plays')
-            .in('slug', OFFICIAL_TOPICS.map((t) => t.slug)),
+            .select('slug, name, total_plays, status, entry_fee_lamports, expires_at, prize_model')
+            .eq('is_featured', true)
+            .in('status', ['active', 'started'])
+            .order('created_at', { ascending: false })
+            .limit(10),
         ]);
         if (!mounted) return;
 
-        const officialMap: Record<string, { plays: number }> = {};
-        for (const g of (officialRes.data ?? []) as any[]) {
-          officialMap[g.slug] = { plays: g.total_plays ?? 0 };
-        }
-        setOfficialBySlug(officialMap);
+        const featured: FeaturedGame[] = ((officialRes.data ?? []) as any[]).map((g) => ({
+          slug: g.slug,
+          name: g.name ?? 'Featured Game',
+          plays: g.total_plays ?? 0,
+          status: g.status ?? 'active',
+          entryFeeLamports: g.entry_fee_lamports ?? 0,
+          expiresAt: g.expires_at ?? null,
+          prizeModel: g.prize_model ?? 'free',
+        }));
+        setFeaturedGames(featured);
 
         const toRoom = (g: any, isEnded = false): RoomRow => ({
           slug: g.slug ?? '',
@@ -128,9 +138,14 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
           nftStandard: g.nft_standard ?? null,
         });
 
-        // Official games live in the FEATURED strip only — keep them out of
-        // the community JOIN / MY GAMES / ENDED lists.
-        const isOfficial = (g: any) => String(g.slug ?? '').startsWith('official-');
+        // Featured games live in the FEATURED strip only — keep them out of
+        // the community JOIN / MY GAMES / ENDED lists. is_featured is the source
+        // of truth (admin-curated); slug-prefix legacy check kept as a fallback
+        // until any pre-migration "official-*" rows are cleared.
+        const featuredSlugSet = new Set(featured.map((f) => f.slug));
+        const isOfficial = (g: any) =>
+          featuredSlugSet.has(String(g.slug ?? '')) ||
+          String(g.slug ?? '').startsWith('official-');
         const activeRows = (activeRes.data ?? []).filter((g: any) => !isOfficial(g));
         const endedRows = (endedRes.data ?? []).filter((g: any) => !isOfficial(g));
 
@@ -298,28 +313,36 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
             paddingRight: isMobile ? 16 : 0,
           } as React.CSSProperties}
         >
-          {OFFICIAL_TOPICS.map((r) => {
-            const live = officialBySlug[r.slug];
-            const exists = !!live;
+          {featuredGames.length === 0 && (
+            <div
+              className="rounded-xl text-zinc-500 text-[11px] italic"
+              style={{
+                background: 'rgba(255,215,0,0.04)',
+                border: '1.5px dashed rgba(255,215,0,0.25)',
+                padding: '20px 16px',
+                width: isMobile ? '78%' : '100%',
+                flex: '0 0 auto',
+              }}
+            >
+              No featured games yet , the founder will drop some soon.
+            </div>
+          )}
+          {featuredGames.map((g) => {
+            const entryLabel = g.entryFeeLamports > 0
+              ? `${(g.entryFeeLamports / SOL).toFixed(g.entryFeeLamports / SOL >= 1 ? 2 : 3)} SOL`
+              : 'FREE';
             return (
               <button
-                key={r.slug}
-                onClick={() => exists && onView?.(r.slug)}
-                disabled={!exists}
+                key={g.slug}
+                onClick={() => onView?.(g.slug)}
                 className="rounded-xl text-left active:opacity-90"
                 style={{
                   background: 'rgba(255,215,0,0.06)',
                   border: '1.5px solid rgba(255,215,0,0.4)',
                   padding: '12px 14px',
-                  cursor: exists ? 'pointer' : 'default',
+                  cursor: 'pointer',
                   color: '#fff',
-                  opacity: exists ? 1 : 0.55,
-                  // Carousel sizing: mobile reveals one full card with the next
-                  // peeking (~78% viewport); desktop fits all 5 visible with
-                  // even spacing (no scroll needed in practice but gracefully
-                  // supports future additions).
                   flex: '0 0 auto',
-                  // 4-card layout: 3 gaps × 10px = 30px subtracted.
                   width: isMobile ? '78%' : 'calc((100% - 30px) / 4)',
                   minWidth: isMobile ? 220 : 160,
                   scrollSnapAlign: 'start',
@@ -329,19 +352,19 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
                   className="font-black italic uppercase flex items-center gap-1"
                   style={{ fontSize: 8, color: '#FFD700', letterSpacing: '0.18em' }}
                 >
-                  ★ {exists ? 'FREE' : 'SOON'}
+                  ★ {entryLabel}
                 </div>
-                <div className="font-black italic uppercase mt-2" style={{ fontSize: 14, letterSpacing: '-0.01em' }}>
-                  {r.name}
-                </div>
-                <div style={{ fontSize: 10, color: '#d4d4d8', marginTop: 4, lineHeight: 1.3 }}>
-                  {r.blurb}
+                <div
+                  className="font-black italic uppercase mt-2"
+                  style={{ fontSize: 14, letterSpacing: '-0.01em' }}
+                >
+                  {g.name}
                 </div>
                 <div
                   className="font-black italic uppercase mt-3"
                   style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.14em', fontVariantNumeric: 'tabular-nums' }}
                 >
-                  {exists ? `${live.plays.toLocaleString()} PLAYS` : 'COMING SOON'}
+                  {g.plays.toLocaleString()} PLAYS · {g.status.toUpperCase()}
                 </div>
               </button>
             );

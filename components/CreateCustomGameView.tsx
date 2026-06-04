@@ -11,6 +11,7 @@ import {
 } from '../src/utils/soltriviaContract';
 import { getJupiterToken, looksLikeMintCA, type JupiterToken } from '../src/utils/jupiterTokens';
 import { useWalletSPL } from '../src/hooks/useWalletSPL';
+import { isAdminWallet } from '../src/utils/admin';
 import {
   listDrafts,
   saveDraft as saveDraftToStorage,
@@ -90,6 +91,12 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   // additionally supports NFT. The legacy `prizeModel` is derived so downstream
   // submission stays unchanged for SOL paths.
   const [gameType, setGameType] = useState<'free' | 'players_fund' | 'creator_funds'>('free');
+
+  // Admin-only "Featured by Sol Trivia" toggle. Only visible + togglable when
+  // the connected wallet is in the admin allowlist (src/utils/admin.ts).
+  // Server-side double-checked in create-custom-game EF v41+.
+  const isAdmin = isAdminWallet(publicKey?.toBase58());
+  const [isFeatured, setIsFeatured] = useState(false);
   const [playerFundTokenType, setPlayerFundTokenType] = useState<'sol' | 'usdc' | 'spl'>('sol');
   const [creatorPrizeType, setCreatorPrizeType] = useState<'sol' | 'usdc' | 'nft' | 'spl'>('sol');
   // SPL token resolution via Jupiter: user pastes a mint address, we auto-fetch
@@ -686,6 +693,12 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
         contentDisclaimerAccepted: true,
       };
 
+      // Admin-only "Featured by Sol Trivia" flag. EF v41+ rejects this from
+      // non-admin wallets; the toggle is hidden on the client too.
+      if (isAdmin && isFeatured) {
+        params.isFeatured = true;
+      }
+
       // Add prize pool fields for paid games
       if (isPaid) {
         params.prizeModel = isCreatorFunded ? 'creator_funded' : 'player_funded';
@@ -931,6 +944,58 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
         {step === 'settings' && (
           <div className="space-y-6">
             <h2 className="text-2xl md:text-4xl font-[1000] italic text-white uppercase tracking-tighter">Game Settings</h2>
+
+            {/* Admin-only: FEATURED BY SOL TRIVIA toggle. Shown only when the
+                connected wallet is in the allowlist. Server-side double-checked
+                in create-custom-game EF v41+. */}
+            {isAdmin && (
+              <div
+                className="rounded-xl p-4 flex items-center gap-3"
+                style={{
+                  background: 'rgba(255,215,0,0.08)',
+                  border: '1.5px solid rgba(255,215,0,0.40)',
+                }}
+              >
+                <span style={{ color: '#FFD700', fontSize: 20 }}>★</span>
+                <div className="flex-1 min-w-0">
+                  <div
+                    className="font-black italic uppercase"
+                    style={{ color: '#FFD700', fontSize: 13, letterSpacing: '0.04em' }}
+                  >
+                    Featured by Sol Trivia
+                  </div>
+                  <p className="text-zinc-400 text-[10px] mt-0.5">
+                    Render this game in the swipeable Featured strip on the Custom Games hub. Admin-only.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsFeatured(v => !v)}
+                  aria-pressed={isFeatured}
+                  className="shrink-0 transition-colors"
+                  style={{
+                    width: 48,
+                    height: 28,
+                    borderRadius: 999,
+                    background: isFeatured ? '#FFD700' : 'rgba(255,255,255,0.10)',
+                    border: `1.5px solid ${isFeatured ? '#FFD700' : 'rgba(255,255,255,0.15)'}`,
+                    padding: 2,
+                    position: 'relative',
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'block',
+                      width: 20,
+                      height: 20,
+                      borderRadius: '50%',
+                      background: isFeatured ? '#0a0a0a' : '#ffffff',
+                      transform: `translateX(${isFeatured ? 20 : 0}px)`,
+                      transition: 'transform 120ms ease',
+                    }}
+                  />
+                </button>
+              </div>
+            )}
 
             {/* Game Name */}
             <div>
