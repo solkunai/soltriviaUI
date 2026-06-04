@@ -1864,13 +1864,21 @@ export interface CreateCustomGameParams {
   }>;
   contentDisclaimerAccepted: boolean;
   // Prize pool fields
-  prizeModel?: 'free' | 'player_funded' | 'creator_funded';
+  prizeModel?: 'free' | 'player_funded' | 'creator_funded' | 'nft';
   entryFeeLamports?: number;
   maxPlayers?: number;
   gameDurationMinutes?: number;
   maxWinners?: number;
   creatorDepositLamports?: number;
   bannerUrl?: string;
+  // v2.1 multi-token SPL custom games. When tokenMint is provided AND prizeModel
+  // is player_funded or creator_funded, the EF dispatches an SPL create ix
+  // instead of SOL. entryFeeLamports/creatorDepositLamports now carry the
+  // token's base units (column name kept for back-compat across the API).
+  tokenMint?: string;
+  tokenDecimals?: number;
+  tokenSymbol?: string;
+  tokenProgram?: string;
 }
 
 export interface CreateCustomGameResponse {
@@ -1937,6 +1945,19 @@ export interface CustomGameData {
   winner_amounts: number[] | null;
   player_has_entered: boolean;
   banner_url: string | null;
+  // v2.1 multi-token SPL custom games. NULL across all three = SOL game.
+  token_mint?: string | null;
+  token_decimals?: number | null;
+  token_symbol?: string | null;
+  // v2.1 RECENT PLAYERS strip (added in get-custom-game v30)
+  recent_entries?: Array<{
+    wallet_address: string;
+    username: string;
+    avatar_url: string | null;
+    score: number | null;
+    joined_at: string;
+    finished_at: string | null;
+  }>;
   leaderboard: Array<{
     rank: number;
     wallet_address: string;

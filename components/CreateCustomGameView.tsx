@@ -4,6 +4,7 @@ import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } fr
 import { createCustomGame, recordCustomGameFunding, efPost } from '../src/utils/api';
 import {
   buildFundCustomGameIx,
+  buildFundCustomGameSplIx,
   buildCreateCustomGameNftIx,
   buildCreateCustomGameTmPnftIx,
   fetchGameConfig,
@@ -73,7 +74,43 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   const [timeLimit, setTimeLimit] = useState<number>(15);
 
   // Prize Pool
-  const [prizeModel, setPrizeModel] = useState<'free' | 'player_funded' | 'creator_funded' | 'nft_prize'>('free');
+  // Top-level game type the user picks first. Both Players Fund and Creator
+  // Funds fan out to a token sub-picker (SOL / USDC / SPL). Creator Funds
+  // additionally supports NFT. The legacy `prizeModel` is derived so downstream
+  // submission stays unchanged for SOL paths.
+  const [gameType, setGameType] = useState<'free' | 'players_fund' | 'creator_funds'>('free');
+  const [playerFundTokenType, setPlayerFundTokenType] = useState<'sol' | 'usdc' | 'spl'>('sol');
+  const [creatorPrizeType, setCreatorPrizeType] = useState<'sol' | 'usdc' | 'nft' | 'spl'>('sol');
+  // User-pasted SPL mint info (used when EITHER sub-picker is set to 'spl').
+  const [customSplMint, setCustomSplMint] = useState('');
+  const [customSplDecimals, setCustomSplDecimals] = useState<number>(6);
+  const [customSplSymbol, setCustomSplSymbol] = useState('');
+
+  // Mainnet USDC. Decimals are fixed per token; locked here so we don't depend
+  // on a network call. Devnet equivalent (for future testing): 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU.
+  const USDC_MAINNET_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+  // Resolve the picked token from the (gameType, sub-pick) pair. Returns null
+  // for SOL games / free games / NFT games (NFT is handled via selectedNft).
+  // When non-null, the EF dispatches the SPL ix path.
+  type SelectedToken = { mint: string; decimals: number; symbol: string } | null;
+  const selectedToken: SelectedToken = (() => {
+    const pick = gameType === 'players_fund' ? playerFundTokenType
+      : gameType === 'creator_funds' ? creatorPrizeType
+      : 'sol';
+    if (pick === 'usdc') return { mint: USDC_MAINNET_MINT, decimals: 6, symbol: 'USDC' };
+    if (pick === 'spl') return customSplMint
+      ? { mint: customSplMint.trim(), decimals: customSplDecimals, symbol: customSplSymbol.trim() || customSplMint.slice(0, 4) }
+      : null;
+    return null;
+  })();
+
+  const prizeModel: 'free' | 'player_funded' | 'creator_funded' | 'nft_prize' =
+    gameType === 'free' ? 'free'
+    : gameType === 'players_fund' ? 'player_funded'
+    : creatorPrizeType === 'nft' ? 'nft_prize'
+    : 'creator_funded';
+
   const [entryFeeLamports, setEntryFeeLamports] = useState<number>(CUSTOM_GAME_ENTRY_FEE_PRESETS[1]); // 0.1 SOL default
   const [customEntryFee, setCustomEntryFee] = useState('');
   const [maxPlayers, setMaxPlayers] = useState<number>(10);
@@ -97,18 +134,29 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   // Valid round counts for selected question count
   const validRounds = useMemo(() => VALID_ROUND_COUNTS[questionCount] || [1], [questionCount]);
 
-  // Prize calculations
+  // Prize calculations. For SPL games, all amounts are in the selected token's
+  // base units (10^decimals). For SOL games, base units == lamports (10^9).
   const isPaid = prizeModel === 'player_funded' || prizeModel === 'creator_funded';
   const isCreatorFunded = prizeModel === 'creator_funded';
   const isNftPrize = prizeModel === 'nft_prize';
-  const activeEntryFee = customEntryFee ? Math.round(parseFloat(customEntryFee) * 1_000_000_000) : entryFeeLamports;
-  const activeCreatorDeposit = customCreatorDeposit ? Math.round(parseFloat(customCreatorDeposit) * 1_000_000_000) : creatorDepositLamports;
+  const isSplGame = isPaid && !!selectedToken;
+  const activeDecimals = selectedToken?.decimals ?? 9;
+  const activeSymbol = selectedToken?.symbol ?? 'SOL';
+  const baseUnitMultiplier = Math.pow(10, activeDecimals);
+  const activeEntryFee = customEntryFee
+    ? Math.round(parseFloat(customEntryFee) * baseUnitMultiplier)
+    : (isSplGame ? 0 : entryFeeLamports);
+  const activeCreatorDeposit = customCreatorDeposit
+    ? Math.round(parseFloat(customCreatorDeposit) * baseUnitMultiplier)
+    : (isSplGame ? 0 : creatorDepositLamports);
   const estimatedPot = isCreatorFunded ? activeCreatorDeposit : (isPaid ? activeEntryFee * maxPlayers : 0);
   // Contract takes 0% from creator-funded games — winners receive the full deposit.
   const platformCut = isCreatorFunded ? 0 : Math.floor(estimatedPot * CUSTOM_GAME_PLATFORM_CUT_BPS / 10000);
   const prizePot = estimatedPot - platformCut;
   const winnerSplitBps = CUSTOM_GAME_WINNER_SPLITS[maxWinners];
   const winnerAmounts = winnerSplitBps.filter((b: number) => b > 0).map((b: number) => Math.floor(prizePot * b / 10000));
+  // Format a base-units amount back to a human-readable string in the selected token.
+  const formatAmount = (baseUnits: number): string => (baseUnits / baseUnitMultiplier).toFixed(Math.min(activeDecimals, 4));
 
   // Reset round count if invalid for new question count
   const handleQuestionCountChange = (count: 5 | 10 | 15) => {
@@ -130,9 +178,13 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
     const cleaned = val.replace(/[^0-9.]/g, '');
     setCustomEntryFee(cleaned);
   };
+  // SOL min/max only applies to SOL games. SPL games just require positive amount
+  // (USD-pegged limits would need a price oracle, deferred).
   const isCustomFeeValid = !customEntryFee || (
-    parseFloat(customEntryFee) >= CUSTOM_GAME_MIN_ENTRY_FEE / 1_000_000_000 &&
-    parseFloat(customEntryFee) <= CUSTOM_GAME_MAX_ENTRY_FEE / 1_000_000_000
+    isSplGame
+      ? parseFloat(customEntryFee) > 0
+      : (parseFloat(customEntryFee) >= CUSTOM_GAME_MIN_ENTRY_FEE / 1_000_000_000 &&
+         parseFloat(customEntryFee) <= CUSTOM_GAME_MAX_ENTRY_FEE / 1_000_000_000)
   );
 
   // Creator deposit validation
@@ -141,8 +193,10 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
     setCustomCreatorDeposit(cleaned);
   };
   const isCustomDepositValid = !customCreatorDeposit || (
-    parseFloat(customCreatorDeposit) >= CREATOR_FUNDED_MIN_PRIZE_LAMPORTS / 1_000_000_000 &&
-    parseFloat(customCreatorDeposit) <= CREATOR_FUNDED_MAX_PRIZE_LAMPORTS / 1_000_000_000
+    isSplGame
+      ? parseFloat(customCreatorDeposit) > 0
+      : (parseFloat(customCreatorDeposit) >= CREATOR_FUNDED_MIN_PRIZE_LAMPORTS / 1_000_000_000 &&
+         parseFloat(customCreatorDeposit) <= CREATOR_FUNDED_MAX_PRIZE_LAMPORTS / 1_000_000_000)
   );
 
   // Navigate: settings → prize
@@ -162,12 +216,47 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   // Navigate: prize → questions
   const goToQuestions = () => {
     if (isPaid) {
+      // SPL games: validate the SPL token info before checking amounts.
+      if (isSplGame) {
+        if (!selectedToken?.mint || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(selectedToken.mint)) {
+          setError('Paste a valid SPL token mint address');
+          return;
+        }
+        if (activeDecimals < 0 || activeDecimals > 9) {
+          setError('Token decimals must be between 0 and 9');
+          return;
+        }
+      }
       if (isCreatorFunded) {
-        if (!isCustomDepositValid) { setError('Prize deposit must be between 0.05 and 100 SOL'); return; }
-        if (activeCreatorDeposit < CREATOR_FUNDED_MIN_PRIZE_LAMPORTS) { setError('Minimum prize deposit is 0.05 SOL'); return; }
+        if (!isCustomDepositValid) {
+          setError(isSplGame
+            ? `Prize deposit must be > 0 ${activeSymbol}`
+            : 'Prize deposit must be between 0.05 and 100 SOL');
+          return;
+        }
+        if (!isSplGame && activeCreatorDeposit < CREATOR_FUNDED_MIN_PRIZE_LAMPORTS) {
+          setError('Minimum prize deposit is 0.05 SOL');
+          return;
+        }
+        if (isSplGame && activeCreatorDeposit <= 0) {
+          setError(`Enter a creator deposit amount in ${activeSymbol}`);
+          return;
+        }
       } else {
-        if (!isCustomFeeValid) { setError('Entry fee must be between 0.01 and 10 SOL'); return; }
-        if (activeEntryFee < CUSTOM_GAME_MIN_ENTRY_FEE) { setError('Minimum entry fee is 0.01 SOL'); return; }
+        if (!isCustomFeeValid) {
+          setError(isSplGame
+            ? `Entry fee must be > 0 ${activeSymbol}`
+            : 'Entry fee must be between 0.01 and 10 SOL');
+          return;
+        }
+        if (!isSplGame && activeEntryFee < CUSTOM_GAME_MIN_ENTRY_FEE) {
+          setError('Minimum entry fee is 0.01 SOL');
+          return;
+        }
+        if (isSplGame && activeEntryFee <= 0) {
+          setError(`Enter an entry fee amount in ${activeSymbol}`);
+          return;
+        }
       }
       if (maxPlayers < CUSTOM_GAME_MIN_PLAYERS) { setError(`Minimum ${CUSTOM_GAME_MIN_PLAYERS} players`); return; }
     }
@@ -417,6 +506,17 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
         } else {
           params.entryFeeLamports = activeEntryFee;
         }
+        // SPL multi-token: when a non-SOL token is selected, the EF dispatches
+        // create_custom_game_spl instead of create_custom_game. The *_lamports
+        // fields above now hold base units of the selected token.
+        if (isSplGame && selectedToken) {
+          params.tokenMint = selectedToken.mint;
+          params.tokenDecimals = selectedToken.decimals;
+          params.tokenSymbol = selectedToken.symbol;
+          // tokenProgram defaults to classic SPL Token server-side; pass the
+          // Token-2022 program ID explicitly for 2022 mints (none of USDC/BONK
+          // need this today). Future: auto-detect via mint.owner.
+        }
       }
 
       // Upload banner if provided
@@ -436,10 +536,18 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
       // For creator-funded games, immediately chain the prize-pool deposit so the
       // game is fully funded as part of creation. Wallet pops up a second time.
+      // SOL path: buildFundCustomGameIx. SPL path: buildFundCustomGameSplIx.
       if (isCreatorFunded && result.on_chain_game_id != null && activeCreatorDeposit > 0) {
         try {
           const { blockhash: fundBlockhash } = await getRecentBlockhashWithRetry(connection);
-          const fundIx = buildFundCustomGameIx(publicKey, result.on_chain_game_id, activeCreatorDeposit);
+          const fundIx = isSplGame && selectedToken
+            ? buildFundCustomGameSplIx({
+                creator: publicKey,
+                gameId: result.on_chain_game_id,
+                mint: new PublicKey(selectedToken.mint),
+                amount: activeCreatorDeposit,
+              })
+            : buildFundCustomGameIx(publicKey, result.on_chain_game_id, activeCreatorDeposit);
           const fundMessage = new TransactionMessage({
             payerKey: publicKey,
             recentBlockhash: fundBlockhash,
@@ -550,14 +658,49 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
             Back
           </button>
-          <div className="flex gap-2">
-            {ALL_STEPS.map((s, i) => (
-              <div key={s} className={`w-8 h-1 rounded-full transition-all ${step === s ? 'bg-[#38BDF8]' : i < ALL_STEPS.indexOf(step) ? 'bg-[#38BDF8]/40' : 'bg-white/10'}`} />
-            ))}
+          <div className="flex items-center gap-2">
+            {ALL_STEPS.map((s, i) => {
+              const currentIdx = ALL_STEPS.indexOf(step);
+              const isDone = i < currentIdx;
+              const isActive = step === s;
+              return (
+                <div key={s} className="flex items-center gap-2">
+                  <div
+                    className="flex items-center justify-center rounded-md transition-all"
+                    style={{
+                      width: 36,
+                      height: 22,
+                      background: isDone ? 'rgba(56,189,248,0.55)' : isActive ? '#38BDF8' : 'rgba(255,255,255,0.06)',
+                      border: `1px solid ${isDone ? 'rgba(56,189,248,0.7)' : isActive ? '#38BDF8' : 'rgba(255,255,255,0.10)'}`,
+                    }}
+                  >
+                    {isDone ? (
+                      <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                        <path d="M3 7L6 10L11 4" stroke="#0a0a0a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    ) : (
+                      <span
+                        className="font-black italic tabular-nums"
+                        style={{
+                          fontSize: 11,
+                          color: isActive ? '#0a0a0a' : '#71717a',
+                          fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+                          fontWeight: 900,
+                        }}
+                      >
+                        {i + 1}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        <p className="text-[#38BDF8] text-[9px] font-black uppercase tracking-[0.4em] mb-2">Create Custom Game</p>
+        <p className="text-[#38BDF8] text-[9px] font-black uppercase tracking-[0.4em] mb-2">
+          STEP {ALL_STEPS.indexOf(step) + 1} OF {ALL_STEPS.length} · Create Custom Game
+        </p>
 
         {error && (
           <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-4">
@@ -706,37 +849,126 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
             {/* Game Type Toggle */}
             <div>
               <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Game Type</label>
-              <div className="flex gap-2 flex-wrap">
+              <div className="grid grid-cols-3 gap-2">
                 <button
-                  onClick={() => setPrizeModel('free')}
-                  className={`flex-1 min-w-[120px] min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'free' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  onClick={() => setGameType('free')}
+                  className={`min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${gameType === 'free' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
                 >
                   Free
                 </button>
                 <button
-                  onClick={() => setPrizeModel('player_funded')}
-                  className={`flex-1 min-w-[120px] min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'player_funded' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  onClick={() => setGameType('players_fund')}
+                  className={`min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${gameType === 'players_fund' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
                 >
-                  Player-Funded
+                  Players Fund
                 </button>
                 <button
-                  onClick={() => setPrizeModel('creator_funded')}
-                  className={`flex-1 min-w-[120px] min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'creator_funded' ? 'bg-amber-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  onClick={() => setGameType('creator_funds')}
+                  className={`min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${gameType === 'creator_funds' ? 'bg-amber-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
                 >
-                  Creator-Funded
-                </button>
-                <button
-                  onClick={() => setPrizeModel('nft_prize')}
-                  className={`flex-1 min-w-[120px] min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${prizeModel === 'nft_prize' ? 'bg-purple-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
-                >
-                  NFT Prize
+                  Creator Funds
                 </button>
               </div>
-              <p className="text-zinc-600 text-[10px] mt-1">
-                {prizeModel === 'free' ? 'No entry fee. Players compete for XP and bragging rights.'
-                  : prizeModel === 'player_funded' ? 'Players pay an entry fee. Winners split the prize pool.'
-                  : prizeModel === 'creator_funded' ? 'You deposit the prize pool. Players join for 0.0025 SOL. Winners claim from your deposit.'
-                  : 'You escrow one of your NFTs as the prize. Single winner takes it. Free for players to enter.'}
+
+              {/* Players-Fund sub-picker: SOL / USDC / SPL (no NFT — players can't escrow NFTs) */}
+              {gameType === 'players_fund' && (
+                <div className="mt-3">
+                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Entry Token</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => setPlayerFundTokenType('sol')}
+                      className={`min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${playerFundTokenType === 'sol' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    >
+                      SOL
+                    </button>
+                    <button
+                      onClick={() => setPlayerFundTokenType('usdc')}
+                      className={`min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${playerFundTokenType === 'usdc' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    >
+                      USDC
+                    </button>
+                    <button
+                      onClick={() => setPlayerFundTokenType('spl')}
+                      className={`min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${playerFundTokenType === 'spl' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    >
+                      SPL
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Creator-Funds sub-picker: SOL / USDC / NFT / SPL */}
+              {gameType === 'creator_funds' && (
+                <div className="mt-3">
+                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Prize Type</label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <button
+                      onClick={() => setCreatorPrizeType('sol')}
+                      className={`min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${creatorPrizeType === 'sol' ? 'bg-amber-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    >
+                      SOL
+                    </button>
+                    <button
+                      onClick={() => setCreatorPrizeType('usdc')}
+                      className={`min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${creatorPrizeType === 'usdc' ? 'bg-amber-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    >
+                      USDC
+                    </button>
+                    <button
+                      onClick={() => setCreatorPrizeType('nft')}
+                      className={`min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${creatorPrizeType === 'nft' ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    >
+                      NFT
+                    </button>
+                    <button
+                      onClick={() => setCreatorPrizeType('spl')}
+                      className={`min-h-[44px] px-3 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${creatorPrizeType === 'spl' ? 'bg-amber-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    >
+                      SPL
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Custom SPL mint inputs (visible when EITHER sub-picker is set to 'spl') */}
+              {((gameType === 'players_fund' && playerFundTokenType === 'spl') ||
+                (gameType === 'creator_funds' && creatorPrizeType === 'spl')) && (
+                <div className="mt-3 rounded-xl bg-white/[0.03] border border-white/5 p-3 space-y-2">
+                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block">SPL Token</label>
+                  <input
+                    type="text"
+                    value={customSplMint}
+                    onChange={(e) => setCustomSplMint(e.target.value.trim())}
+                    placeholder="Mint address (paste from Solscan / Birdeye)"
+                    className="w-full min-h-[44px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white font-mono text-xs placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customSplSymbol}
+                      onChange={(e) => setCustomSplSymbol(e.target.value.slice(0, 16).toUpperCase())}
+                      placeholder="Symbol (e.g. BONK)"
+                      className="flex-1 min-h-[40px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white font-bold text-xs placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      max={9}
+                      value={customSplDecimals}
+                      onChange={(e) => setCustomSplDecimals(Math.max(0, Math.min(9, Number(e.target.value) || 0)))}
+                      placeholder="Decimals"
+                      className="w-24 min-h-[40px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white font-bold text-xs placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
+                    />
+                  </div>
+                  <p className="text-zinc-600 text-[9px]">USDC = 6 · BONK = 5 · SOL = 9. Find decimals on Solscan or token's Birdeye page.</p>
+                </div>
+              )}
+
+              <p className="text-zinc-600 text-[10px] mt-2">
+                {gameType === 'free' ? 'No entry fee. Players compete for XP and bragging rights.'
+                  : gameType === 'players_fund' ? `Players pay an entry fee${selectedToken ? ` in ${selectedToken.symbol}` : ' in SOL'}. Winners split the prize pool.`
+                  : creatorPrizeType === 'nft' ? 'You escrow one of your NFTs as the prize. Single winner takes it. Free for players to enter.'
+                  : `You deposit the prize pool${selectedToken ? ` in ${selectedToken.symbol}` : ' in SOL'}. Players join for 0.0025 SOL platform fee. Winners claim from your deposit.`}
               </p>
             </div>
 
@@ -769,58 +1001,72 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
             {isPaid && (
               <>
-                {/* Entry Fee (player-funded only) */}
+                {/* Entry Fee (player-funded only). Presets shown ONLY for SOL games —
+                    SPL/USDC games use a free-form input since the same dollar value
+                    differs wildly across token decimals (0.1 SOL vs 0.1 BONK etc). */}
                 {!isCreatorFunded && (
                   <div>
-                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Entry Fee (SOL)</label>
-                    <div className="flex gap-2 flex-wrap mb-2">
-                      {CUSTOM_GAME_ENTRY_FEE_PRESETS.map((fee, i) => (
-                        <button
-                          key={fee}
-                          onClick={() => { setEntryFeeLamports(fee); setCustomEntryFee(''); }}
-                          className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customEntryFee && entryFeeLamports === fee ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
-                        >
-                          {CUSTOM_GAME_ENTRY_FEE_LABELS[i]}
-                        </button>
-                      ))}
-                    </div>
+                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Entry Fee ({activeSymbol})</label>
+                    {!isSplGame && (
+                      <div className="flex gap-2 flex-wrap mb-2">
+                        {CUSTOM_GAME_ENTRY_FEE_PRESETS.map((fee, i) => (
+                          <button
+                            key={fee}
+                            onClick={() => { setEntryFeeLamports(fee); setCustomEntryFee(''); }}
+                            className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customEntryFee && entryFeeLamports === fee ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                          >
+                            {CUSTOM_GAME_ENTRY_FEE_LABELS[i]}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <input
                       type="text"
                       inputMode="decimal"
                       value={customEntryFee}
                       onChange={(e) => handleCustomFeeChange(e.target.value)}
-                      placeholder="Custom (0.01 - 10 SOL)"
+                      placeholder={isSplGame ? `Amount in ${activeSymbol}` : 'Custom (0.01 - 10 SOL)'}
                       className={`w-full min-h-[44px] px-4 py-3 bg-white/5 border rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none transition-colors ${!isCustomFeeValid ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-[#38BDF8]/40'}`}
                     />
-                    {!isCustomFeeValid && <p className="text-red-400 text-[10px] mt-1">Entry fee must be between 0.01 and 10 SOL</p>}
+                    {!isCustomFeeValid && (
+                      <p className="text-red-400 text-[10px] mt-1">
+                        {isSplGame ? `Entry fee must be greater than 0 ${activeSymbol}` : 'Entry fee must be between 0.01 and 10 SOL'}
+                      </p>
+                    )}
                   </div>
                 )}
 
-                {/* Prize Deposit (creator-funded only) */}
+                {/* Prize Deposit (creator-funded only). Presets SOL-only, same reasoning. */}
                 {isCreatorFunded && (
                   <div>
-                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Prize Pool Deposit (SOL)</label>
-                    <div className="flex gap-2 flex-wrap mb-2">
-                      {CREATOR_FUNDED_PRIZE_PRESETS.map((amt, i) => (
-                        <button
-                          key={amt}
-                          onClick={() => { setCreatorDepositLamports(amt); setCustomCreatorDeposit(''); }}
-                          className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customCreatorDeposit && creatorDepositLamports === amt ? 'bg-amber-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
-                        >
-                          {CREATOR_FUNDED_PRIZE_LABELS[i]}
-                        </button>
-                      ))}
-                    </div>
+                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Prize Pool Deposit ({activeSymbol})</label>
+                    {!isSplGame && (
+                      <div className="flex gap-2 flex-wrap mb-2">
+                        {CREATOR_FUNDED_PRIZE_PRESETS.map((amt, i) => (
+                          <button
+                            key={amt}
+                            onClick={() => { setCreatorDepositLamports(amt); setCustomCreatorDeposit(''); }}
+                            className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!customCreatorDeposit && creatorDepositLamports === amt ? 'bg-amber-500 text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                          >
+                            {CREATOR_FUNDED_PRIZE_LABELS[i]}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <input
                       type="text"
                       inputMode="decimal"
                       value={customCreatorDeposit}
                       onChange={(e) => handleCustomDepositChange(e.target.value)}
-                      placeholder="Custom (0.05 - 100 SOL)"
+                      placeholder={isSplGame ? `Amount in ${activeSymbol}` : 'Custom (0.05 - 100 SOL)'}
                       className={`w-full min-h-[44px] px-4 py-3 bg-white/5 border rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none transition-colors ${!isCustomDepositValid ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-amber-500/40'}`}
                     />
-                    {!isCustomDepositValid && <p className="text-red-400 text-[10px] mt-1">Prize deposit must be between 0.05 and 100 SOL</p>}
-                    <p className="text-zinc-600 text-[10px] mt-1">You deposit this amount when you start the game (after players join). Players join for free (0.0025 SOL platform fee only).</p>
+                    {!isCustomDepositValid && (
+                      <p className="text-red-400 text-[10px] mt-1">
+                        {isSplGame ? `Prize deposit must be greater than 0 ${activeSymbol}` : 'Prize deposit must be between 0.05 and 100 SOL'}
+                      </p>
+                    )}
+                    <p className="text-zinc-600 text-[10px] mt-1">You deposit this {activeSymbol} when you start the game (after players join). Players join for {TXN_FEE_LAMPORTS / 1_000_000_000} SOL platform fee only.</p>
                   </div>
                 )}
 
@@ -883,44 +1129,45 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   </div>
                 </div>
 
-                {/* Prize Calculator */}
+                {/* Prize Calculator. All amounts shown in the selected token's
+                    natural units. Platform fee on entry is always SOL regardless. */}
                 <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 space-y-2">
                   <p className="text-zinc-400 text-[10px] font-black uppercase tracking-wider mb-3">Estimated Prize Breakdown</p>
                   {isCreatorFunded ? (
                     <div className="flex justify-between text-zinc-500 text-xs">
                       <span>Your deposit</span>
-                      <span>{(activeCreatorDeposit / 1_000_000_000).toFixed(2)} SOL</span>
+                      <span>{formatAmount(activeCreatorDeposit)} {activeSymbol}</span>
                     </div>
                   ) : (
                     <div className="flex justify-between text-zinc-500 text-xs">
                       <span>Entry fee</span>
-                      <span>{(activeEntryFee / 1_000_000_000).toFixed(2)} SOL x {maxPlayers} players</span>
+                      <span>{formatAmount(activeEntryFee)} {activeSymbol} x {maxPlayers} players</span>
                     </div>
                   )}
                   <div className="flex justify-between text-zinc-400 text-xs font-bold">
                     <span>Total pot</span>
-                    <span>{(estimatedPot / 1_000_000_000).toFixed(2)} SOL</span>
+                    <span>{formatAmount(estimatedPot)} {activeSymbol}</span>
                   </div>
                   <div className="flex justify-between text-zinc-600 text-[10px]">
-                    <span>Platform cut (10%)</span>
-                    <span>-{(platformCut / 1_000_000_000).toFixed(4)} SOL</span>
+                    <span>Platform cut ({isCreatorFunded ? 0 : 10}%)</span>
+                    <span>-{formatAmount(platformCut)} {activeSymbol}</span>
                   </div>
                   <div className="border-t border-white/5 pt-2 mt-2">
                     <div className="flex justify-between text-[#38BDF8] text-sm font-[1000] italic">
                       <span>Prize pool</span>
-                      <span>{(prizePot / 1_000_000_000).toFixed(2)} SOL</span>
+                      <span>{formatAmount(prizePot)} {activeSymbol}</span>
                     </div>
                   </div>
                   <div className="space-y-1 mt-2">
                     {winnerAmounts.map((amt, i) => (
                       <div key={i} className="flex justify-between text-zinc-400 text-[11px]">
                         <span>{i + 1}{i === 0 ? 'st' : i === 1 ? 'nd' : i === 2 ? 'rd' : 'th'} place ({CUSTOM_GAME_WINNER_SPLIT_LABELS[maxWinners][i]})</span>
-                        <span className="text-white font-bold">{(amt / 1_000_000_000).toFixed(4)} SOL</span>
+                        <span className="text-white font-bold">{formatAmount(amt)} {activeSymbol}</span>
                       </div>
                     ))}
                   </div>
                   {isCreatorFunded ? (
-                    <p className="text-zinc-700 text-[9px] mt-2">Players join for {TXN_FEE_LAMPORTS / 1_000_000_000} SOL platform fee only. You deposit {(activeCreatorDeposit / 1_000_000_000).toFixed(2)} SOL when you start the game.</p>
+                    <p className="text-zinc-700 text-[9px] mt-2">Players join for {TXN_FEE_LAMPORTS / 1_000_000_000} SOL platform fee only. You deposit {formatAmount(activeCreatorDeposit)} {activeSymbol} when you start the game.</p>
                   ) : (
                     <p className="text-zinc-700 text-[9px] mt-2">+ {TXN_FEE_LAMPORTS / 1_000_000_000} SOL platform fee per entry</p>
                   )}

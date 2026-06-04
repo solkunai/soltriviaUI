@@ -51,13 +51,16 @@ function PrizeHeroV2(props: {
   isFree: boolean;
   countdown: string | null;
   countdownLabel: string;
+  /** Token symbol for display. Defaults to SOL for back-compat with pre-v2.1 callers. */
+  tokenSymbol?: string;
 }) {
   const { prizeSol, entryFeeSol, playerCount, maxPlayers, maxWinners, prizeSplitBps, isCreatorFunded, isFree, countdown, countdownLabel } = props;
+  const sym = props.tokenSymbol ?? 'SOL';
   const subtitle = isFree
     ? 'FREE ENTRY · GLORY ONLY'
     : isCreatorFunded
     ? 'CREATOR FUNDED · WINNER TAKES ALL'
-    : `${entryFeeSol.toFixed(3)} SOL ENTRY · ${playerCount}${maxPlayers ? ` OF ${maxPlayers} MAX` : ''}`;
+    : `${entryFeeSol.toFixed(3)} ${sym} ENTRY · ${playerCount}${maxPlayers ? ` OF ${maxPlayers} MAX` : ''}`;
   const winnersChips: Array<{ rank: number; sol: number }> = [];
   for (let i = 0; i < maxWinners; i++) {
     const bps = prizeSplitBps[i] || 0;
@@ -92,7 +95,7 @@ function PrizeHeroV2(props: {
               lineHeight: 1,
             }}
           >
-            {isFree ? '— SOL' : `${prizeSol.toFixed(prizeSol >= 1 ? 2 : 3)} SOL`}
+            {isFree ? `— ${sym}` : `${prizeSol.toFixed(prizeSol >= 1 ? 2 : 3)} ${sym}`}
           </div>
           <div
             className="font-black italic uppercase tracking-[0.16em] text-[10px] sm:text-[11px] text-zinc-400 mt-3"
@@ -145,7 +148,7 @@ function PrizeHeroV2(props: {
                   className="font-black italic tabular-nums text-[11px]"
                   style={{ color: isFirst ? MEDAL_GOLD : '#fff', fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
                 >
-                  {c.sol.toFixed(3)} SOL
+                  {c.sol.toFixed(3)} {sym}
                 </span>
               </div>
             );
@@ -272,6 +275,13 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     };
   }, []);
 
+  // Token-aware display helpers. NULL gameData.token_mint = SOL game; all
+  // *_lamports columns hold base units of whatever token the game uses.
+  const tokenDecimals = gameData?.token_decimals ?? 9;
+  const tokenSymbol = gameData?.token_symbol ?? 'SOL';
+  const baseDivisor = Math.pow(10, tokenDecimals);
+  const formatToken = (baseUnits: number) => (baseUnits / baseDivisor).toFixed(Math.min(tokenDecimals, 4));
+
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
       setCopied(true);
@@ -283,13 +293,13 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     if (!gameData) return;
     const isPlayerFunded = gameData.prize_model === 'player_funded';
     const isCreatorFundedShare = gameData.prize_model === 'creator_funded';
-    const fee = gameData.entry_fee_lamports / 1e9;
-    const creatorPrize = (gameData.creator_deposit_lamports || 0) / 1e9;
+    const fee = formatToken(gameData.entry_fee_lamports);
+    const creatorPrize = formatToken(gameData.creator_deposit_lamports || 0);
     const text = isCreatorFundedShare
-      ? `i'm putting ${creatorPrize} SOL on the line for a trivia game\n\n"${gameData.name}" on @soltrivia_app | FREE to enter, real prizes\n\nthink you're smart enough to win?\n\n${shareUrl}`
+      ? `i'm putting ${creatorPrize} ${tokenSymbol} on the line for a trivia game\n\n"${gameData.name}" on @soltrivia_app | FREE to enter, real prizes\n\nthink you're smart enough to win?\n\n${shareUrl}`
       : isPlayerFunded
-      ? `i just built a trivia game with real SOL on the line\n\n"${gameData.name}" on @soltrivia_app | entry: ${fee} SOL\n\nput your wallet where your brain is, anon\n\n${shareUrl}`
-      : `"${gameData.name}" on @soltrivia_app — free to play, harder than you think\n\nbet you can't beat my score. prove me wrong\n\n${shareUrl}`;
+      ? `i just built a trivia game with real ${tokenSymbol} on the line\n\n"${gameData.name}" on @soltrivia_app | entry: ${fee} ${tokenSymbol}\n\nput your wallet where your brain is, anon\n\n${shareUrl}`
+      : `"${gameData.name}" on @soltrivia_app , free to play, harder than you think\n\nbet you can't beat my score. prove me wrong\n\n${shareUrl}`;
     window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -359,7 +369,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   if ((gameData.is_expired || gameData.status === 'expired') && gameData.status !== 'finalized') {
     const isPaidExpired = gameData.prize_model === 'player_funded' && gameData.entry_fee_lamports > 0;
     const canClaimRefund = isPaidExpired && gameData.player_has_entered && gameData.on_chain_game_id != null && onClaimRefund;
-    const entryRefundSOL = gameData.entry_fee_lamports / 1e9;
+    const entryRefundDisplay = formatToken(gameData.entry_fee_lamports);
 
     // v2.1: NFT prize game expired without finalize. Creator (or anyone, but
     // the contract sends the NFT to the creator) can crank reclaim_custom_nft
@@ -442,14 +452,14 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             </>
           ) : canClaimRefund ? (
             <>
-              <p className="text-zinc-400 text-xs mb-6">You paid {entryRefundSOL} SOL entry. Claim your refund below.</p>
+              <p className="text-zinc-400 text-xs mb-6">You paid {entryRefundDisplay} {tokenSymbol} entry. Claim your refund below.</p>
               <div className="flex flex-col gap-3">
                 <button
                   onClick={handleRefund}
                   disabled={refunding}
                   className="min-h-[48px] px-8 py-3 bg-amber-500 text-black font-[1000] italic uppercase rounded-xl hover:bg-amber-400 transition-all active:scale-[0.98] disabled:opacity-50"
                 >
-                  {refunding ? 'Claiming Refund...' : `Claim Refund (${entryRefundSOL} SOL)`}
+                  {refunding ? 'Claiming Refund...' : `Claim Refund (${entryRefundDisplay} ${tokenSymbol})`}
                 </button>
                 <button onClick={onBack} className="min-h-[44px] px-8 py-3 text-zinc-500 font-black uppercase text-[10px] tracking-wider hover:text-zinc-300 transition-all">
                   Back to Home
@@ -505,12 +515,15 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   const hasInProgress = gameData.player_has_in_progress;
   const canPlay = attemptsUsed < CUSTOM_GAME_MAX_ATTEMPTS || hasInProgress;
   const isReEntry = isPaid && hasEntered && attemptsUsed > 0 && !hasInProgress;
-  const reEntryFeeSOL = isReEntry ? getReEntryFeeLamports(gameData.entry_fee_lamports) / 1e9 : 0;
-  const entryFeeSOL = gameData.entry_fee_lamports / 1e9;
-  const creatorDepositSOL = (gameData.creator_deposit_lamports || 0) / 1e9;
+  // Token-aware display amounts. Variable names kept *SOL for back-compat with
+  // call sites; each holds the human-readable amount in whatever token the
+  // game uses (formatToken() divides by 10^decimals).
+  const reEntryFeeSOL = isReEntry ? Number(formatToken(getReEntryFeeLamports(gameData.entry_fee_lamports))) : 0;
+  const entryFeeSOL = Number(formatToken(gameData.entry_fee_lamports));
+  const creatorDepositSOL = Number(formatToken(gameData.creator_deposit_lamports || 0));
   const prizePotSOL = isCreatorFunded
-    ? (gameData.fund_tx_signature ? (gameData.prize_pot_lamports / 1e9) : (creatorDepositSOL * 0.9))
-    : gameData.prize_pot_lamports / 1e9;
+    ? (gameData.fund_tx_signature ? Number(formatToken(gameData.prize_pot_lamports)) : (creatorDepositSOL * 0.9))
+    : Number(formatToken(gameData.prize_pot_lamports));
   const isFunded = isCreatorFunded && !!gameData.fund_tx_signature;
 
   // Check if current wallet is a winner (includes NFT games — they also use winner_wallets)
@@ -518,7 +531,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     ? gameData.winner_wallets.indexOf(walletAddress ?? '')
     : -1;
   const isWinner = winnerIndex >= 0;
-  const winnerAmountSOL = isWinner && isPaid ? (gameData.winner_amounts?.[winnerIndex] ?? 0) / 1e9 : 0;
+  const winnerAmountSOL = isWinner && isPaid ? Number(formatToken(gameData.winner_amounts?.[winnerIndex] ?? 0)) : 0;
 
   // NFT-specific handler closures.
   const handleClaimNft = async () => {
@@ -658,7 +671,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             </span>
             {isPaid && (
               <span className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${isCreatorFunded ? 'bg-amber-400/10 border border-amber-400/20 text-amber-400' : 'bg-[#38BDF8]/10 border border-[#38BDF8]/20 text-[#38BDF8]'}`}>
-                {isCreatorFunded ? 'Free Entry' : `${entryFeeSOL} SOL Entry`}
+                {isCreatorFunded ? 'Free Entry' : `${entryFeeSOL} ${tokenSymbol} Entry`}
               </span>
             )}
           </div>
@@ -677,6 +690,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             isFree={!isPaid}
             countdown={gameData.status === 'started' && countdown ? countdown : (gameData.status === 'active' ? expiryLabel : null)}
             countdownLabel={gameData.status === 'started' ? 'TIME LEFT' : 'CLOSES IN'}
+            tokenSymbol={tokenSymbol}
           />
         )}
 
@@ -724,7 +738,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             <div className="text-center">
               <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Entry Fee</span>
               <span className={`text-base sm:text-lg font-[1000] italic ${isCreatorFunded || !isPaid ? 'text-[#14F195]' : 'text-[#FFD700]'}`}>
-                {isCreatorFunded || !isPaid ? 'FREE' : `${entryFeeSOL} SOL`}
+                {isCreatorFunded || !isPaid ? 'FREE' : `${entryFeeSOL} ${tokenSymbol}`}
               </span>
             </div>
           </div>
@@ -741,7 +755,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             </div>
             <div className="space-y-2">
               {gameData.winner_wallets.map((winnerWallet, idx) => {
-                const amount = (gameData.winner_amounts?.[idx] ?? 0) / 1e9;
+                const amount = Number(formatToken(gameData.winner_amounts?.[idx] ?? 0));
                 const winnerEntry = gameData.leaderboard.find((e) => e.wallet_address === winnerWallet);
                 const winnerName = winnerEntry?.username || `${winnerWallet.slice(0, 6)}...${winnerWallet.slice(-4)}`;
                 const isYou = !!walletAddress && winnerWallet === walletAddress;
@@ -777,7 +791,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                       <span className={`font-[1000] italic text-base md:text-lg ${idx === 0 ? 'text-yellow-400' : 'text-zinc-300'}`}>
                         {amount.toFixed(3)}
                       </span>
-                      <span className="text-zinc-600 text-[9px] font-black uppercase block">SOL</span>
+                      <span className="text-zinc-600 text-[9px] font-black uppercase block">{tokenSymbol}</span>
                     </div>
                   </div>
                 );
@@ -806,7 +820,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                     disabled={claiming}
                     className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98] disabled:opacity-50"
                   >
-                    {claiming ? 'Claiming...' : `Claim Prize (${winnerAmountSOL.toFixed(3)} SOL)`}
+                    {claiming ? 'Claiming...' : `Claim Prize (${winnerAmountSOL.toFixed(3)} ${tokenSymbol})`}
                   </button>
                 ) : (
                   <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
@@ -874,7 +888,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                   <span className="text-[#7DD3FC] font-[1000] italic uppercase text-lg">NFT Prize Game</span>
                   <p className="text-zinc-400 text-xs font-black mt-1">
                     Single winner gets the escrowed NFT
-                    {entryFeeSOL > 0 && ` · Entry: ${entryFeeSOL} SOL`}
+                    {entryFeeSOL > 0 && ` · Entry: ${entryFeeSOL} ${tokenSymbol}`}
                   </p>
                   {!isCreator && !hasEntered && (
                     <button
@@ -882,7 +896,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                       disabled={joining}
                       className="w-full min-h-[44px] px-4 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-sm tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98] mt-3 disabled:opacity-50"
                     >
-                      {joining ? 'Joining...' : entryFeeSOL > 0 ? `Join NFT Game (${entryFeeSOL} SOL)` : 'Join NFT Game'}
+                      {joining ? 'Joining...' : entryFeeSOL > 0 ? `Join NFT Game (${entryFeeSOL} ${tokenSymbol})` : 'Join NFT Game'}
                     </button>
                   )}
                   {hasEntered && !isCreator && canPlay && (
@@ -924,13 +938,13 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                     onClick={() => setShowReEntryConfirm(true)}
                     className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98]"
                   >
-                    Play Again ({reEntryFeeSOL} SOL)
+                    Play Again ({reEntryFeeSOL} {tokenSymbol})
                   </button>
                 ) : hasEntered && canPlay && isReEntry && showReEntryConfirm ? (
                   <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
                     <p className="text-amber-400 font-black text-sm uppercase text-center mb-1">Hold up, nerd.</p>
                     <p className="text-zinc-400 text-xs text-center mb-3">
-                      Re-entry costs <span className="text-white font-black">{reEntryFeeSOL} SOL</span>. Only your highest score counts. Re-entry fees are non-refundable. Proceed wisely.
+                      Re-entry costs <span className="text-white font-black">{reEntryFeeSOL} {tokenSymbol}</span>. Only your highest score counts. Re-entry fees are non-refundable. Proceed wisely.
                     </p>
                     <div className="flex gap-2">
                       <button onClick={() => setShowReEntryConfirm(false)} className="flex-1 min-h-[40px] px-4 py-2 bg-white/5 border border-white/10 text-zinc-400 font-black uppercase text-xs rounded-lg hover:bg-white/10 transition-all">
@@ -973,7 +987,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                         disabled={joining}
                         className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98] disabled:opacity-50"
                       >
-                        {joining ? 'Joining...' : isCreatorFunded ? 'Join Game (0.0025 SOL)' : `Join Game (${entryFeeSOL} SOL)`}
+                        {joining ? 'Joining...' : isCreatorFunded ? 'Join Game (0.0025 SOL)' : `Join Game (${entryFeeSOL} ${tokenSymbol})`}
                       </button>
                       {isCreatorFunded && (
                         <p className="text-zinc-500 text-[10px] font-black italic uppercase tracking-wider text-center mt-2">
@@ -995,7 +1009,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                       onClick={() => setShowReEntryConfirm(true)}
                       className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98]"
                     >
-                      Play Again ({reEntryFeeSOL} SOL)
+                      Play Again ({reEntryFeeSOL} {tokenSymbol})
                     </button>
                   )}
 
@@ -1003,7 +1017,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                     <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
                       <p className="text-amber-400 font-black text-sm uppercase text-center mb-1">Hold up, nerd.</p>
                       <p className="text-zinc-400 text-xs text-center mb-3">
-                        Re-entry costs <span className="text-white font-black">{reEntryFeeSOL} SOL</span>. Only your highest score counts. Re-entry fees are non-refundable. Proceed wisely.
+                        Re-entry costs <span className="text-white font-black">{reEntryFeeSOL} {tokenSymbol}</span>. Only your highest score counts. Re-entry fees are non-refundable. Proceed wisely.
                       </p>
                       <div className="flex gap-2">
                         <button onClick={() => setShowReEntryConfirm(false)} className="flex-1 min-h-[40px] px-4 py-2 bg-white/5 border border-white/10 text-zinc-400 font-black uppercase text-xs rounded-lg hover:bg-white/10 transition-all">
@@ -1041,7 +1055,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                           onClick={() => onFundAndStart?.(gameData)}
                           className="w-full min-h-[56px] px-6 py-4 bg-amber-500 text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-amber-400 shadow-[0_10px_40px_-10px_rgba(245,158,11,0.3)] transition-all active:scale-[0.98]"
                         >
-                          Fund Prize Pool ({creatorDepositSOL} SOL)
+                          Fund Prize Pool ({creatorDepositSOL} {tokenSymbol})
                         </button>
                       ) : (
                         <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
@@ -1150,7 +1164,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                 const entryWinnerIdx = (isPaid && gameData.winner_wallets)
                   ? gameData.winner_wallets.indexOf(entry.wallet_address)
                   : -1;
-                const finalizedPrizeSol = entryWinnerIdx >= 0 ? (gameData.winner_amounts?.[entryWinnerIdx] ?? 0) / 1e9 : 0;
+                const finalizedPrizeSol = entryWinnerIdx >= 0 ? Number(formatToken(gameData.winner_amounts?.[entryWinnerIdx] ?? 0)) : 0;
 
                 // Live projection: while game is active/started/completed-not-yet-
                 // finalized, show "if-now" payout using the same prize_split_bps.
@@ -1206,7 +1220,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                         <span className="font-[1000] italic text-xs tabular-nums" style={{ color: MEDAL_GOLD }}>
                           +{finalizedPrizeSol.toFixed(3)}
                         </span>
-                        <span className="text-zinc-600 text-[8px] font-black uppercase block">SOL</span>
+                        <span className="text-zinc-600 text-[8px] font-black uppercase block">{tokenSymbol}</span>
                       </div>
                     )}
                     {showLivePrize && (
@@ -1214,7 +1228,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                         <span className="font-[1000] italic text-xs tabular-nums" style={{ color: MEDAL_GOLD }}>
                           +{livePrizeSol.toFixed(3)}
                         </span>
-                        <span className="text-zinc-600 text-[7px] sm:text-[8px] font-black uppercase block">SOL · IF NOW</span>
+                        <span className="text-zinc-600 text-[7px] sm:text-[8px] font-black uppercase block">{tokenSymbol} · IF NOW</span>
                       </div>
                     )}
                     {isOut && !showLivePrize && !showFinalPrize && (

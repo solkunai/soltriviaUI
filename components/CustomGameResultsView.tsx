@@ -55,7 +55,12 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
   const shareUrl = `${window.location.origin}/game/${results.slug}`;
   const canPlayAgain = attemptsUsed < maxAttempts;
   const isReEntry = isPaidGame && attemptsUsed > 0;
-  const reEntryFeeSOL = isReEntry && entryFeeLamports != null ? getReEntryFeeLamports(entryFeeLamports) / 1e9 : 0;
+  // Token-aware display. tokenSymbol/tokenDecimals come from the props (passed
+  // by the screen wrapper from CustomGameData). Default to SOL for back-compat.
+  const tokenSymbol = (results as any).tokenSymbol ?? 'SOL';
+  const tokenDecimals = (results as any).tokenDecimals ?? 9;
+  const baseDivisor = Math.pow(10, tokenDecimals);
+  const reEntryFeeSOL = isReEntry && entryFeeLamports != null ? getReEntryFeeLamports(entryFeeLamports) / baseDivisor : 0;
   const accuracy = results.totalQuestions > 0 ? Math.round((results.correctCount / results.totalQuestions) * 100) : 0;
   const timeSec = Math.round(results.timeTakenMs / 1000);
   const minutes = Math.floor(timeSec / 60);
@@ -73,7 +78,7 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
     : isPaidGame
     ? 'paid'
     : 'free';
-  const prizeLabel = prizePotSol != null ? `${prizePotSol.toFixed(2)} SOL` : null;
+  const prizeLabel = prizePotSol != null ? `${prizePotSol.toFixed(2)} ${tokenSymbol}` : null;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
@@ -231,7 +236,7 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
                 lineHeight: 1,
               }}
             >
-              {prizePotSol.toFixed(2)} SOL
+              {prizePotSol.toFixed(2)} {tokenSymbol}
             </span>
             <p
               className="text-zinc-400 font-black italic uppercase tracking-[0.16em] mt-3 text-[10px]"
@@ -276,13 +281,13 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
                 onClick={() => setShowReEntryConfirm(true)}
                 className="w-full min-h-[48px] px-6 py-3 bg-[#38BDF8] text-black font-[1000] italic uppercase text-lg tracking-tighter rounded-xl hover:bg-[#7DD3FC] transition-all active:scale-[0.98]"
               >
-                Play Again ({reEntryFeeSOL} SOL)
+                Play Again ({reEntryFeeSOL} {tokenSymbol})
               </button>
             ) : isReEntry && showReEntryConfirm ? (
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
                 <p className="text-amber-400 font-black text-sm uppercase text-center mb-1">Hold up, nerd.</p>
                 <p className="text-zinc-400 text-xs text-center mb-3">
-                  Re-entry costs <span className="text-white font-black">{reEntryFeeSOL} SOL</span>. Only your highest score counts. Re-entry fees are non-refundable. Proceed wisely.
+                  Re-entry costs <span className="text-white font-black">{reEntryFeeSOL} {tokenSymbol}</span>. Only your highest score counts. Re-entry fees are non-refundable. Proceed wisely.
                 </p>
                 <div className="flex gap-2">
                   <button
