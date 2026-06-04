@@ -56,4 +56,8 @@ export interface Question {
   text: string;
   options: string[];
   correctAnswer: number;
+  /** Lowercase category slug from `questions.category` column. Drives the
+   *  category pill color in QuizView via CATEGORY_COLORS map. Empty string
+   *  when unknown , pill falls back to neutral zinc. */
+  category?: string;
 }

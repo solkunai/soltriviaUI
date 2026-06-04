@@ -1,16 +1,24 @@
 /**
- * FreePlayViewV2 — web Free Play / Train Up page. Lives inside WebShell.
- * Real categories (from practice_questions) + real profile stats. Picking a
- * category starts that category's practice via onStartCategory.
+ * FreePlayViewV2 , web "Train Up" page. Lives inside WebShell.
  *
- * Game Pass gate: Pass = unlimited + pick any category. No Pass = limited
- * free games + Mixed only. No per-category played/accuracy is shown because
- * practice results aren't tracked server-side.
+ * 2026-06-04 rewrite per Sol Trivia (9).zip handoff
+ * (/tmp/sol-trivia-freeplay-2026-06-04/design_handoff_free_play/README.md).
+ *
+ * Visual style is locked from the handoff: BOLD editorial dark cards with
+ * SOLID COLOR LEFT-RULES, no gradients, no glow halos, no emoji, no
+ * translucent rainbow fills. Filled CatTag for streak.
+ *
+ * Stats: REAL DATA ONLY per Kyle 2026-06-04 night , Q ANSWERED + BEST CAT
+ * + per-category PLAYED + streak. Handoff sample values for accuracy and
+ * LOW flags were placeholder for visual demo; NOT wired.
+ *
+ * See [[project-free-play-handoff-2026-06-04]] for the full spec.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useIsMobile } from '../src/hooks/useIsMobile';
 import { useWallet } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
+import { CATEGORY_COLORS, getCategoryColor, categoryLabel } from '../src/utils/categoryColors';
 
 interface Props {
   hasGamePass?: boolean;
@@ -20,20 +28,59 @@ interface Props {
   onBuyGamePass?: () => void;
 }
 
-// The seven substantial practice categories, mapped to real practice_questions
-// category ids. Niche crypto categories (memecoins, nfts, defi…) have few Qs
-// and are left for a future deep-cuts section.
-const CATEGORIES = [
-  { id: 'sports', label: 'SPORTS', sub: 'GOALS · RECORDS', color: '#14F195' },
-  { id: 'history', label: 'HISTORY', sub: 'EMPIRES · WARS', color: '#FFD700' },
-  { id: 'entertainment', label: 'ENTERTAINMENT', sub: 'FILM · MUSIC', color: '#a855f7' },
-  { id: 'geography', label: 'GEOGRAPHY', sub: 'MAPS · CAPITALS', color: '#3b82f6' },
-  { id: 'science', label: 'SCIENCE & TECH', sub: 'PHYSICS · BIO', color: '#22D3EE' },
-  { id: 'crypto', label: 'CRYPTO & WEB3', sub: 'CHAINS · DEFI', color: '#F472B6' },
-  { id: 'general', label: 'GENERAL', sub: 'TRIVIA · MIX', color: '#a1a1aa' },
+/**
+ * Categories shipped on FreePlay (handoff §"Category data"). Each gets a
+ * decorative `sub` line that's static descriptive copy (not a stat).
+ * Colors are sourced from `categoryColors.ts` (Kyle's locked, no-purple map)
+ * per the color-reconciliation note in the handoff memory.
+ */
+const CATEGORIES: Array<{ id: string; label: string; sub: string }> = [
+  { id: 'sports', label: 'SPORTS', sub: 'GOALS · RECORDS' },
+  { id: 'history', label: 'HISTORY', sub: 'EMPIRES · WARS' },
+  { id: 'entertainment', label: 'ENTERTAINMENT', sub: 'FILM · MUSIC' },
+  { id: 'geography', label: 'GEOGRAPHY', sub: 'MAPS · CAPITALS' },
+  { id: 'science', label: 'SCIENCE & TECH', sub: 'PHYSICS · BIO' },
+  { id: 'crypto', label: 'CRYPTO & WEB3', sub: 'CHAINS · DEFI' },
+  { id: 'general', label: 'GENERAL', sub: 'TRIVIA · MIX' },
 ];
 
-type Stats = { xp: number; games: number; streak: number; best: number } | null;
+const ACCENT = '#14F195';
+const SURFACE = '#0A0A0A';
+const SURFACE_SELECTED = '#141414';
+const BORDER_LIGHT = 'rgba(255,255,255,0.10)';
+const MUTED = '#71717a';
+const DIM = '#52525b';
+
+type Counts = Record<string, number>;
+type ProfileStats = { streak: number } | null;
+
+/**
+ * Filled tag per handoff §"CatTag". White bold label on solid color, used
+ * for the streak. Same component shape used by the QuizView category pill,
+ * but here it's compact (smaller padding + font).
+ */
+function CatTag({ label, color }: { label: string; color: string }) {
+  return (
+    <span
+      style={{
+        color: '#fff',
+        background: color,
+        fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+        fontStyle: 'italic',
+        fontWeight: 900,
+        fontSize: 12,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        padding: '6px 13px',
+        borderRadius: 7,
+        boxShadow: `0 4px 14px ${color}55`,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
 
 const FreePlayViewV2: React.FC<Props> = ({
   hasGamePass,
@@ -46,61 +93,75 @@ const FreePlayViewV2: React.FC<Props> = ({
   const wallet = publicKey?.toBase58() ?? null;
 
   const [pick, setPick] = useState<string>('mixed');
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const [stats, setStats] = useState<Stats>(null);
+  const [playedCounts, setPlayedCounts] = useState<Counts>({});
+  const [profile, setProfile] = useState<ProfileStats>(null);
 
-  // Real per-category question counts.
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const results = await Promise.all(
-        CATEGORIES.map((c) =>
-          supabase.from('practice_questions').select('id', { count: 'exact', head: true }).eq('category', c.id),
-        ),
-      );
-      if (!mounted) return;
-      const next: Record<string, number> = {};
-      CATEGORIES.forEach((c, i) => { next[c.id] = results[i].count ?? 0; });
-      setCounts(next);
-    })();
-    return () => { mounted = false; };
-  }, []);
-
-  // Real profile stats.
+  // ── Per-category PLAYED count (Q ANSWERED + BEST CAT derived) ─────────
   useEffect(() => {
     let mounted = true;
     if (!connected || !wallet) {
-      setStats(null);
+      setPlayedCounts({});
+      return;
+    }
+    (async () => {
+      const { data, error } = await supabase.rpc('get_category_play_counts', { p_wallet: wallet });
+      if (!mounted) return;
+      if (error) {
+        console.warn('[FreePlay] play counts fetch failed:', error);
+        setPlayedCounts({});
+        return;
+      }
+      const next: Counts = {};
+      for (const row of (data ?? []) as Array<{ category: string; played: number | string }>) {
+        next[row.category] = Number(row.played) || 0;
+      }
+      setPlayedCounts(next);
+    })();
+    return () => { mounted = false; };
+  }, [connected, wallet]);
+
+  // ── Streak (real number for the CatTag) ────────────────────────────────
+  useEffect(() => {
+    let mounted = true;
+    if (!connected || !wallet) {
+      setProfile(null);
       return;
     }
     (async () => {
       const { data } = await supabase
         .from('player_profiles')
-        .select('total_points, total_games_played, current_streak, highest_score')
+        .select('current_streak')
         .eq('wallet_address', wallet)
         .maybeSingle();
       if (!mounted) return;
-      const d = data as any;
-      setStats(
-        d
-          ? {
-              xp: Number(d.total_points) || 0,
-              games: Number(d.total_games_played) || 0,
-              streak: Number(d.current_streak) || 0,
-              best: Number(d.highest_score) || 0,
-            }
-          : { xp: 0, games: 0, streak: 0, best: 0 },
-      );
+      const d = data as { current_streak?: number } | null;
+      setProfile({ streak: Number(d?.current_streak) || 0 });
     })();
     return () => { mounted = false; };
   }, [connected, wallet]);
+
+  // ── Derived stats ───────────────────────────────────────────────────────
+  const totalQAnswered = useMemo(
+    () => Object.values(playedCounts).reduce((a, b) => a + b, 0),
+    [playedCounts],
+  );
+  const bestCat = useMemo(() => {
+    let best = '';
+    let max = 0;
+    for (const [cat, n] of Object.entries(playedCounts)) {
+      if (n > max) { max = n; best = cat; }
+    }
+    return { cat: best, played: max };
+  }, [playedCounts]);
+  const maxPlayed = bestCat.played || 1; // progress-bar normalization
 
   const freeGamesRemaining = hasGamePass ? Infinity : Math.max(0, practiceRunsLeft);
   const canPickCategory = !!hasGamePass;
   const canPlayMixed = hasGamePass || freeGamesRemaining > 0;
 
-  const selectedColor =
-    pick === 'mixed' ? '#14F195' : CATEGORIES.find((c) => c.id === pick)?.color || '#14F195';
+  /** Sticky CTA + selected pick color. Mixed = brand accent. */
+  const ctaColor = pick === 'mixed' ? ACCENT : (CATEGORY_COLORS[pick] ?? ACCENT);
+  const pickLabel = pick === 'mixed' ? 'MIXED · SURPRISE ME' : categoryLabel(pick);
 
   const handlePick = (id: string) => {
     if (!canPickCategory && id !== 'mixed') return;
@@ -113,147 +174,517 @@ const FreePlayViewV2: React.FC<Props> = ({
 
   const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
 
-  return (
-    <div className="max-w-5xl">
-      {/* Header */}
-      <div className="mb-5">
-        <div className="font-black italic uppercase" style={{ fontSize: 11, color: '#14F195', letterSpacing: '0.18em' }}>
-          FREE PLAY · NO STAKES
+  // ── Card recipe (returns the per-tile button) ──────────────────────────
+  const renderCategoryCard = (c: typeof CATEGORIES[number]) => {
+    const sel = pick === c.id;
+    const color = getCategoryColor(c.id);
+    const played = playedCounts[c.id] ?? 0;
+    const pct = Math.min(100, Math.round((played / maxPlayed) * 100));
+    const locked = !canPickCategory;
+    return (
+      <button
+        key={c.id}
+        onClick={() => handlePick(c.id)}
+        disabled={locked}
+        className="text-left active:opacity-90"
+        style={{
+          background: sel ? SURFACE_SELECTED : SURFACE,
+          border: `1px solid ${sel ? color : BORDER_LIGHT}`,
+          borderRadius: isMobile ? 12 : 14,
+          padding: isMobile ? '14px 14px 14px 19px' : '16px 18px 16px 27px',
+          color: '#fff',
+          cursor: locked ? 'not-allowed' : 'pointer',
+          opacity: locked ? 0.55 : 1,
+          position: 'relative',
+          overflow: 'hidden',
+          minHeight: isMobile ? 100 : 132,
+        }}
+      >
+        {/* Solid color LEFT RULE , the signature handoff pattern. */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            left: 0,
+            width: isMobile ? 4 : 5,
+            background: color,
+          }}
+          aria-hidden
+        />
+        <div
+          className="font-black italic"
+          style={{
+            fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+            fontWeight: 900,
+            fontSize: isMobile ? 14 : 18,
+            color: '#fff',
+            letterSpacing: '-0.01em',
+            textTransform: 'uppercase',
+            lineHeight: 1.05,
+          }}
+        >
+          {isMobile ? c.label.split(' & ')[0].split(' ')[0] : c.label}
         </div>
-        <h1 className="font-black italic uppercase mt-1 text-white" style={{ fontSize: 42, lineHeight: 0.95, letterSpacing: '-0.02em' }}>
-          TRAIN <span style={{ color: '#14F195' }}>UP</span>
-        </h1>
-        {!hasGamePass && (
-          <div className="font-black italic uppercase mt-2" style={{ fontSize: 10, color: '#71717a', letterSpacing: '0.14em', fontVariantNumeric: 'tabular-nums' }}>
-            {freeGamesRemaining} FREE PLAYS LEFT · MIXED ONLY
-          </div>
-        )}
-      </div>
+        <div
+          className="font-black italic"
+          style={{
+            fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+            fontWeight: 800,
+            fontSize: 9,
+            color: DIM,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            marginTop: 4,
+          }}
+        >
+          {c.sub}
+        </div>
+        <div
+          className="font-black italic"
+          style={{
+            fontFamily: '"JetBrains Mono", "Saira Condensed", system-ui, sans-serif',
+            fontWeight: 800,
+            fontSize: isMobile ? 9 : 10,
+            color: MUTED,
+            letterSpacing: '0.16em',
+            textTransform: 'uppercase',
+            marginTop: isMobile ? 10 : 14,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          <span style={{ color: '#a1a1aa' }}>{played.toLocaleString()}</span> PLAYED
+        </div>
+        {/* Progress bar (proportion of best-category played) */}
+        <div
+          style={{
+            marginTop: 8,
+            height: isMobile ? 3 : 4,
+            background: '#1a1a1a',
+            borderRadius: 2,
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              height: '100%',
+              width: `${pct}%`,
+              background: color,
+              transition: 'width 400ms ease-out',
+            }}
+          />
+        </div>
+      </button>
+    );
+  };
 
-      {/* Lifetime stats strip — real profile stats */}
-      <div className="rounded-2xl mb-4 flex" style={{ background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.08)', padding: '14px 0' }}>
-        {[
-          { label: 'TOTAL XP', value: stats ? fmt(stats.xp) : '—', color: '#fff' },
-          { label: 'GAMES', value: stats ? String(stats.games) : '—', color: '#14F195' },
-          { label: 'STREAK', value: stats ? `🔥 ${stats.streak}` : '—', color: '#FFD700' },
-          { label: 'BEST SCORE', value: stats ? fmt(stats.best) : '—', color: '#F472B6' },
-        ].map((s, i) => (
-          <div key={s.label} className="flex-1 text-center" style={{ borderRight: i < 3 ? '1px solid rgba(255,255,255,0.08)' : 'none', padding: '0 12px' }}>
-            <div className="font-black italic uppercase" style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.18em' }}>
-              {s.label}
-            </div>
-            <div className="font-black italic mt-1" style={{ fontSize: 22, color: s.color, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-              {s.value}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* All categories */}
-      <div className="font-black italic uppercase mb-2" style={{ fontSize: 10, color: '#a1a1aa', letterSpacing: '0.18em' }}>
-        ALL CATEGORIES{!hasGamePass ? ' · PASS TO UNLOCK' : ''}
-      </div>
-      <div className="mb-3" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10 }}>
-        {CATEGORIES.map((c) => {
-          const sel = pick === c.id;
-          const count = counts[c.id];
-          return (
-            <button
-              key={c.id}
-              onClick={() => handlePick(c.id)}
-              className="text-left rounded-xl active:opacity-90"
-              style={{
-                background: sel ? `${c.color}1F` : '#0a0a0a',
-                border: `1.5px solid ${sel ? c.color : `${c.color}55`}`,
-                padding: '12px 14px',
-                color: '#fff',
-                cursor: canPickCategory ? 'pointer' : 'not-allowed',
-                opacity: canPickCategory ? 1 : 0.45,
-              }}
-            >
-              <div className="font-black italic uppercase" style={{ fontSize: 12, color: c.color, letterSpacing: '-0.01em' }}>
-                {c.label.split(' & ')[0].split(' ')[0]}
-              </div>
-              <div className="font-black italic uppercase mt-1" style={{ fontSize: 8, color: '#52525b', letterSpacing: '0.14em' }}>
-                {c.sub}
-              </div>
-              <div className="font-black italic uppercase mt-3" style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.14em', fontVariantNumeric: 'tabular-nums' }}>
-                {count != null ? `${count.toLocaleString()} QUESTIONS` : '…'}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* MIXED tile */}
+  // ── MIXED tile (handoff: full-width, accent left rule) ─────────────────
+  const renderMixedTile = () => {
+    const sel = pick === 'mixed';
+    return (
       <button
         onClick={() => handlePick('mixed')}
-        className="w-full rounded-xl flex items-center gap-3 active:opacity-90 mb-4"
+        disabled={!canPlayMixed}
+        className="text-left active:opacity-90"
         style={{
-          background: pick === 'mixed' ? 'rgba(20,241,149,0.08)' : '#0a0a0a',
-          border: `1.5px dashed ${pick === 'mixed' ? '#14F195' : 'rgba(255,255,255,0.2)'}`,
-          padding: '14px 18px',
+          background: sel ? SURFACE_SELECTED : SURFACE,
+          border: `1px solid ${sel ? ACCENT : BORDER_LIGHT}`,
+          borderRadius: isMobile ? 12 : 14,
+          padding: isMobile ? '14px 16px 14px 21px' : '18px 22px 18px 31px',
           color: '#fff',
           cursor: canPlayMixed ? 'pointer' : 'not-allowed',
           opacity: canPlayMixed ? 1 : 0.55,
+          position: 'relative',
+          overflow: 'hidden',
+          gridColumn: '1 / -1',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
         }}
       >
-        <div className="rounded-md flex items-center justify-center" style={{ width: 34, height: 34, background: 'rgba(20,241,149,0.13)', border: '1px solid rgba(20,241,149,0.33)', color: '#14F195' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14F195" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .963L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0Z" />
-          </svg>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-black italic uppercase" style={{ fontSize: 15, letterSpacing: '-0.01em' }}>
+        {/* Accent left rule */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            left: 0,
+            width: isMobile ? 4 : 5,
+            background: ACCENT,
+          }}
+          aria-hidden
+        />
+        <DiceIcon size={isMobile ? 32 : 36} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            className="font-black italic"
+            style={{
+              fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+              fontWeight: 900,
+              fontSize: isMobile ? 16 : 20,
+              color: '#fff',
+              letterSpacing: '-0.01em',
+              textTransform: 'uppercase',
+              lineHeight: 1.05,
+            }}
+          >
             MIXED · SURPRISE ME
           </div>
-          <div className="font-black italic uppercase mt-1" style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.14em' }}>
-            RANDOM QUESTIONS ACROSS ALL CATEGORIES
+          <div
+            className="font-black italic"
+            style={{
+              fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+              fontWeight: 800,
+              fontSize: 9,
+              color: MUTED,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              marginTop: 4,
+            }}
+          >
+            10 RANDOM QUESTIONS ACROSS ALL CATEGORIES
           </div>
         </div>
-        <span className="font-black italic" style={{ fontSize: 18, color: '#14F195' }}>→</span>
+        <span style={{ fontSize: 20, color: ACCENT, fontWeight: 900 }}>→</span>
       </button>
+    );
+  };
 
-      {/* Game Pass nudge */}
+  return (
+    <div className={isMobile ? 'pb-32' : 'pb-28 max-w-5xl'} style={{ color: '#fff' }}>
+      {/* ── Header eyebrow + TRAIN UP + streak CatTag ─────────────────── */}
+      <div className="mb-5" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div
+            className="font-black italic"
+            style={{
+              fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+              fontWeight: 800,
+              fontSize: 11,
+              color: ACCENT,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {isMobile ? 'FREE PLAY' : 'FREE PLAY · NO STAKES · PRACTICE MODE'}
+          </div>
+          <h1
+            className="font-black italic"
+            style={{
+              fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+              fontWeight: 900,
+              fontSize: isMobile ? 42 : 54,
+              lineHeight: 0.95,
+              letterSpacing: '-0.02em',
+              textTransform: 'uppercase',
+              marginTop: 2,
+            }}
+          >
+            <span style={{ color: '#fff' }}>TRAIN </span>
+            <span style={{ color: ACCENT }}>UP</span>
+          </h1>
+          {!hasGamePass && (
+            <div
+              className="font-black italic"
+              style={{
+                fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+                fontWeight: 800,
+                fontSize: 10,
+                color: MUTED,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                marginTop: 8,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {freeGamesRemaining} FREE PLAYS LEFT · MIXED ONLY
+            </div>
+          )}
+        </div>
+        {profile && profile.streak > 0 && (
+          <CatTag label={`${profile.streak}-DAY STREAK`} color={ACCENT} />
+        )}
+      </div>
+
+      {/* ── Lifetime stats: Q ANSWERED + BEST CAT (2 cells) ──────────── */}
+      <div
+        style={{
+          background: SURFACE,
+          border: `1px solid ${BORDER_LIGHT}`,
+          borderRadius: isMobile ? 12 : 14,
+          padding: isMobile ? '12px 0' : '18px 0',
+          marginBottom: isMobile ? 16 : 20,
+          display: 'flex',
+        }}
+      >
+        <StatCell label="Q ANSWERED" value={fmt(totalQAnswered)} color="#fff" big={!isMobile} />
+        <div style={{ width: 1, background: BORDER_LIGHT, alignSelf: 'stretch' }} />
+        <StatCell
+          label="BEST CAT"
+          value={bestCat.cat ? categoryLabel(bestCat.cat) : '—'}
+          color={bestCat.cat ? getCategoryColor(bestCat.cat) : MUTED}
+          big={!isMobile}
+        />
+      </div>
+
+      {/* ── ALL CATEGORIES section ────────────────────────────────────── */}
+      <div
+        className="font-black italic mb-2"
+        style={{
+          fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+          fontWeight: 800,
+          fontSize: 10,
+          color: '#a1a1aa',
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+        }}
+      >
+        ALL CATEGORIES{!hasGamePass ? ' · PASS TO UNLOCK' : ''}
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+          gap: isMobile ? 8 : 12,
+          marginBottom: 12,
+        }}
+      >
+        {CATEGORIES.map(renderCategoryCard)}
+        {renderMixedTile()}
+      </div>
+
+      {/* ── Game Pass nudge ───────────────────────────────────────────── */}
       {!hasGamePass && (
         <button
           onClick={onBuyGamePass}
-          className="w-full rounded-xl flex items-center gap-3 active:opacity-90 mb-4"
-          style={{ background: 'rgba(20,241,149,0.08)', border: '1px solid rgba(20,241,149,0.4)', padding: '14px 18px', color: '#fff', cursor: 'pointer' }}
+          className="active:opacity-90"
+          style={{
+            width: '100%',
+            background: SURFACE,
+            border: `1px solid ${ACCENT}66`,
+            borderRadius: isMobile ? 12 : 14,
+            padding: '14px 18px',
+            color: '#fff',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            marginBottom: 16,
+            textAlign: 'left',
+          }}
         >
-          <div className="flex-1 text-left">
-            <div className="font-black italic uppercase" style={{ fontSize: 11, color: '#14F195', letterSpacing: '0.14em' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              className="font-black italic"
+              style={{
+                fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+                fontWeight: 800,
+                fontSize: 11,
+                color: ACCENT,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+              }}
+            >
               UNLOCK ALL CATEGORIES
             </div>
-            <div className="text-zinc-300 font-bold mt-1" style={{ fontSize: 11, lineHeight: 1.3 }}>
+            <div className="text-zinc-300 mt-1" style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.3 }}>
               Game Pass = unlimited practice + pick any category
             </div>
           </div>
-          <span className="font-black italic uppercase" style={{ fontSize: 13, color: '#14F195', letterSpacing: '0.14em' }}>
+          <span
+            className="font-black italic"
+            style={{
+              fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+              fontWeight: 900,
+              fontSize: 13,
+              color: ACCENT,
+              letterSpacing: '0.14em',
+            }}
+          >
             GET →
           </span>
         </button>
       )}
 
-      {/* Sticky CTA */}
-      <button
-        onClick={start}
-        disabled={!canPlayMixed}
-        className="w-full font-black italic uppercase rounded-full active:opacity-90"
+      {/* ── Sticky START PRACTICE bar ─────────────────────────────────── */}
+      <div
         style={{
-          background: canPlayMixed ? selectedColor : '#1a1a1a',
-          color: canPlayMixed ? '#000' : '#52525b',
-          padding: '14px 0',
-          fontSize: 14,
-          letterSpacing: '0.14em',
-          border: 'none',
-          cursor: canPlayMixed ? 'pointer' : 'not-allowed',
+          position: 'sticky',
+          bottom: isMobile ? 8 : 20,
+          background: 'rgba(2,2,2,0.85)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          border: `1px solid ${ctaColor}55`,
+          borderRadius: isMobile ? 14 : 14,
+          padding: isMobile ? '12px 14px' : '14px 20px',
+          marginTop: 4,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          zIndex: 10,
         }}
       >
-        START PRACTICE →
-      </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            className="font-black italic"
+            style={{
+              fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+              fontWeight: 800,
+              fontSize: 9,
+              color: MUTED,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+            }}
+          >
+            SELECTED
+          </div>
+          <div
+            className="font-black italic"
+            style={{
+              fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+              fontWeight: 900,
+              fontSize: isMobile ? 16 : 22,
+              color: '#fff',
+              letterSpacing: '-0.01em',
+              textTransform: 'uppercase',
+              lineHeight: 1.05,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {pickLabel}
+          </div>
+        </div>
+        <button
+          onClick={start}
+          disabled={!canPlayMixed}
+          className="font-black italic active:opacity-90"
+          style={{
+            background: canPlayMixed ? ctaColor : '#1a1a1a',
+            color: canPlayMixed ? '#000' : '#52525b',
+            padding: isMobile ? '10px 18px' : '12px 26px',
+            fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+            fontWeight: 900,
+            fontSize: isMobile ? 13 : 15,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            border: 'none',
+            borderRadius: 10,
+            cursor: canPlayMixed ? 'pointer' : 'not-allowed',
+            boxShadow: canPlayMixed ? `0 8px 24px ${ctaColor}40` : 'none',
+            transition: 'background 250ms ease, box-shadow 250ms ease',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          START PRACTICE ▶
+        </button>
+      </div>
     </div>
   );
 };
+
+/**
+ * Inline SVG dice icon , isometric 3D cube with a "?" on each visible face.
+ * White faces (slight shade on the right face for depth), black bold italic
+ * question marks. Transparent everywhere else , drops cleanly onto any
+ * dark surface without the PNG black-box artifact Kyle flagged 2026-06-04.
+ */
+function DiceIcon({ size = 32 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ flexShrink: 0, display: 'block' }}
+      aria-hidden
+    >
+      {/* Top face (parallelogram) */}
+      <path d="M 12 3 L 21 8 L 12 13 L 3 8 Z" fill="#ffffff" stroke="#0a0a0a" strokeWidth="0.4" strokeLinejoin="round" />
+      {/* Left face , brightest face */}
+      <path d="M 3 8 L 12 13 L 12 21 L 3 16 Z" fill="#ffffff" stroke="#0a0a0a" strokeWidth="0.4" strokeLinejoin="round" />
+      {/* Right face , slight gray for depth */}
+      <path d="M 21 8 L 12 13 L 12 21 L 21 16 Z" fill="#e4e4e7" stroke="#0a0a0a" strokeWidth="0.4" strokeLinejoin="round" />
+      {/* "?" on each visible face , black, bold italic */}
+      <text
+        x="12"
+        y="9.3"
+        fontFamily='"Saira Condensed", "Saira", system-ui, sans-serif'
+        fontSize="4.4"
+        fontWeight="900"
+        fontStyle="italic"
+        fill="#0a0a0a"
+        textAnchor="middle"
+      >
+        ?
+      </text>
+      <text
+        x="7.4"
+        y="16.8"
+        fontFamily='"Saira Condensed", "Saira", system-ui, sans-serif'
+        fontSize="4.4"
+        fontWeight="900"
+        fontStyle="italic"
+        fill="#0a0a0a"
+        textAnchor="middle"
+      >
+        ?
+      </text>
+      <text
+        x="16.6"
+        y="16.8"
+        fontFamily='"Saira Condensed", "Saira", system-ui, sans-serif'
+        fontSize="4.4"
+        fontWeight="900"
+        fontStyle="italic"
+        fill="#0a0a0a"
+        textAnchor="middle"
+      >
+        ?
+      </text>
+    </svg>
+  );
+}
+
+function StatCell({ label, value, color, big }: { label: string; value: string; color: string; big?: boolean }) {
+  return (
+    <div style={{ flex: 1, textAlign: 'center', padding: '0 16px' }}>
+      <div
+        className="font-black italic"
+        style={{
+          fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+          fontWeight: 800,
+          fontSize: 9,
+          color: MUTED,
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+        }}
+      >
+        {label}
+      </div>
+      <div
+        className="font-black italic"
+        style={{
+          fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+          fontWeight: 900,
+          fontSize: big ? 32 : 22,
+          color,
+          letterSpacing: '-0.02em',
+          fontVariantNumeric: 'tabular-nums',
+          marginTop: 4,
+          textTransform: 'uppercase',
+          lineHeight: 1,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
 
 export default FreePlayViewV2;

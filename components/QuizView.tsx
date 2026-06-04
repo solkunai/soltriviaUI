@@ -3,7 +3,7 @@ import { Question } from '../types';
 import { HapticFeedback } from '../src/utils/haptics';
 import { playCorrectSound, playWrongSound } from '../src/utils/sounds';
 import { getQuestions, submitAnswer, getPracticeQuestions, type PracticeQuestion } from '../src/utils/api';
-import { supabase } from '../src/utils/supabase';
+import { CATEGORY_COLORS, DEFAULT_CATEGORY_COLOR, getCategoryColor, categoryLabel } from '../src/utils/categoryColors';
 
 interface QuizViewProps {
   sessionId: string | null;
@@ -15,15 +15,46 @@ interface QuizViewProps {
 
 const BASE_POINTS = 500;
 const MAX_SPEED_BONUS = 500;
-const SPEED_BONUS_DECAY_SEC = 10; // Match per-question timer (paid mode)
-const SECONDS_PER_QUESTION = 10; // Paid mode timer
-const PRACTICE_SECONDS_PER_QUESTION = 12; // Practice mode: longer timer for reading
-const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const; // Display labels; indices 0–3 sent to API
+const SPEED_BONUS_DECAY_SEC = 10;
+const SECONDS_PER_QUESTION = 10;
+const PRACTICE_SECONDS_PER_QUESTION = 12;
+const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
+
+/**
+ * Bold solid-color category pill , imports color map from the shared util
+ * (src/utils/categoryColors.ts) so QuizView + FreePlayViewV2 stay aligned.
+ * White italic uppercase Saira text on ANY pill color. Color-tinted glow.
+ */
+function CategoryPill({ category }: { category?: string }) {
+  const color = getCategoryColor(category);
+  const label = categoryLabel(category);
+  return (
+    <div
+      className="px-6 py-2.5 rounded-full inline-flex items-center justify-center"
+      style={{
+        background: color,
+        boxShadow: `0 0 28px ${color}66`,
+      }}
+    >
+      <span
+        className="text-white font-black italic text-xs sm:text-sm tracking-[0.18em]"
+        style={{
+          fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+          fontWeight: 900,
+        }}
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
 
 const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode = 'paid', practiceQuestionIds }) => {
   const isPracticeMode = mode === 'practice';
   const timePerQuestion = isPracticeMode ? PRACTICE_SECONDS_PER_QUESTION : SECONDS_PER_QUESTION;
   const speedDecaySec = isPracticeMode ? PRACTICE_SECONDS_PER_QUESTION : SPEED_BONUS_DECAY_SEC;
+
+  // ── Game state (preserved verbatim from v1) ─────────────────────────────
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,113 +69,108 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
   const [questionTimeLeft, setQuestionTimeLeft] = useState(timePerQuestion);
   const [timedOut, setTimedOut] = useState(false);
 
+  // ── Prototype-adoption state (Gate 1) , visual only, Gate 2 wires real
+  //     consumption + the USE A LIFE? popup. ─────────────────────────────
+  // livesRemaining/streak default to 5/0; on Gate 2 these become route/prop-
+  // driven or fetched from player_lives + player_stats.
+  const [livesRemaining] = useState(5);
+  const [streak] = useState(0);
+
   const timerRef = useRef<number | null>(null);
   const questionTimerRef = useRef<number | null>(null);
+  const timeoutFiredRef = useRef(false);
+  const timeoutRetryRef = useRef(0);
 
-  // Fetch questions from Supabase when component mounts
+  // ── Fetch questions ────────────────────────────────────────────────────
   useEffect(() => {
     const fetchQuestions = async () => {
       if (!sessionId && !isPracticeMode) {
-        // Parent may have cleared session after quiz finished; avoid error state and noisy log
         setLoading(false);
         return;
       }
-
-      console.log('🎮 QuizView mounted with session:', isPracticeMode ? 'PRACTICE' : sessionId);
 
       try {
         setLoading(true);
 
         if (isPracticeMode) {
-          // Practice mode: fetch questions with correct answers included
           if (!practiceQuestionIds || practiceQuestionIds.length === 0) {
             setError('No practice questions available');
+            setLoading(false);
             return;
           }
-
           const response = await getPracticeQuestions(practiceQuestionIds);
-          console.log('📚 Practice questions fetched:', response.questions.length, 'questions');
-
           const transformedQuestions: Question[] = response.questions.map((q: PracticeQuestion) => ({
-            id: String(q.id),
-            text: q.text || '',
-            options: [...q.options],
-            correctAnswer: q.correct_index, // Include correct answer for client-side scoring
+            id: q.id,
+            text: q.text,
+            options: q.options,
+            correctAnswer: q.correct_index ?? -1,
+            category: (q as unknown as { category?: string }).category ?? '',
           }));
-
           setQuestions(transformedQuestions);
-          setError(null);
-        } else {
-          // Paid mode: fetch questions without correct answers (server-side validation)
-          const response = await getQuestions(sessionId!);
-          console.log('📚 Questions fetched:', response.questions.length, 'questions');
-
-          // Transform API response to Question format; keep real id (UUID string) for submit-answer
-          // NOTE: correct_index is NOT sent from API for security (prevents cheating)
-          // Answer validation happens server-side only; option indices 0-3 match DB order
-          const transformedQuestions: Question[] = response.questions.map((q: any, idx: number) => ({
-            id: q.id != null ? String(q.id) : String(idx),
-            text: q.text || q.question || '',
-            options: Array.isArray(q.options) ? [...q.options] : (Array.isArray(q.answers) ? [...q.answers] : []),
-            correctAnswer: -1, // Never exposed to client - validated server-side only
-          }));
-
-          if (transformedQuestions.length === 0) {
-            setError('No questions available');
-            return;
-          }
-
-          // For resumed sessions, the backend may have advanced current_question_index
-          // beyond 0. Fetch it so we start from the right question instead of re-asking
-          // already-answered questions (which causes QUESTION_INDEX_MISMATCH errors).
-          const { data: sessionRow } = await supabase
-            .from('game_sessions')
-            .select('current_question_index')
-            .eq('id', sessionId!)
-            .single();
-
-          const startIdx = sessionRow?.current_question_index || 0;
-          if (startIdx >= transformedQuestions.length) {
-            // All questions were already answered but session wasn't properly completed.
-            // Auto-finish with 0 score so the user can start a fresh game.
-            console.log('⚠️ Resumed session already answered all questions, auto-finishing');
-            onFinish(0, 0, 0);
-            return;
-          }
-          if (startIdx > 0) {
-            console.log(`🔄 Resuming session at question ${startIdx + 1}/${transformedQuestions.length}`);
-            setCurrentIdx(startIdx);
-          }
-
-          setQuestions(transformedQuestions);
-          setError(null);
+          setLoading(false);
+          return;
         }
-      } catch (err: any) {
+
+        const response = await getQuestions(sessionId!);
+        // Cast to loose shape because the API helper types Question with a
+        // `correctAnswer` field that the live EF response does NOT include
+        // (anti-cheat , correct answer comes back only after submit). The
+        // server payload always has id/text/options + optional category.
+        const transformedQuestions: Question[] = response.questions.map((q: unknown) => {
+          const row = q as { id: string; text: string; options: string[]; category?: string };
+          return {
+            id: row.id,
+            text: row.text,
+            options: row.options,
+            correctAnswer: -1, // unknown until submit-answer responds
+            category: row.category ?? '',
+          };
+        });
+
+        if (transformedQuestions.length === 0) {
+          setError('No questions returned for this round');
+          setLoading(false);
+          return;
+        }
+
+        // Resume mid-round: skip already-answered questions if the response
+        // includes an answered count. Falls back to 0 (start of quiz) when
+        // the API does not surface it.
+        const startIdx = ((response as unknown as { answered_count?: number }).answered_count) ?? 0;
+        if (startIdx >= transformedQuestions.length) {
+          // All already answered; immediately finalize via parent.
+          onFinish(score, totalPoints, sessionTimer);
+          return;
+        }
+        setQuestions(transformedQuestions);
+        setCurrentIdx(startIdx);
+        setQuestionStartTime(Date.now());
+        setLoading(false);
+      } catch (err) {
         console.error('Failed to fetch questions:', err);
-        setError(err.message || 'Failed to load questions');
-      } finally {
+        setError(err instanceof Error ? err.message : 'Failed to load questions');
         setLoading(false);
       }
     };
 
     fetchQuestions();
-  }, [sessionId, isPracticeMode, practiceQuestionIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, isPracticeMode]);
 
+  // ── Session timer (total) ──────────────────────────────────────────────
   useEffect(() => {
-    if (questions.length > 0) {
-      timerRef.current = window.setInterval(() => {
-        setSessionTimer(prev => prev + 1);
-      }, 1000);
-      return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-      };
-    }
-  }, [questions]);
+    timerRef.current = window.setInterval(() => {
+      setSessionTimer((prev) => prev + 1);
+    }, 1000);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
 
-  // Per-question countdown; on 0, submit as wrong and advance
+  // ── Per-question countdown ─────────────────────────────────────────────
   useEffect(() => {
-    if (questions.length === 0 || selectedOption !== null || timedOut) return;
-    setQuestionTimeLeft(timePerQuestion);
+    if (loading || questions.length === 0 || selectedOption !== null || timedOut) return;
+
     questionTimerRef.current = window.setInterval(() => {
       setQuestionTimeLeft((prev) => {
         if (prev <= 1) {
@@ -155,43 +181,54 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
         return prev - 1;
       });
     }, 1000);
+
     return () => {
       if (questionTimerRef.current) clearInterval(questionTimerRef.current);
       questionTimerRef.current = null;
     };
-  }, [questions.length, currentIdx, selectedOption, timedOut]);
+  }, [loading, questions.length, currentIdx, selectedOption, timedOut]);
 
-  // When questionTimeLeft hits 0, submit time_expired and advance
-  const timeoutFiredRef = useRef(false);
-  const timeoutRetryRef = useRef(0);
+  // ── Visibility-change forfeit listener (anti-cheat per Kyle 2026-06-04).
+  //     Tab switch / window minimize / app background mid-question = forfeit.
+  //     Existing setTimedOut(true) flow handles the submission. Listener only
+  //     fires when no answer yet picked and not already timed out. ─────────
   useEffect(() => {
-    if (questionTimeLeft !== 0 || selectedOption !== null || timedOut || questions.length === 0) return;
-    if (!isPracticeMode && !sessionId) return;
-    if (timeoutFiredRef.current) return;
+    const handleVisibility = () => {
+      if (typeof document === 'undefined') return;
+      if (document.hidden && selectedOption === null && !timedOut && !loading && questions.length > 0) {
+        setTimedOut(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [selectedOption, timedOut, loading, questions.length]);
+
+  // ── Timeout submission ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!timedOut || timeoutFiredRef.current) return;
+    if (questions.length === 0 || (!isPracticeMode && !sessionId)) return;
+
     timeoutFiredRef.current = true;
-    setTimedOut(true);
-    const currentQuestion = questions[currentIdx];
-    const timeTaken = (Date.now() - questionStartTime) / 1000;
+
     (async () => {
       try {
-        // Only submit to backend in paid mode
         if (!isPracticeMode && sessionId) {
           await submitAnswer({
             session_id: sessionId,
-            question_id: currentQuestion.id.toString(),
+            question_id: String(questions[currentIdx].id),
             question_index: currentIdx,
-            time_taken_ms: Math.floor(timeTaken * 1000),
+            selected_index: 0,
+            time_taken_ms: timePerQuestion * 1000,
             time_expired: true,
           });
         }
-        if (questionTimerRef.current) clearInterval(questionTimerRef.current);
-        questionTimerRef.current = null;
-        HapticFeedback.error();
-        playWrongSound();
+
+        timeoutFiredRef.current = false;
+        timeoutRetryRef.current = 0;
+
         setTimeout(() => {
+          setTimedOut(false);
           if (currentIdx < questions.length - 1) {
-            timeoutFiredRef.current = false;
-            setTimedOut(false);
             setCurrentIdx((prev) => prev + 1);
             setSelectedOption(null);
             setIsCorrect(null);
@@ -207,7 +244,6 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
         console.error('Timeout submit failed:', err);
         timeoutRetryRef.current++;
         if (timeoutRetryRef.current >= 3) {
-          // Gave it 3 tries, skip the question and move on
           timeoutRetryRef.current = 0;
           timeoutFiredRef.current = false;
           setTimedOut(false);
@@ -223,13 +259,12 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
             onFinish(score, totalPoints, sessionTimer);
           }
         } else {
-          // Retry — reset flags so the timeout effect fires again
           timeoutFiredRef.current = false;
           setTimedOut(false);
         }
       }
     })();
-  }, [questionTimeLeft, selectedOption, timedOut, sessionId, isPracticeMode, questions, currentIdx, questionStartTime, score, totalPoints, sessionTimer, onFinish]);
+  }, [questionTimeLeft, selectedOption, timedOut, sessionId, isPracticeMode, questions, currentIdx, questionStartTime, score, totalPoints, sessionTimer, onFinish, timePerQuestion]);
 
   const handleOptionSelect = async (optionIdx: number) => {
     if (selectedOption !== null || questions.length === 0) return;
@@ -245,36 +280,15 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
     let actualCorrectIndex = -1;
 
     if (isPracticeMode) {
-      // Practice mode: client-side scoring
       actualCorrectIndex = currentQuestion.correctAnswer;
       correct = optionIdx === actualCorrectIndex;
-
       if (correct) {
         const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / speedDecaySec)));
         pointsEarned = BASE_POINTS + speedBonus;
       }
-
-      console.log('🎮 Practice mode answer:', {
-        selected: optionIdx,
-        correct: actualCorrectIndex,
-        isCorrect: correct,
-        points: pointsEarned,
-      });
     } else {
-      // Paid mode: Submit answer to backend for validation (ONLY source of truth)
       try {
-        if (!sessionId || !currentQuestion.id) {
-          throw new Error('Missing session or question ID');
-        }
-
-        // Debug logging
-        console.log('📤 Submitting answer:', {
-          session_id: sessionId,
-          question_id: currentQuestion.id.toString(),
-          question_index: currentIdx,
-          selected_index: optionIdx,
-        });
-
+        if (!sessionId || !currentQuestion.id) throw new Error('Missing session or question ID');
         const answerResponse = await submitAnswer({
           session_id: sessionId,
           question_id: currentQuestion.id.toString(),
@@ -282,22 +296,16 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
           selected_index: optionIdx,
           time_taken_ms: Math.floor(timeTaken * 1000),
         });
-
-        console.log('📥 Answer response:', answerResponse);
-
-        correct = answerResponse.correct; // Backend returns 'correct', not 'is_correct'
-        pointsEarned = answerResponse.pointsEarned || 0; // Backend returns camelCase
-        actualCorrectIndex = answerResponse.correctIndex !== undefined ? answerResponse.correctIndex : -1; // Backend returns camelCase
-
+        correct = answerResponse.correct;
+        pointsEarned = answerResponse.pointsEarned || 0;
+        actualCorrectIndex = answerResponse.correctIndex !== undefined ? answerResponse.correctIndex : -1;
       } catch (err) {
-        console.error('❌ Failed to submit answer:', err);
+        console.error('Failed to submit answer:', err);
         if (currentIdx >= questions.length - 1) {
-          // Last question — server likely already processed, finish gracefully
           if (timerRef.current) clearInterval(timerRef.current);
           if (questionTimerRef.current) clearInterval(questionTimerRef.current);
           onFinish(score, totalPoints, sessionTimer);
         } else {
-          // Earlier questions — reset so player can tap again
           setSelectedOption(null);
           setIsCorrect(null);
         }
@@ -307,7 +315,6 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
 
     setIsCorrect(correct);
 
-    // Haptic feedback and sound effects
     if (correct) {
       HapticFeedback.success();
       playCorrectSound();
@@ -316,26 +323,21 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
       playWrongSound();
     }
 
-    // ALWAYS store the correct answer for display (especially when user gets it wrong)
+    // Reveal the correct answer (especially when user gets it wrong)
     if (actualCorrectIndex >= 0 && !isPracticeMode) {
       const updatedQuestions = [...questions];
       updatedQuestions[currentIdx].correctAnswer = actualCorrectIndex;
       setQuestions(updatedQuestions);
-      console.log('✅ Correct answer set:', OPTION_LABELS[actualCorrectIndex], '(index:', actualCorrectIndex, ')');
-    } else if (actualCorrectIndex < 0 && !isPracticeMode) {
-      console.warn('⚠️ Backend did not return correctIndex');
     }
 
     let pointsForThisQuestion = pointsEarned || 0;
     if (correct) {
-      // Use points from backend if available, otherwise calculate
       if (pointsEarned === 0 && !isPracticeMode) {
         const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / SPEED_BONUS_DECAY_SEC)));
         pointsForThisQuestion = BASE_POINTS + speedBonus;
       }
-
-      setScore(prev => prev + 1);
-      setTotalPoints(prev => prev + pointsForThisQuestion);
+      setScore((prev) => prev + 1);
+      setTotalPoints((prev) => prev + pointsForThisQuestion);
       setLastGainedPoints(pointsForThisQuestion);
     }
 
@@ -343,7 +345,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
       if (questionTimerRef.current) clearInterval(questionTimerRef.current);
       questionTimerRef.current = null;
       if (currentIdx < questions.length - 1) {
-        setCurrentIdx(prev => prev + 1);
+        setCurrentIdx((prev) => prev + 1);
         setSelectedOption(null);
         setIsCorrect(null);
         setLastGainedPoints(null);
@@ -356,7 +358,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
     }, 1200);
   };
 
-  // Show loading or error state
+  // ── Loading / Error states ─────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-full flex items-center justify-center bg-[#050505]">
@@ -370,7 +372,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
 
   if (error || questions.length === 0) {
     return (
-      <div className="min-h-full flex items-center justify-center bg-[#050505]">
+      <div className="min-h-full flex items-center justify-center bg-[#050505] p-6">
         <div className="text-center">
           <p className="text-red-400 text-xl font-black uppercase mb-4">{error || 'No questions available'}</p>
           <button
@@ -386,139 +388,208 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
 
   const question = questions[currentIdx];
   const showTimer = selectedOption === null && !timedOut;
+  const xpIfCorrect = Math.max(BASE_POINTS, Math.floor(BASE_POINTS + MAX_SPEED_BONUS * Math.max(0, 1 - (timePerQuestion - questionTimeLeft) / speedDecaySec)));
+  const accentColor = CATEGORY_COLORS[(question.category ?? '').toLowerCase()] ?? DEFAULT_CATEGORY_COLOR;
 
   return (
-    <div className="min-h-full flex flex-col bg-[#050505] p-4 sm:p-8 md:p-12 relative overflow-hidden">
-      <div className="absolute inset-0 pointer-events-none opacity-5 overflow-hidden">
-        <div className="scan-line"></div>
+    <div className="min-h-full flex flex-col bg-[#050505] text-white">
+      {/* Outer cap so the chrome + content don't stretch on 4K. ~1280px max,
+          centered. Inner sections still own their own padding. */}
+      <div className="w-full max-w-7xl mx-auto flex flex-col flex-1">
+
+      {/* ── Top chrome: back ‹  ·  category pill (centered)  ·  X close ── */}
+      <div className="flex items-center justify-between px-4 sm:px-6 pt-5 sm:pt-8">
+        <button
+          onClick={onQuit}
+          aria-label="Back"
+          className="w-10 h-10 rounded-full border border-white/10 bg-white/[0.03] flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all shrink-0"
+        >
+          <span className="text-2xl font-light leading-none translate-y-[-1px]">‹</span>
+        </button>
+        <div className="min-w-0 px-2">
+          <CategoryPill category={question.category} />
+        </div>
+        <button
+          onClick={onQuit}
+          aria-label="Close"
+          className="w-10 h-10 rounded-full border border-white/10 bg-white/[0.03] flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all shrink-0"
+        >
+          <span className="text-xl font-light leading-none">×</span>
+        </button>
       </div>
 
-      <div className="relative z-10 flex justify-between items-center mb-8 md:mb-16">
-        <div className="flex flex-col">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[#00FFA3] text-[9px] font-black tracking-[0.4em] uppercase italic">TRIVIA</span>
-            <div className="w-1.5 h-1.5 rounded-full bg-[#00FFA3] animate-pulse"></div>
-          </div>
-          <h3 className="text-xl md:text-3xl font-[1000] italic text-white uppercase tracking-tighter">ARENA_NODE_B1</h3>
-        </div>
-        
-        <div className="flex gap-4 md:gap-12 items-center">
-            <div className="text-right">
-                <span className="text-zinc-600 text-[9px] font-black uppercase tracking-widest block mb-1 italic">Total_Time</span>
-                <span className="text-white text-xl md:text-3xl font-[1000] italic tabular-nums leading-none">
-                  {Math.floor(sessionTimer / 60)}:{(sessionTimer % 60).toString().padStart(2, '0')}
-                </span>
-            </div>
-            <button 
-              onClick={onQuit}
-              className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-[#FF3131]/20 hover:border-[#FF3131]/40 text-zinc-400 hover:text-white font-black uppercase text-[10px] tracking-widest transition-all rounded-sm italic"
-            >
-              ABORT
-            </button>
-        </div>
-      </div>
-
-      <div className="relative z-10 flex-1 flex flex-col justify-center items-center">
-        <div className="w-full max-w-4xl mx-auto">
-          <div className="flex justify-between items-end mb-4 px-2">
-            <span className="text-[#00FFA3] text-xs font-black italic uppercase tracking-[0.2em]">Block {currentIdx + 1} / 10</span>
-            {showTimer && (
-              <span className={`text-sm font-[1000] italic tabular-nums ${questionTimeLeft <= 2 ? 'text-[#FF3131] animate-pulse' : 'text-[#14F195]'}`}>
-                {questionTimeLeft}s
+      {/* ── Q-count strip + progress bar ── */}
+      <div className="px-4 sm:px-6 mt-6 sm:mt-7">
+        <div className="flex justify-between items-baseline mb-2 gap-2">
+          <span
+            className="text-zinc-500 font-black italic uppercase tracking-[0.24em] text-[10px] sm:text-[11px] whitespace-nowrap"
+            style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+          >
+            QUESTION <span className="text-white">{(currentIdx + 1).toString().padStart(2, '0')}</span> / 10
+          </span>
+          {showTimer ? (
+            <div className="flex items-baseline gap-2 tabular-nums whitespace-nowrap">
+              <span
+                className={`font-black italic tracking-tight text-base sm:text-lg ${questionTimeLeft <= 3 ? 'text-[#FF3131]' : 'text-[#14F195]'}`}
+                style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+              >
+                {questionTimeLeft.toString().padStart(2, '0')}s
               </span>
-            )}
-            {timedOut && (
-              <span className="text-[#FF3131] text-sm font-[1000] italic uppercase">Time&apos;s up!</span>
-            )}
-          </div>
+              <span className="text-zinc-500 text-[10px] sm:text-[11px] font-black italic tracking-widest">
+                +{totalPoints.toLocaleString()} XP
+              </span>
+            </div>
+          ) : (
+            <span className="text-zinc-500 text-[10px] sm:text-[11px] font-black italic tracking-widest whitespace-nowrap">
+              {timedOut ? "TIME'S UP" : 'SUBMITTED'}
+            </span>
+          )}
+        </div>
+        {/* 10-segment progress bar */}
+        <div className="flex gap-[3px]">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div
+              key={i}
+              className={`flex-1 h-[3px] rounded-sm transition-colors duration-300 ${
+                i < currentIdx
+                  ? 'bg-[#14F195]'
+                  : i === currentIdx
+                  ? 'bg-[#14F195]/60'
+                  : 'bg-white/10'
+              }`}
+            />
+          ))}
+        </div>
+      </div>
 
-          <div className="bg-[#0A0A0A] border border-white/5 p-6 sm:p-10 md:p-16 rounded-sm shadow-2xl relative overflow-hidden group mb-6 md:mb-10">
-            <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-[#00FFA3]/30"></div>
-            <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-[#00FFA3]/30"></div>
-            <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-[#00FFA3]/30"></div>
-            <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-[#00FFA3]/30"></div>
-
-            <h2 className="text-2xl sm:text-3xl md:text-5xl font-[1000] italic text-white uppercase tracking-tight leading-[1.1] md:leading-[1.05] text-center">
+      {/*
+        Question hero + answer grid.
+        Mobile: column , question above, answers below.
+        Desktop (md+): row , question LEFT, answers RIGHT (matches Kyle's
+        2026-06-03 10:21pm desktop screenshot, which shows Q on the left half
+        and the 2x2 answer grid on the right half).
+      */}
+      <div className="flex-1 flex flex-col md:flex-row md:items-center md:gap-10 lg:gap-16 px-4 sm:px-6 py-8 sm:py-10">
+        <div className="flex gap-4 sm:gap-5 mb-6 md:mb-0 md:flex-1">
+          <div className="w-[3px] bg-[#14F195] self-stretch rounded-full shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div
+              className="text-[#14F195] font-black italic uppercase tracking-[0.24em] text-[10px] sm:text-xs mb-2"
+              style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+            >
+              Q.{(currentIdx + 1).toString().padStart(2, '0')}
+            </div>
+            <h2
+              className="text-white font-black italic leading-[1.15] text-[22px] sm:text-3xl md:text-[34px] lg:text-[40px] break-words"
+              style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif', fontWeight: 900 }}
+            >
               {question.text}
             </h2>
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5 px-1">
-            {question.options.map((option, idx) => {
-              let stateClass = "border-white/5 hover:border-[#00FFA3]/20 text-zinc-400 hover:text-white bg-white/[0.02]";
-              let animationClass = "";
-              
-              if (selectedOption === idx) {
-                if (isCorrect === true) {
-                  stateClass = "border-[#00FFA3] bg-[#00FFA3]/10 text-[#00FFA3] shadow-[0_0_20px_rgba(0,255,163,0.1)]";
-                  animationClass = "answer-correct";
-                } else if (isCorrect === false) {
-                  stateClass = "border-[#FF3131] bg-[#FF3131]/10 text-[#FF3131]";
-                  animationClass = "answer-wrong";
-                } else {
-                  // Pending: answer submitted, waiting for result — show neutral so we don't flash red
-                  stateClass = "border-[#00FFA3]/40 bg-[#00FFA3]/5 text-white";
-                  animationClass = "";
-                }
-              } else if (selectedOption !== null && idx === question.correctAnswer) {
-                stateClass = "border-[#00FFA3] bg-[#00FFA3]/5 text-[#00FFA3]/60";
-                animationClass = "answer-correct";
-              }
+        {/* ── Answer cards: 4 stacked on mobile, 2x2 on desktop ── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 md:flex-1">
+          {question.options.map((option, idx) => {
+            const isPicked = selectedOption === idx;
+            const isReveal = selectedOption !== null;
+            const isCorrectAns = isReveal && question.correctAnswer === idx;
+            const isPickedCorrect = isPicked && isCorrect === true;
+            const isPickedWrong = isPicked && isCorrect === false;
+            const isPickedPending = isPicked && isCorrect === null;
 
-              return (
-                <button
-                  key={idx}
-                  disabled={selectedOption !== null || timedOut}
-                  onClick={() => handleOptionSelect(idx)}
-                  className={`relative p-5 md:p-7 text-left border transition-all duration-300 group flex items-center gap-5 md:gap-8 active:scale-[0.99] ${stateClass} ${animationClass}`}
+            let stateClass = 'border-white/10 bg-white/[0.02] text-zinc-300 hover:border-white/30 hover:bg-white/[0.04]';
+            let badgeClass = 'text-zinc-500';
+            let animationClass = '';
+
+            if (isPickedCorrect) {
+              stateClass = 'border-[#14F195] bg-[#14F195]/10 text-[#14F195]';
+              badgeClass = 'text-[#14F195]';
+              animationClass = 'answer-correct';
+            } else if (isPickedWrong) {
+              stateClass = 'border-[#FF3131] bg-[#FF3131]/10 text-[#FF3131]';
+              badgeClass = 'text-[#FF3131]';
+              animationClass = 'answer-wrong';
+            } else if (isPickedPending) {
+              // Pre-reveal picked state. Cyan on mobile (md:hidden split), green on desktop.
+              stateClass = 'border-[#38BDF8] bg-[#38BDF8]/10 text-white md:border-[#14F195] md:bg-[#14F195]/10 md:text-[#14F195]';
+              badgeClass = 'text-[#38BDF8] md:text-[#14F195]';
+            } else if (isReveal && isCorrectAns) {
+              // Show the correct answer when user picked wrong
+              stateClass = 'border-[#14F195]/60 bg-[#14F195]/5 text-[#14F195]';
+              badgeClass = 'text-[#14F195]';
+            }
+
+            return (
+              <button
+                key={idx}
+                disabled={selectedOption !== null || timedOut}
+                onClick={() => handleOptionSelect(idx)}
+                className={`relative px-4 py-4 sm:px-5 sm:py-5 border rounded-2xl transition-all duration-200 flex items-center gap-4 text-left active:scale-[0.99] disabled:cursor-not-allowed ${stateClass} ${animationClass}`}
+              >
+                <span
+                  className={`flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 font-black italic text-2xl sm:text-3xl flex items-center justify-center transition-colors ${badgeClass}`}
+                  style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif', fontWeight: 900 }}
                 >
-                  <div className={`w-8 h-8 md:w-12 md:h-12 border flex items-center justify-center font-[1000] italic text-sm md:text-xl transition-all duration-300 flex-shrink-0 ${selectedOption === idx ? 'bg-current text-black border-transparent' : 'border-current opacity-20 group-hover:opacity-100'}`}>
-                    {OPTION_LABELS[idx] ?? String.fromCharCode(65 + idx)}
-                  </div>
-                  <span className="text-base md:text-lg font-black italic uppercase tracking-normal flex-1 leading-normal">{option}</span>
-                  
-                  {selectedOption === idx && isCorrect && lastGainedPoints && (
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                       <span className="text-[#00FFA3] text-[10px] md:text-xs font-[1000] italic points-popup block">
-                          +{lastGainedPoints} XP
-                       </span>
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                  {OPTION_LABELS[idx] ?? String.fromCharCode(65 + idx)}
+                </span>
+                <span className="flex-1 text-sm sm:text-base md:text-base font-medium leading-tight text-current">
+                  {option}
+                </span>
+                {isPickedCorrect && lastGainedPoints && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#14F195] text-[10px] sm:text-xs font-[1000] italic tracking-wide pointer-events-none points-popup">
+                    +{lastGainedPoints} XP
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <div className="relative z-10 mt-12 flex flex-col md:flex-row gap-6 md:gap-0 justify-between items-center pt-8 border-t border-white/5">
-        <div className="flex flex-col items-center md:items-start">
-          <span className="text-[9px] text-zinc-600 font-black uppercase tracking-[0.4em] mb-2 italic">GAME PROGRESS</span>
-          <div className="flex gap-2">
-             {[...Array(questions.length)].map((_, i) => (
-               <div 
-                 key={i} 
-                 className={`w-4 h-1 transition-all duration-500 ${i < currentIdx ? 'bg-[#00FFA3] opacity-100' : i === currentIdx ? 'bg-[#00FFA3] animate-pulse' : 'bg-white/5'}`}
-               ></div>
-             ))}
+      {/* ── Bottom strip: hearts + N/5 LIVES + STREAK + XP IF CORRECT ── */}
+      <div className="px-4 sm:px-6 pb-5 sm:pb-6 pt-3 sm:pt-4 border-t border-white/[0.04] flex items-center justify-between gap-3 sm:gap-4 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex gap-1 sm:gap-1.5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <span
+                key={i}
+                className={`text-[15px] sm:text-xl leading-none transition-colors ${
+                  i < livesRemaining ? 'text-[#FF3131]' : 'text-[#27272a]'
+                }`}
+                aria-hidden
+              >
+                ♥
+              </span>
+            ))}
           </div>
+          <span
+            className="text-zinc-500 font-black italic uppercase tracking-[0.18em] sm:tracking-[0.22em] text-[9px] sm:text-[11px] whitespace-nowrap"
+            style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+          >
+            <span className="text-zinc-300">{livesRemaining}/5</span> Lives
+          </span>
         </div>
-        
-        <div className="flex items-center gap-6">
-           <div className="text-right">
-              <span className="text-zinc-700 text-[8px] font-black uppercase block tracking-widest italic">TRIVIA XP</span>
-              <span className="text-[#00FFA3] font-[1000] italic text-2xl leading-none tabular-nums">
-                {totalPoints.toLocaleString()} <span className="text-[10px] opacity-50 tracking-normal">XP</span>
-              </span>
-           </div>
-           <div className="h-8 w-[1px] bg-white/10 hidden sm:block"></div>
-           <div className="text-right hidden sm:block">
-              <span className="text-zinc-700 text-[8px] font-black uppercase block tracking-widest italic">Accuracy</span>
-              <span className="text-white font-[1000] italic text-2xl leading-none tabular-nums">
-                {score}/{questions.length}
-              </span>
-           </div>
+
+        <div className="flex items-center gap-3 sm:gap-5 min-w-0">
+          <span
+            className="text-[#FFD700] font-black italic uppercase tracking-[0.18em] sm:tracking-[0.22em] text-[9px] sm:text-[11px] flex items-baseline gap-1 whitespace-nowrap"
+            style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
+          >
+            STREAK x{streak} <span className="text-xs sm:text-base">🔥</span>
+          </span>
+          <span
+            className="hidden md:inline font-black italic uppercase tracking-[0.22em] text-[11px] whitespace-nowrap"
+            style={{
+              fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif',
+              color: accentColor,
+            }}
+          >
+            +{xpIfCorrect} XP IF CORRECT
+          </span>
         </div>
+      </div>
+
       </div>
     </div>
   );

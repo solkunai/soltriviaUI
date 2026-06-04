@@ -27,7 +27,15 @@ interface HomeViewV2Props {
   onEnterTrivia: () => void;
   onOpenGuide: () => void;
   onOpenBuyLives: () => void;
+  /** Legacy practice trigger , opens the category-selector modal. Still
+   *  passed in for backward-compat with other callers. The Home FREE PLAY
+   *  tile now uses `onOpenFreePlay` instead (routes to the FreePlayViewV2
+   *  page) per Kyle 2026-06-04. */
   onStartPractice: () => void;
+  /** Route to the Free Play page (View.PLAY → FreePlayViewV2). New in
+   *  2026-06-04: Kyle wants the Home FREE PLAY tile to navigate into the
+   *  proper Free Play page, NOT open the category-modal popup. */
+  onOpenFreePlay?: () => void;
   practiceRunsLeft: number;
   hasGamePass?: boolean;
   isSeekerVerified?: boolean;
@@ -321,6 +329,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
     onCreateCustomGame,
     onEnterDuels,
     onStartPractice,
+    onOpenFreePlay,
     onBuyGamePass,
     hasGamePass,
     onMint,
@@ -872,9 +881,10 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           </div>
         </button>
 
-        {/* FREE PLAY — streak focus */}
+        {/* FREE PLAY — streak focus. Routes to View.PLAY (FreePlayViewV2)
+            per Kyle 2026-06-04 , no more category-modal popup from Home. */}
         <button
-          onClick={onStartPractice}
+          onClick={onOpenFreePlay ?? onStartPractice}
           className="text-left rounded-xl active:opacity-90"
           style={{
             background: '#0a0a0a',

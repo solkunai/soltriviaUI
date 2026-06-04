@@ -2248,6 +2248,7 @@ const App: React.FC = () => {
                 }
               }}
               onStartPractice={handleStartPractice}
+              onOpenFreePlay={() => setCurrentView(View.PLAY)}
               practiceRunsLeft={practiceRunsLeft}
               hasGamePass={hasGamePass}
               isSeekerVerified={isSeekerVerified}
