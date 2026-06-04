@@ -1,8 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { toPng } from 'html-to-image';
 import { getReEntryFeeLamports } from '../src/utils/constants';
 import CustomGameShareCard, { getCustomGameTier } from './CustomGameShareCard';
 import { pickTweet, xIntentUrl } from '../src/utils/tweetVariants';
+import { getJupiterToken } from '../src/utils/jupiterTokens';
 
 // Gate 4 results polish , teens-trap handled (11/12/13 → TH).
 function ordinalSuffix(n: number): string {
@@ -59,8 +60,32 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
   // by the screen wrapper from CustomGameData). Default to SOL for back-compat.
   const tokenSymbol = (results as any).tokenSymbol ?? 'SOL';
   const tokenDecimals = (results as any).tokenDecimals ?? 9;
+  const tokenMint = (results as any).tokenMint ?? null;
   const baseDivisor = Math.pow(10, tokenDecimals);
   const reEntryFeeSOL = isReEntry && entryFeeLamports != null ? getReEntryFeeLamports(entryFeeLamports) / baseDivisor : 0;
+
+  // Live Jupiter USD price for SPL games. NULL token_mint = SOL game, no
+  // separate price hint needed (SOL pricing is shown elsewhere site-wide).
+  const [tokenUsdPrice, setTokenUsdPrice] = useState<number | null>(null);
+  useEffect(() => {
+    if (!tokenMint) {
+      setTokenUsdPrice(null);
+      return;
+    }
+    let cancelled = false;
+    getJupiterToken(tokenMint)
+      .then((tok) => { if (!cancelled) setTokenUsdPrice(tok?.usdPrice ?? null); })
+      .catch(() => { if (!cancelled) setTokenUsdPrice(null); });
+    return () => { cancelled = true; };
+  }, [tokenMint]);
+  const formatTokenUsd = (humanAmount: number): string | null => {
+    if (!tokenUsdPrice || !tokenMint || humanAmount <= 0) return null;
+    const usd = humanAmount * tokenUsdPrice;
+    if (usd > 0 && usd < 0.01) return '< $0.01';
+    if (usd < 1000) return `≈ $${usd.toFixed(2)}`;
+    if (usd < 1_000_000) return `≈ $${(usd / 1000).toFixed(2)}k`;
+    return `≈ $${(usd / 1_000_000).toFixed(2)}M`;
+  };
   const accuracy = results.totalQuestions > 0 ? Math.round((results.correctCount / results.totalQuestions) * 100) : 0;
   const timeSec = Math.round(results.timeTakenMs / 1000);
   const minutes = Math.floor(timeSec / 60);
@@ -238,6 +263,11 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
             >
               {prizePotSol.toFixed(2)} {tokenSymbol}
             </span>
+            {formatTokenUsd(prizePotSol) && (
+              <span className="block font-bold tabular-nums mt-1" style={{ color: 'rgba(255,215,0,0.6)', fontSize: 13 }}>
+                {formatTokenUsd(prizePotSol)}
+              </span>
+            )}
             <p
               className="text-zinc-400 font-black italic uppercase tracking-[0.16em] mt-3 text-[10px]"
               style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}

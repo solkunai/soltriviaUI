@@ -259,6 +259,20 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   // Format a base-units amount back to a human-readable string in the selected token.
   const formatAmount = (baseUnits: number): string => (baseUnits / baseUnitMultiplier).toFixed(Math.min(activeDecimals, 4));
 
+  // Live USD value for SPL games (Jupiter returns usdPrice on the resolved
+  // token). Returns null for SOL games / free games / when Jupiter doesn't
+  // know the token's price. Display is approximate (price moves at view time).
+  const tokenUsdPrice = jupiterToken?.usdPrice ?? null;
+  const formatUsd = (baseUnits: number): string | null => {
+    if (!isSplGame || !tokenUsdPrice || baseUnits <= 0) return null;
+    const tokenAmount = baseUnits / baseUnitMultiplier;
+    const usd = tokenAmount * tokenUsdPrice;
+    if (usd > 0 && usd < 0.01) return '< $0.01';
+    if (usd < 1000) return `≈ $${usd.toFixed(2)}`;
+    if (usd < 1_000_000) return `≈ $${(usd / 1000).toFixed(2)}k`;
+    return `≈ $${(usd / 1_000_000).toFixed(2)}M`;
+  };
+
   // Reset round count if invalid for new question count
   const handleQuestionCountChange = (count: 5 | 10 | 15) => {
     setQuestionCount(count);
@@ -1425,23 +1439,40 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 </div>
 
                 {/* Prize Calculator. All amounts shown in the selected token's
-                    natural units. Platform fee on entry is always SOL regardless. */}
+                    natural units. For SPL games with a Jupiter-resolved price,
+                    a tiny "≈ $USD" hint appears alongside each amount.
+                    Platform fee on entry is always SOL regardless. */}
                 <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 space-y-2">
                   <p className="text-zinc-400 text-[10px] font-black uppercase tracking-wider mb-3">Estimated Prize Breakdown</p>
                   {isCreatorFunded ? (
                     <div className="flex justify-between text-zinc-500 text-xs">
                       <span>Your deposit</span>
-                      <span>{formatAmount(activeCreatorDeposit)} {activeSymbol}</span>
+                      <span className="text-right">
+                        <span>{formatAmount(activeCreatorDeposit)} {activeSymbol}</span>
+                        {formatUsd(activeCreatorDeposit) && (
+                          <span className="block text-zinc-600 text-[9px] tabular-nums">{formatUsd(activeCreatorDeposit)}</span>
+                        )}
+                      </span>
                     </div>
                   ) : (
                     <div className="flex justify-between text-zinc-500 text-xs">
                       <span>Entry fee</span>
-                      <span>{formatAmount(activeEntryFee)} {activeSymbol} x {maxPlayers} players</span>
+                      <span className="text-right">
+                        <span>{formatAmount(activeEntryFee)} {activeSymbol} x {maxPlayers} players</span>
+                        {formatUsd(activeEntryFee) && (
+                          <span className="block text-zinc-600 text-[9px] tabular-nums">{formatUsd(activeEntryFee)} per player</span>
+                        )}
+                      </span>
                     </div>
                   )}
                   <div className="flex justify-between text-zinc-400 text-xs font-bold">
                     <span>Total pot</span>
-                    <span>{formatAmount(estimatedPot)} {activeSymbol}</span>
+                    <span className="text-right">
+                      <span>{formatAmount(estimatedPot)} {activeSymbol}</span>
+                      {formatUsd(estimatedPot) && (
+                        <span className="block text-zinc-600 text-[9px] font-normal tabular-nums">{formatUsd(estimatedPot)}</span>
+                      )}
+                    </span>
                   </div>
                   <div className="flex justify-between text-zinc-600 text-[10px]">
                     <span>Platform cut ({isCreatorFunded ? 0 : 10}%)</span>
@@ -1450,14 +1481,24 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   <div className="border-t border-white/5 pt-2 mt-2">
                     <div className="flex justify-between text-[#38BDF8] text-sm font-[1000] italic">
                       <span>Prize pool</span>
-                      <span>{formatAmount(prizePot)} {activeSymbol}</span>
+                      <span className="text-right">
+                        <span>{formatAmount(prizePot)} {activeSymbol}</span>
+                        {formatUsd(prizePot) && (
+                          <span className="block text-[#38BDF8]/70 text-[9px] tabular-nums font-normal not-italic">{formatUsd(prizePot)}</span>
+                        )}
+                      </span>
                     </div>
                   </div>
                   <div className="space-y-1 mt-2">
                     {winnerAmounts.map((amt, i) => (
                       <div key={i} className="flex justify-between text-zinc-400 text-[11px]">
                         <span>{i + 1}{i === 0 ? 'st' : i === 1 ? 'nd' : i === 2 ? 'rd' : 'th'} place ({CUSTOM_GAME_WINNER_SPLIT_LABELS[maxWinners][i]})</span>
-                        <span className="text-white font-bold">{formatAmount(amt)} {activeSymbol}</span>
+                        <span className="text-right">
+                          <span className="text-white font-bold">{formatAmount(amt)} {activeSymbol}</span>
+                          {formatUsd(amt) && (
+                            <span className="block text-zinc-600 text-[9px] tabular-nums">{formatUsd(amt)}</span>
+                          )}
+                        </span>
                       </div>
                     ))}
                   </div>

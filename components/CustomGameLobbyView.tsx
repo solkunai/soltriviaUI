@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getCustomGame, type CustomGameData } from '../src/utils/api';
+import { getJupiterToken } from '../src/utils/jupiterTokens';
 import {
   CUSTOM_GAME_MAX_ATTEMPTS,
   DEFAULT_AVATAR,
@@ -53,9 +54,20 @@ function PrizeHeroV2(props: {
   countdownLabel: string;
   /** Token symbol for display. Defaults to SOL for back-compat with pre-v2.1 callers. */
   tokenSymbol?: string;
+  /** Optional Jupiter-resolved USD price per unit (for SPL token games). Renders a tiny "≈ $X" hint under the hero amount when present. */
+  tokenUsdPrice?: number | null;
 }) {
   const { prizeSol, entryFeeSol, playerCount, maxPlayers, maxWinners, prizeSplitBps, isCreatorFunded, isFree, countdown, countdownLabel } = props;
   const sym = props.tokenSymbol ?? 'SOL';
+  const formatHeroUsd = (humanAmount: number): string | null => {
+    if (!props.tokenUsdPrice || humanAmount <= 0) return null;
+    const usd = humanAmount * props.tokenUsdPrice;
+    if (usd > 0 && usd < 0.01) return '< $0.01';
+    if (usd < 1000) return `≈ $${usd.toFixed(2)}`;
+    if (usd < 1_000_000) return `≈ $${(usd / 1000).toFixed(2)}k`;
+    return `≈ $${(usd / 1_000_000).toFixed(2)}M`;
+  };
+  const heroUsd = formatHeroUsd(prizeSol);
   const subtitle = isFree
     ? 'FREE ENTRY · GLORY ONLY'
     : isCreatorFunded
@@ -97,6 +109,14 @@ function PrizeHeroV2(props: {
           >
             {isFree ? `— ${sym}` : `${prizeSol.toFixed(prizeSol >= 1 ? 2 : 3)} ${sym}`}
           </div>
+          {heroUsd && (
+            <div
+              className="font-bold tabular-nums mt-1"
+              style={{ color: 'rgba(255,215,0,0.55)', fontSize: 12 }}
+            >
+              {heroUsd}
+            </div>
+          )}
           <div
             className="font-black italic uppercase tracking-[0.16em] text-[10px] sm:text-[11px] text-zinc-400 mt-3"
             style={{ fontFamily: '"Saira Condensed", "Saira", system-ui, sans-serif' }}
@@ -281,6 +301,38 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   const tokenSymbol = gameData?.token_symbol ?? 'SOL';
   const baseDivisor = Math.pow(10, tokenDecimals);
   const formatToken = (baseUnits: number) => (baseUnits / baseDivisor).toFixed(Math.min(tokenDecimals, 4));
+
+  // Live Jupiter USD price for the game's token. Only fetched for SPL games
+  // (NULL token_mint = SOL, which has its own price feed elsewhere). Refreshes
+  // on mount; not stored in DB so always current at view time.
+  const [tokenUsdPrice, setTokenUsdPrice] = useState<number | null>(null);
+  useEffect(() => {
+    const mint = gameData?.token_mint;
+    if (!mint) {
+      setTokenUsdPrice(null);
+      return;
+    }
+    let cancelled = false;
+    getJupiterToken(mint)
+      .then((tok) => {
+        if (!cancelled) setTokenUsdPrice(tok?.usdPrice ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setTokenUsdPrice(null);
+      });
+    return () => { cancelled = true; };
+  }, [gameData?.token_mint]);
+
+  // Format a token amount (already divided to human units) as a "≈ $USD" hint.
+  // Returns null when no price available or amount is zero. Approximate.
+  const formatTokenUsd = (humanAmount: number): string | null => {
+    if (!tokenUsdPrice || !gameData?.token_mint || humanAmount <= 0) return null;
+    const usd = humanAmount * tokenUsdPrice;
+    if (usd > 0 && usd < 0.01) return '< $0.01';
+    if (usd < 1000) return `≈ $${usd.toFixed(2)}`;
+    if (usd < 1_000_000) return `≈ $${(usd / 1000).toFixed(2)}k`;
+    return `≈ $${(usd / 1_000_000).toFixed(2)}M`;
+  };
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
@@ -691,6 +743,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             countdown={gameData.status === 'started' && countdown ? countdown : (gameData.status === 'active' ? expiryLabel : null)}
             countdownLabel={gameData.status === 'started' ? 'TIME LEFT' : 'CLOSES IN'}
             tokenSymbol={tokenSymbol}
+            tokenUsdPrice={tokenUsdPrice}
           />
         )}
 
@@ -792,6 +845,9 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                         {amount.toFixed(3)}
                       </span>
                       <span className="text-zinc-600 text-[9px] font-black uppercase block">{tokenSymbol}</span>
+                      {formatTokenUsd(amount) && (
+                        <span className="text-zinc-700 text-[9px] tabular-nums block">{formatTokenUsd(amount)}</span>
+                      )}
                     </div>
                   </div>
                 );
@@ -1221,6 +1277,9 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                           +{finalizedPrizeSol.toFixed(3)}
                         </span>
                         <span className="text-zinc-600 text-[8px] font-black uppercase block">{tokenSymbol}</span>
+                        {formatTokenUsd(finalizedPrizeSol) && (
+                          <span className="text-zinc-700 text-[8px] tabular-nums block">{formatTokenUsd(finalizedPrizeSol)}</span>
+                        )}
                       </div>
                     )}
                     {showLivePrize && (
@@ -1229,6 +1288,9 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                           +{livePrizeSol.toFixed(3)}
                         </span>
                         <span className="text-zinc-600 text-[7px] sm:text-[8px] font-black uppercase block">{tokenSymbol} · IF NOW</span>
+                        {formatTokenUsd(livePrizeSol) && (
+                          <span className="text-zinc-700 text-[8px] tabular-nums block">{formatTokenUsd(livePrizeSol)}</span>
+                        )}
                       </div>
                     )}
                     {isOut && !showLivePrize && !showFinalPrize && (
