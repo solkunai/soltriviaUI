@@ -115,6 +115,10 @@ export interface SubmitAnswerParams {
   selected_index?: number;
   time_taken_ms: number;
   time_expired?: boolean; // When true, no selection; backend records wrong and advances
+  /** v2.1 LIVES retry mechanic. 0 / omitted = first attempt (original flow).
+   *  1 or 2 = re-answer via lives (server validates against question_attempts_used
+   *  cap on game_sessions and player_lives.lives_count). Backend EF v52+ required. */
+  attempt_idx?: number;
 }
 
 export interface SubmitAnswerResponse {
@@ -126,6 +130,10 @@ export interface SubmitAnswerResponse {
   timeMs?: number;
   timedOut?: boolean;
   isLastQuestion?: boolean;
+  /** v52 retry response fields , present only when the request sent attempt_idx > 0. */
+  retryUsed?: boolean;
+  livesRemaining?: number;
+  questionAttemptsUsed?: number;
 }
 
 export interface Question {

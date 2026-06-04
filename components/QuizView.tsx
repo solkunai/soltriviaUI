@@ -2,8 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Question } from '../types';
 import { HapticFeedback } from '../src/utils/haptics';
 import { playCorrectSound, playWrongSound } from '../src/utils/sounds';
-import { getQuestions, submitAnswer, getPracticeQuestions, type PracticeQuestion } from '../src/utils/api';
+import { getQuestions, submitAnswer, getPracticeQuestions, getPlayerLives, type PracticeQuestion } from '../src/utils/api';
 import { CATEGORY_COLORS, DEFAULT_CATEGORY_COLOR, getCategoryColor, categoryLabel } from '../src/utils/categoryColors';
+import { useWallet } from '../src/contexts/WalletContext';
+import UseALifePopup from './UseALifePopup';
+
+const MAX_QUESTION_RETRIES_PER_GAME = 2; // per Kyle's spec + submit-answer v52
 
 interface QuizViewProps {
   sessionId: string | null;
@@ -69,12 +73,25 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
   const [questionTimeLeft, setQuestionTimeLeft] = useState(timePerQuestion);
   const [timedOut, setTimedOut] = useState(false);
 
-  // ── Prototype-adoption state (Gate 1) , visual only, Gate 2 wires real
-  //     consumption + the USE A LIFE? popup. ─────────────────────────────
-  // livesRemaining/streak default to 5/0; on Gate 2 these become route/prop-
-  // driven or fetched from player_lives + player_stats.
-  const [livesRemaining] = useState(5);
+  // ── LIVES mechanic state (Gate 2) ──────────────────────────────────────
+  //   * livesRemaining , real count from player_lives table (fetched on mount)
+  //   * livesUsedA , per-game retry budget consumed (max MAX_QUESTION_RETRIES_PER_GAME)
+  //   * attemptIdx , passed to submit-answer v52 on every call; 0 = first
+  //     attempt, 1 = first retry, 2 = second retry
+  //   * showLifePopup , controls the USE A LIFE? modal visibility
+  //   * popupShownAt , timestamp when the popup appeared, used to compute
+  //     time_taken_ms on retry from a fresh 15s clock (not the original
+  //     question start time)
+  //   * isSubmittingRetry , disables popup buttons during the retry submit
+  // Practice mode bypasses lives entirely (free play, no XP, no consumption).
+  const [livesRemaining, setLivesRemaining] = useState(5);
+  const [livesUsedA, setLivesUsedA] = useState(0);
+  const [attemptIdx, setAttemptIdx] = useState(0);
+  const [showLifePopup, setShowLifePopup] = useState(false);
+  const [popupShownAt, setPopupShownAt] = useState<number | null>(null);
+  const [isSubmittingRetry, setIsSubmittingRetry] = useState(false);
   const [streak] = useState(0);
+  const { publicKey } = useWallet();
 
   const timerRef = useRef<number | null>(null);
   const questionTimerRef = useRef<number | null>(null);
@@ -188,6 +205,23 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
     };
   }, [loading, questions.length, currentIdx, selectedOption, timedOut]);
 
+  // ── Fetch real lives count on mount (paid mode only) ──────────────────
+  useEffect(() => {
+    if (isPracticeMode) return;
+    const wallet = publicKey?.toBase58() ?? null;
+    if (!wallet) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getPlayerLives(wallet);
+        if (mounted) setLivesRemaining(Number(data.lives_count) || 0);
+      } catch (err) {
+        console.warn('[QuizView] failed to fetch lives:', err);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [isPracticeMode, publicKey]);
+
   // ── Visibility-change forfeit listener (anti-cheat per Kyle 2026-06-04).
   //     Tab switch / window minimize / app background mid-question = forfeit.
   //     Existing setTimedOut(true) flow handles the submission. Listener only
@@ -266,11 +300,27 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
     })();
   }, [questionTimeLeft, selectedOption, timedOut, sessionId, isPracticeMode, questions, currentIdx, questionStartTime, score, totalPoints, sessionTimer, onFinish, timePerQuestion]);
 
+  /**
+   * Submit the picked answer to the server (paid mode) or score client-side
+   * (practice mode). On WRONG in paid mode with retry budget + lives, shows
+   * the USE A LIFE? popup instead of advancing to the next question.
+   *
+   * On retry, time_taken_ms is measured from when the popup was shown
+   * (fresh 15s clock per Kyle's spec), not from the original question start.
+   * The retry submission passes attempt_idx > 0 so the v52 EF takes the
+   * RETRY BRANCH (validates budget, updates the existing answer row in
+   * place, consumes a life, returns retryUsed + livesRemaining +
+   * questionAttemptsUsed).
+   */
   const handleOptionSelect = async (optionIdx: number) => {
     if (selectedOption !== null || questions.length === 0) return;
     if (!isPracticeMode && !sessionId) return;
+    if (showLifePopup) return; // ignore stray taps while popup is open
 
-    const timeTaken = (Date.now() - questionStartTime) / 1000;
+    // Time source: retry uses fresh popup-shown clock; first try uses
+    // the original question start.
+    const refStart = attemptIdx > 0 && popupShownAt != null ? popupShownAt : questionStartTime;
+    const timeTaken = (Date.now() - refStart) / 1000;
     setSelectedOption(optionIdx);
 
     const currentQuestion = questions[currentIdx];
@@ -278,6 +328,8 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
     let correct = false;
     let pointsEarned = 0;
     let actualCorrectIndex = -1;
+    let serverLivesRemaining: number | null = null;
+    let serverQAttemptsUsed: number | null = null;
 
     if (isPracticeMode) {
       actualCorrectIndex = currentQuestion.correctAnswer;
@@ -295,10 +347,13 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
           question_index: currentIdx,
           selected_index: optionIdx,
           time_taken_ms: Math.floor(timeTaken * 1000),
+          ...(attemptIdx > 0 ? { attempt_idx: attemptIdx } : {}),
         });
         correct = answerResponse.correct;
         pointsEarned = answerResponse.pointsEarned || 0;
         actualCorrectIndex = answerResponse.correctIndex !== undefined ? answerResponse.correctIndex : -1;
+        if (typeof answerResponse.livesRemaining === 'number') serverLivesRemaining = answerResponse.livesRemaining;
+        if (typeof answerResponse.questionAttemptsUsed === 'number') serverQAttemptsUsed = answerResponse.questionAttemptsUsed;
       } catch (err) {
         console.error('Failed to submit answer:', err);
         if (currentIdx >= questions.length - 1) {
@@ -336,9 +391,31 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
         const speedBonus = Math.max(0, Math.floor(MAX_SPEED_BONUS * (1 - timeTaken / SPEED_BONUS_DECAY_SEC)));
         pointsForThisQuestion = BASE_POINTS + speedBonus;
       }
+      // On a successful retry the original wrong answer contributed 0 to
+      // score/correctCount; the server already adjusted server-side.
+      // Client increments locally to stay in sync until next mount.
       setScore((prev) => prev + 1);
       setTotalPoints((prev) => prev + pointsForThisQuestion);
       setLastGainedPoints(pointsForThisQuestion);
+    }
+
+    // ── RETRY BRANCH , wrong + budget + paid mode = show USE A LIFE? popup
+    // instead of advancing. ─────────────────────────────────────────────
+    const canOfferRetry =
+      !correct &&
+      !isPracticeMode &&
+      livesUsedA < MAX_QUESTION_RETRIES_PER_GAME &&
+      livesRemaining >= 1;
+
+    if (canOfferRetry) {
+      // Freeze the question timer so the player isn't penalized while
+      // deciding. The USE A LIFE? popup has its own 5s countdown.
+      if (questionTimerRef.current) {
+        clearInterval(questionTimerRef.current);
+        questionTimerRef.current = null;
+      }
+      setShowLifePopup(true);
+      return; // do NOT schedule the advance
     }
 
     setTimeout(() => {
@@ -351,11 +428,64 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
         setLastGainedPoints(null);
         setQuestionStartTime(Date.now());
         setQuestionTimeLeft(timePerQuestion);
+        setAttemptIdx(0); // fresh question = fresh attempt clock
       } else {
         if (timerRef.current) clearInterval(timerRef.current);
         onFinish(score + (correct ? 1 : 0), totalPoints + pointsForThisQuestion, sessionTimer);
       }
     }, 1200);
+
+    // If this WAS a retry submission, sync local lives count from server
+    // truth in the response. Suppresses drift if the user already had
+    // lives debited by another tab / a previous retry on this game.
+    if (serverLivesRemaining != null) setLivesRemaining(serverLivesRemaining);
+    if (serverQAttemptsUsed != null) setLivesUsedA(serverQAttemptsUsed);
+  };
+
+  /**
+   * USE LIFE button on the USE A LIFE? popup. Optimistically decrement
+   * lives + bump attempt index so the next submitAnswer call carries
+   * attempt_idx, then re-arm the quiz UI for the player to pick again
+   * with a fresh 15-second countdown.
+   */
+  const handleUseLife = () => {
+    if (isSubmittingRetry) return;
+    setIsSubmittingRetry(true);
+    // Optimistic local update , the server will confirm on the retry submit.
+    setLivesUsedA((u) => u + 1);
+    setLivesRemaining((r) => Math.max(0, r - 1));
+    setAttemptIdx((i) => i + 1);
+    // Re-arm the question UI for a fresh pick.
+    setSelectedOption(null);
+    setIsCorrect(null);
+    setLastGainedPoints(null);
+    setQuestionTimeLeft(timePerQuestion);
+    setPopupShownAt(Date.now()); // anchor the fresh time-bonus clock here
+    setShowLifePopup(false);
+    setIsSubmittingRetry(false);
+  };
+
+  /**
+   * SKIP button (or 5s countdown expired) on the popup. Fall through to
+   * the existing wrong-answer advance flow.
+   */
+  const handleSkipLife = () => {
+    setShowLifePopup(false);
+    setPopupShownAt(null);
+    setTimeout(() => {
+      if (currentIdx < questions.length - 1) {
+        setCurrentIdx((prev) => prev + 1);
+        setSelectedOption(null);
+        setIsCorrect(null);
+        setLastGainedPoints(null);
+        setQuestionStartTime(Date.now());
+        setQuestionTimeLeft(timePerQuestion);
+        setAttemptIdx(0);
+      } else {
+        if (timerRef.current) clearInterval(timerRef.current);
+        onFinish(score, totalPoints, sessionTimer);
+      }
+    }, 600);
   };
 
   // ── Loading / Error states ─────────────────────────────────────────────
@@ -591,6 +721,18 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
       </div>
 
       </div>
+
+      {/* USE A LIFE? modal , v2.1 LIVES retry mechanic. Renders above the
+          quiz UI on a wrong answer when budget + lives are both available. */}
+      {showLifePopup && !isPracticeMode && (
+        <UseALifePopup
+          livesRemaining={livesRemaining}
+          livesUsedA={livesUsedA}
+          disabled={isSubmittingRetry}
+          onUse={handleUseLife}
+          onSkip={handleSkipLife}
+        />
+      )}
     </div>
   );
 };
