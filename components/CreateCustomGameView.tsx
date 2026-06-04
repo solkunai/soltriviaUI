@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { createCustomGame, recordCustomGameFunding, efPost } from '../src/utils/api';
@@ -9,6 +9,7 @@ import {
   buildCreateCustomGameTmPnftIx,
   fetchGameConfig,
 } from '../src/utils/soltriviaContract';
+import { getJupiterToken, looksLikeMintCA, type JupiterToken } from '../src/utils/jupiterTokens';
 import NFTSelector from './NFTSelector';
 import type { WalletNFT } from '../src/hooks/useWalletNFTs';
 import { supabase } from '../src/utils/supabase';
@@ -81,14 +82,54 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   const [gameType, setGameType] = useState<'free' | 'players_fund' | 'creator_funds'>('free');
   const [playerFundTokenType, setPlayerFundTokenType] = useState<'sol' | 'usdc' | 'spl'>('sol');
   const [creatorPrizeType, setCreatorPrizeType] = useState<'sol' | 'usdc' | 'nft' | 'spl'>('sol');
-  // User-pasted SPL mint info (used when EITHER sub-picker is set to 'spl').
+  // SPL token resolution via Jupiter: user pastes a mint address, we auto-fetch
+  // symbol + decimals + logo from Jupiter. Manual fallback inputs only show if
+  // Jupiter doesn't have the token (rare, freshly-launched memecoins).
   const [customSplMint, setCustomSplMint] = useState('');
-  const [customSplDecimals, setCustomSplDecimals] = useState<number>(6);
-  const [customSplSymbol, setCustomSplSymbol] = useState('');
+  const [jupiterToken, setJupiterToken] = useState<JupiterToken | null>(null);
+  const [jupiterLoading, setJupiterLoading] = useState(false);
+  const [jupiterError, setJupiterError] = useState<string | null>(null);
+  const [manualDecimals, setManualDecimals] = useState<number>(6);
+  const [manualSymbol, setManualSymbol] = useState('');
 
   // Mainnet USDC. Decimals are fixed per token; locked here so we don't depend
   // on a network call. Devnet equivalent (for future testing): 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU.
   const USDC_MAINNET_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+  // Auto-fetch token metadata from Jupiter when the pasted mint is a valid
+  // base58 address. Debounced cancellation via the cancelled flag so a fast
+  // typer doesn't see stale results from earlier requests.
+  useEffect(() => {
+    if (!customSplMint || !looksLikeMintCA(customSplMint)) {
+      setJupiterToken(null);
+      setJupiterError(null);
+      setJupiterLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setJupiterLoading(true);
+    setJupiterError(null);
+    getJupiterToken(customSplMint.trim())
+      .then((tok) => {
+        if (cancelled) return;
+        if (tok) {
+          setJupiterToken(tok);
+          setJupiterError(null);
+        } else {
+          setJupiterToken(null);
+          setJupiterError('Token not found on Jupiter. Enter decimals + symbol manually below.');
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setJupiterToken(null);
+        setJupiterError('Failed to fetch token info: ' + (err?.message || 'unknown error'));
+      })
+      .finally(() => {
+        if (!cancelled) setJupiterLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [customSplMint]);
 
   // Resolve the picked token from the (gameType, sub-pick) pair. Returns null
   // for SOL games / free games / NFT games (NFT is handled via selectedNft).
@@ -99,9 +140,22 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
       : gameType === 'creator_funds' ? creatorPrizeType
       : 'sol';
     if (pick === 'usdc') return { mint: USDC_MAINNET_MINT, decimals: 6, symbol: 'USDC' };
-    if (pick === 'spl') return customSplMint
-      ? { mint: customSplMint.trim(), decimals: customSplDecimals, symbol: customSplSymbol.trim() || customSplMint.slice(0, 4) }
-      : null;
+    if (pick === 'spl') {
+      if (!customSplMint) return null;
+      // Jupiter-resolved token is the source of truth when available.
+      if (jupiterToken) return {
+        mint: jupiterToken.address,
+        decimals: jupiterToken.decimals,
+        symbol: jupiterToken.symbol,
+      };
+      // Manual fallback (only when Jupiter doesn't know the token).
+      if (manualSymbol) return {
+        mint: customSplMint.trim(),
+        decimals: manualDecimals,
+        symbol: manualSymbol.trim(),
+      };
+      return null;
+    }
     return null;
   })();
 
@@ -930,37 +984,69 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 </div>
               )}
 
-              {/* Custom SPL mint inputs (visible when EITHER sub-picker is set to 'spl') */}
+              {/* Custom SPL mint input + Jupiter auto-resolve (visible when EITHER
+                  sub-picker is set to 'spl'). Manual fallback for unverified
+                  tokens only renders if Jupiter doesn't know the mint. */}
               {((gameType === 'players_fund' && playerFundTokenType === 'spl') ||
                 (gameType === 'creator_funds' && creatorPrizeType === 'spl')) && (
                 <div className="mt-3 rounded-xl bg-white/[0.03] border border-white/5 p-3 space-y-2">
-                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block">SPL Token</label>
+                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block">SPL Token Mint</label>
                   <input
                     type="text"
                     value={customSplMint}
                     onChange={(e) => setCustomSplMint(e.target.value.trim())}
-                    placeholder="Mint address (paste from Solscan / Birdeye)"
+                    placeholder="Paste mint address (e.g. DezX...BONK)"
                     className="w-full min-h-[44px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white font-mono text-xs placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
                   />
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={customSplSymbol}
-                      onChange={(e) => setCustomSplSymbol(e.target.value.slice(0, 16).toUpperCase())}
-                      placeholder="Symbol (e.g. BONK)"
-                      className="flex-1 min-h-[40px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white font-bold text-xs placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
-                    />
-                    <input
-                      type="number"
-                      min={0}
-                      max={9}
-                      value={customSplDecimals}
-                      onChange={(e) => setCustomSplDecimals(Math.max(0, Math.min(9, Number(e.target.value) || 0)))}
-                      placeholder="Decimals"
-                      className="w-24 min-h-[40px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white font-bold text-xs placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
-                    />
-                  </div>
-                  <p className="text-zinc-600 text-[9px]">USDC = 6 · BONK = 5 · SOL = 9. Find decimals on Solscan or token's Birdeye page.</p>
+
+                  {jupiterLoading && (
+                    <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-bold">
+                      <div className="w-3 h-3 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin" />
+                      Looking up token on Jupiter...
+                    </div>
+                  )}
+
+                  {jupiterToken && !jupiterLoading && (
+                    <div className="rounded-lg bg-[#38BDF8]/8 border border-[#38BDF8]/25 p-2 flex items-center gap-3">
+                      {jupiterToken.logoURI && (
+                        <img src={jupiterToken.logoURI} alt="" className="w-8 h-8 rounded-full bg-white/5" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="text-white font-[1000] italic text-sm">{jupiterToken.symbol}</span>
+                          <span className="text-zinc-500 text-[10px] truncate">{jupiterToken.name}</span>
+                          {jupiterToken.isVerified && (
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#38BDF8] bg-[#38BDF8]/15 border border-[#38BDF8]/30 rounded px-1.5 py-0.5">Verified</span>
+                          )}
+                        </div>
+                        <div className="text-zinc-600 text-[9px] mt-0.5">{jupiterToken.decimals} decimals</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {jupiterError && !jupiterLoading && (
+                    <>
+                      <p className="text-amber-400 text-[10px]">{jupiterError}</p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={manualSymbol}
+                          onChange={(e) => setManualSymbol(e.target.value.slice(0, 16).toUpperCase())}
+                          placeholder="Symbol (e.g. BONK)"
+                          className="flex-1 min-h-[40px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white font-bold text-xs placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          max={9}
+                          value={manualDecimals}
+                          onChange={(e) => setManualDecimals(Math.max(0, Math.min(9, Number(e.target.value) || 0)))}
+                          placeholder="Decimals"
+                          className="w-24 min-h-[40px] px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white font-bold text-xs placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40 transition-colors"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
