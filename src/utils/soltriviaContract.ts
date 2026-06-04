@@ -2162,3 +2162,425 @@ export async function fetchReferralBalance(
   // mirror that: if account exists, full lamports is the balance.
   return info.lamports;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// CUSTOM GAMES (SPL Token) — v2.1 upgrade
+// ═══════════════════════════════════════════════════════════════════
+// Symmetric SPL-token variants of the SOL custom-game flow. Used for any
+// non-SOL game (USDC, NERD, BONK, any SPL-2022 token, etc.).
+//
+// Notes:
+//   - PDAs use distinct seeds (`custom_spl` / `custom_spl_vault`) but share
+//     the `next_custom_game_id` counter in GameConfig, so game IDs are
+//     globally unique across SOL and SPL custom games.
+//   - The SPL vault PDA holds the token ATA. SOL platform fees still flow
+//     to the SOL revenue wallet (separately, in lamports).
+//   - Entry PDA reuses the standard `custom_entry` seed (same as SOL).
+//   - Token program is parameterised: Token-2022 mints pass the 2022 program.
+// ═══════════════════════════════════════════════════════════════════
+
+const CUSTOM_SPL_SEED       = new TextEncoder().encode('custom_spl');
+const CUSTOM_SPL_VAULT_SEED = new TextEncoder().encode('custom_spl_vault');
+
+/** Anchor discriminators for SPL custom-game ixs.
+ *  Derived from sha256("global:<fn_name>").slice(0, 8). */
+export const CUSTOM_SPL_DISC = {
+  createCustomGameSpl:  new Uint8Array([91, 132, 17, 96, 82, 23, 26, 131]),
+  fundCustomGameSpl:    new Uint8Array([113, 207, 61, 31, 175, 15, 52, 32]),
+  enterCustomGameSpl:   new Uint8Array([181, 94, 118, 248, 137, 224, 0, 238]),
+  finalizeCustomGameSpl:new Uint8Array([100, 225, 158, 72, 219, 182, 43, 27]),
+  claimCustomPrizeSpl:  new Uint8Array([20, 90, 26, 7, 254, 59, 11, 15]),
+  claimCustomRefundSpl: new Uint8Array([65, 244, 189, 65, 3, 6, 95, 122]),
+  sweepCustomGameSpl:   new Uint8Array([46, 113, 118, 205, 232, 233, 23, 218]),
+} as const;
+
+/** PDA: `custom_spl` state account, derived from u64 LE-encoded game_id. */
+export function getCustomSplPda(gameId: number | bigint, programId: PublicKey = SOLTRIVIA_PROGRAM_ID): PublicKey {
+  const n = typeof gameId === 'bigint' ? gameId : BigInt(gameId);
+  const buf = new Uint8Array(8);
+  new DataView(buf.buffer).setBigUint64(0, n, true);
+  return PublicKey.findProgramAddressSync([CUSTOM_SPL_SEED, buf], programId)[0];
+}
+
+/** PDA: SPL custom-game vault that owns the token ATA. */
+export function getCustomSplVaultPda(gameId: number | bigint, programId: PublicKey = SOLTRIVIA_PROGRAM_ID): PublicKey {
+  const n = typeof gameId === 'bigint' ? gameId : BigInt(gameId);
+  const buf = new Uint8Array(8);
+  new DataView(buf.buffer).setBigUint64(0, n, true);
+  return PublicKey.findProgramAddressSync([CUSTOM_SPL_VAULT_SEED, buf], programId)[0];
+}
+
+/**
+ * create_custom_game_spl — Operator creates on-chain SPL game; opens the
+ * token vault ATA in the same tx.
+ *
+ * Args: creator (Pubkey, 32), entry_fee_amount (u64), prize_model (u8 — 0=player-funded, 1=creator-funded), max_winners (u8), prize_split_bps ([u16; 5]), expires_at (i64).
+ * Accounts (matches CreateCustomGameSpl struct in custom_game_spl.rs:14):
+ *   0. authority (sig, mut)
+ *   1. config (PDA, mut)
+ *   2. custom_game (PDA, mut) — seeds=[custom_spl, next_game_id]
+ *   3. vault (PDA, mut) — seeds=[custom_spl_vault, next_game_id]
+ *   4. mint (readonly)
+ *   5. vault_token_account (mut) — ATA(vault, mint, tokenProgram), init
+ *   6. token_program
+ *   7. associated_token_program
+ *   8. system_program
+ */
+export function buildCreateCustomGameSplIx(args: {
+  authority: PublicKey;
+  nextGameId: number | bigint;
+  creator: PublicKey;
+  mint: PublicKey;
+  entryFeeAmount: number | bigint;
+  prizeModel: number;
+  maxWinners: number;
+  prizeSplitBps: number[];
+  expiresAt: number | bigint;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const customGamePda = getCustomSplPda(args.nextGameId, programId);
+  const vaultPda = getCustomSplVaultPda(args.nextGameId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const paddedSplits = [...args.prizeSplitBps];
+  while (paddedSplits.length < 5) paddedSplits.push(0);
+  const splitsBytes = concat(...paddedSplits.map(s => u16Le(s)));
+  return makeIx(
+    programId,
+    CUSTOM_SPL_DISC.createCustomGameSpl,
+    concat(
+      args.creator.toBytes(),
+      u64Le(args.entryFeeAmount),
+      new Uint8Array([args.prizeModel]),
+      new Uint8Array([args.maxWinners]),
+      splitsBytes,
+      i64Le(args.expiresAt),
+    ),
+    [
+      { pubkey: args.authority,          isSigner: true,  isWritable: true  },
+      { pubkey: getConfigPda(programId), isSigner: false, isWritable: true  },
+      { pubkey: customGamePda,           isSigner: false, isWritable: true  },
+      { pubkey: vaultPda,                isSigner: false, isWritable: true  },
+      { pubkey: args.mint,               isSigner: false, isWritable: false },
+      { pubkey: vaultAta,                isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,            isSigner: false, isWritable: false },
+      { pubkey: SPL_ATA_PROGRAM_ID,      isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * fund_custom_game_spl — Creator deposits SPL tokens into the vault
+ * (CreatorFunded model only).
+ *
+ * Args: game_id (u64), amount (u64).
+ * Accounts (matches FundCustomGameSpl struct in custom_game_spl.rs:167):
+ *   0. creator (sig, mut)
+ *   1. custom_game (PDA, mut)
+ *   2. mint (readonly)
+ *   3. creator_token_account (mut) — ATA(creator, mint, tokenProgram)
+ *   4. vault (PDA, readonly)
+ *   5. vault_token_account (mut)
+ *   6. token_program
+ */
+export function buildFundCustomGameSplIx(args: {
+  creator: PublicKey;
+  gameId: number | bigint;
+  mint: PublicKey;
+  amount: number | bigint;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const customGamePda = getCustomSplPda(args.gameId, programId);
+  const vaultPda = getCustomSplVaultPda(args.gameId, programId);
+  const creatorAta = getAssociatedTokenAddress(args.mint, args.creator, tokenProgram);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  return makeIx(
+    programId,
+    CUSTOM_SPL_DISC.fundCustomGameSpl,
+    concat(u64Le(args.gameId), u64Le(args.amount)),
+    [
+      { pubkey: args.creator,   isSigner: true,  isWritable: true  },
+      { pubkey: customGamePda,  isSigner: false, isWritable: true  },
+      { pubkey: args.mint,      isSigner: false, isWritable: false },
+      { pubkey: creatorAta,     isSigner: false, isWritable: true  },
+      { pubkey: vaultPda,       isSigner: false, isWritable: false },
+      { pubkey: vaultAta,       isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,   isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * enter_custom_game_spl — Player pays SPL entry fee (PlayerFunded) and
+ * always pays SOL platform fee to the revenue wallet.
+ *
+ * Args: game_id (u64).
+ * Accounts (matches EnterCustomGameSpl struct in custom_game_spl.rs:249):
+ *   0. player (sig, mut)
+ *   1. config (PDA, readonly)
+ *   2. custom_game (PDA, mut)
+ *   3. mint (readonly)
+ *   4. player_token_account (mut)
+ *   5. vault (PDA, readonly)
+ *   6. vault_token_account (mut)
+ *   7. revenue_wallet (mut)
+ *   8. entry (PDA, mut) — init_if_needed
+ *   9. token_program
+ *  10. system_program
+ */
+export function buildEnterCustomGameSplIx(args: {
+  player: PublicKey;
+  gameId: number | bigint;
+  mint: PublicKey;
+  revenueWallet: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const customGamePda = getCustomSplPda(args.gameId, programId);
+  const vaultPda = getCustomSplVaultPda(args.gameId, programId);
+  const playerAta = getAssociatedTokenAddress(args.mint, args.player, tokenProgram);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const gameIdNum = typeof args.gameId === 'bigint' ? Number(args.gameId) : args.gameId;
+  const entryPda = getCustomEntryPda(gameIdNum, args.player, programId);
+  return makeIx(
+    programId,
+    CUSTOM_SPL_DISC.enterCustomGameSpl,
+    u64Le(args.gameId),
+    [
+      { pubkey: args.player,             isSigner: true,  isWritable: true  },
+      { pubkey: getConfigPda(programId), isSigner: false, isWritable: false },
+      { pubkey: customGamePda,           isSigner: false, isWritable: true  },
+      { pubkey: args.mint,               isSigner: false, isWritable: false },
+      { pubkey: playerAta,               isSigner: false, isWritable: true  },
+      { pubkey: vaultPda,                isSigner: false, isWritable: false },
+      { pubkey: vaultAta,                isSigner: false, isWritable: true  },
+      { pubkey: args.revenueWallet,      isSigner: false, isWritable: true  },
+      { pubkey: entryPda,                isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,            isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * finalize_custom_game_spl — Operator posts winners; SPL platform cut goes
+ * to the revenue wallet ATA. For PlayerFunded, the platform cut is taken
+ * from the pot; for CreatorFunded the creator gets full deposit refunded
+ * if too few entries (handler logic).
+ *
+ * Args: game_id (u64), winners ([Pubkey; 5]).
+ * Accounts (matches FinalizeCustomGameSpl struct in custom_game_spl.rs:397):
+ *   0. authority (sig, mut)
+ *   1. config (PDA, readonly)
+ *   2. custom_game (PDA, mut)
+ *   3. mint (readonly)
+ *   4. vault (PDA, readonly) — signs SPL transfer via CPI seeds
+ *   5. vault_token_account (mut)
+ *   6. revenue_wallet (mut)
+ *   7. revenue_token_account (mut) — ATA(revenue_wallet, mint), pre-created by EF
+ *   8. creator_wallet (mut)
+ *   9. creator_token_account (mut) — ATA(creator_wallet, mint), pre-created by EF
+ *  10. token_program
+ *  11. system_program
+ */
+export function buildFinalizeCustomGameSplIx(args: {
+  authority: PublicKey;
+  gameId: number | bigint;
+  mint: PublicKey;
+  winners: PublicKey[];
+  creatorWallet: PublicKey;
+  revenueWallet: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const customGamePda = getCustomSplPda(args.gameId, programId);
+  const vaultPda = getCustomSplVaultPda(args.gameId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const revenueAta = getAssociatedTokenAddress(args.mint, args.revenueWallet, tokenProgram);
+  const creatorAta = getAssociatedTokenAddress(args.mint, args.creatorWallet, tokenProgram);
+  const paddedWinners = [...args.winners];
+  while (paddedWinners.length < 5) paddedWinners.push(PublicKey.default);
+  const winnersBytes = concat(...paddedWinners.map(w => w.toBytes()));
+  return makeIx(
+    programId,
+    CUSTOM_SPL_DISC.finalizeCustomGameSpl,
+    concat(u64Le(args.gameId), winnersBytes),
+    [
+      { pubkey: args.authority,          isSigner: true,  isWritable: true  },
+      { pubkey: getConfigPda(programId), isSigner: false, isWritable: false },
+      { pubkey: customGamePda,           isSigner: false, isWritable: true  },
+      { pubkey: args.mint,               isSigner: false, isWritable: false },
+      { pubkey: vaultPda,                isSigner: false, isWritable: false },
+      { pubkey: vaultAta,                isSigner: false, isWritable: true  },
+      { pubkey: args.revenueWallet,      isSigner: false, isWritable: true  },
+      { pubkey: revenueAta,              isSigner: false, isWritable: true  },
+      { pubkey: args.creatorWallet,      isSigner: false, isWritable: true  },
+      { pubkey: creatorAta,              isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,            isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * claim_custom_prize_spl — Winner claims their SPL share. ATA is
+ * `init_if_needed` so first-time recipients pay rent.
+ *
+ * Args: game_id (u64).
+ * Accounts (matches ClaimCustomPrizeSpl struct in custom_game_spl.rs:563):
+ *   0. winner (sig, mut)
+ *   1. custom_game (PDA, mut)
+ *   2. mint (readonly)
+ *   3. vault (PDA, mut)
+ *   4. vault_token_account (mut)
+ *   5. winner_token_account (mut) — ATA(winner, mint), init_if_needed
+ *   6. token_program
+ *   7. associated_token_program
+ *   8. system_program
+ */
+export function buildClaimCustomPrizeSplIx(args: {
+  winner: PublicKey;
+  gameId: number | bigint;
+  mint: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const customGamePda = getCustomSplPda(args.gameId, programId);
+  const vaultPda = getCustomSplVaultPda(args.gameId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const winnerAta = getAssociatedTokenAddress(args.mint, args.winner, tokenProgram);
+  return makeIx(
+    programId,
+    CUSTOM_SPL_DISC.claimCustomPrizeSpl,
+    u64Le(args.gameId),
+    [
+      { pubkey: args.winner,             isSigner: true,  isWritable: true  },
+      { pubkey: customGamePda,           isSigner: false, isWritable: true  },
+      { pubkey: args.mint,               isSigner: false, isWritable: false },
+      { pubkey: vaultPda,                isSigner: false, isWritable: true  },
+      { pubkey: vaultAta,                isSigner: false, isWritable: true  },
+      { pubkey: winnerAta,               isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,            isSigner: false, isWritable: false },
+      { pubkey: SPL_ATA_PROGRAM_ID,      isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * claim_custom_refund_spl — Refund path for SPL games:
+ *   - Player-funded + game expired: player gets entry_fee * entry_count back
+ *   - Creator-funded + creator reclaims: creator gets full deposit
+ * The entry PDA is always passed; Anchor's Option<Account> resolves to None
+ * for the creator-reclaim path (the entry account doesn't exist).
+ *
+ * Args: game_id (u64).
+ * Accounts (matches ClaimCustomRefundSpl struct in custom_game_spl.rs:653):
+ *   0. claimant (sig, mut)
+ *   1. custom_game (PDA, mut)
+ *   2. mint (readonly)
+ *   3. vault (PDA, mut)
+ *   4. vault_token_account (mut)
+ *   5. claimant_token_account (mut) — ATA(claimant, mint), init_if_needed
+ *   6. entry (PDA, mut, Option)
+ *   7. token_program
+ *   8. associated_token_program
+ *   9. system_program
+ */
+export function buildClaimCustomRefundSplIx(args: {
+  claimant: PublicKey;
+  gameId: number | bigint;
+  mint: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const customGamePda = getCustomSplPda(args.gameId, programId);
+  const vaultPda = getCustomSplVaultPda(args.gameId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const claimantAta = getAssociatedTokenAddress(args.mint, args.claimant, tokenProgram);
+  const gameIdNum = typeof args.gameId === 'bigint' ? Number(args.gameId) : args.gameId;
+  const entryPda = getCustomEntryPda(gameIdNum, args.claimant, programId);
+  return makeIx(
+    programId,
+    CUSTOM_SPL_DISC.claimCustomRefundSpl,
+    u64Le(args.gameId),
+    [
+      { pubkey: args.claimant,           isSigner: true,  isWritable: true  },
+      { pubkey: customGamePda,           isSigner: false, isWritable: true  },
+      { pubkey: args.mint,               isSigner: false, isWritable: false },
+      { pubkey: vaultPda,                isSigner: false, isWritable: true  },
+      { pubkey: vaultAta,                isSigner: false, isWritable: true  },
+      { pubkey: claimantAta,             isSigner: false, isWritable: true  },
+      { pubkey: entryPda,                isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,            isSigner: false, isWritable: false },
+      { pubkey: SPL_ATA_PROGRAM_ID,      isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
+}
+
+/**
+ * sweep_custom_game_spl — Owner sweeps unclaimed SPL tokens from finalized
+ * games after the sweep delay (config.sweep_delay_seconds).
+ *
+ * Args: game_id (u64).
+ * Accounts (matches SweepCustomGameSpl struct in custom_game_spl.rs:777):
+ *   0. owner (sig, mut)
+ *   1. config (PDA, readonly)
+ *   2. custom_game (PDA, mut)
+ *   3. mint (readonly)
+ *   4. vault (PDA, readonly) — signs CPI transfer via seeds
+ *   5. vault_token_account (mut)
+ *   6. sweep_wallet (mut)
+ *   7. sweep_token_account (mut) — ATA(sweep_wallet, mint), init_if_needed
+ *   8. token_program
+ *   9. associated_token_program
+ *  10. system_program
+ */
+export function buildSweepCustomGameSplIx(args: {
+  owner: PublicKey;
+  gameId: number | bigint;
+  mint: PublicKey;
+  sweepWallet: PublicKey;
+  tokenProgram?: PublicKey;
+  programId?: PublicKey;
+}): TransactionInstruction {
+  const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const customGamePda = getCustomSplPda(args.gameId, programId);
+  const vaultPda = getCustomSplVaultPda(args.gameId, programId);
+  const vaultAta = getAssociatedTokenAddress(args.mint, vaultPda, tokenProgram);
+  const sweepAta = getAssociatedTokenAddress(args.mint, args.sweepWallet, tokenProgram);
+  return makeIx(
+    programId,
+    CUSTOM_SPL_DISC.sweepCustomGameSpl,
+    u64Le(args.gameId),
+    [
+      { pubkey: args.owner,              isSigner: true,  isWritable: true  },
+      { pubkey: getConfigPda(programId), isSigner: false, isWritable: false },
+      { pubkey: customGamePda,           isSigner: false, isWritable: true  },
+      { pubkey: args.mint,               isSigner: false, isWritable: false },
+      { pubkey: vaultPda,                isSigner: false, isWritable: false },
+      { pubkey: vaultAta,                isSigner: false, isWritable: true  },
+      { pubkey: args.sweepWallet,        isSigner: false, isWritable: true  },
+      { pubkey: sweepAta,                isSigner: false, isWritable: true  },
+      { pubkey: tokenProgram,            isSigner: false, isWritable: false },
+      { pubkey: SPL_ATA_PROGRAM_ID,      isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+  );
+}
