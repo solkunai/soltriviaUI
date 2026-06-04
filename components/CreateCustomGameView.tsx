@@ -10,6 +10,15 @@ import {
   fetchGameConfig,
 } from '../src/utils/soltriviaContract';
 import { getJupiterToken, looksLikeMintCA, type JupiterToken } from '../src/utils/jupiterTokens';
+import {
+  listDrafts,
+  saveDraft as saveDraftToStorage,
+  deleteDraft as deleteDraftFromStorage,
+  clearDrafts as clearAllDrafts,
+  newDraftId,
+  type CustomGameDraft,
+} from '../src/utils/customGameDrafts';
+import CustomGameDraftsModal from './CustomGameDraftsModal';
 import NFTSelector from './NFTSelector';
 import type { WalletNFT } from '../src/hooks/useWalletNFTs';
 import { supabase } from '../src/utils/supabase';
@@ -185,6 +194,34 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   const [createdSlug, setCreatedSlug] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Drafts (localStorage per-wallet). currentDraftId tracks the slot the
+  // wizard is editing so subsequent "Save Draft" presses overwrite in-place
+  // instead of creating new entries.
+  const [drafts, setDrafts] = useState<CustomGameDraft[]>([]);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  const [draftsModalOpen, setDraftsModalOpen] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+
+  // Load drafts whenever the connected wallet changes.
+  useEffect(() => {
+    if (!publicKey) {
+      setDrafts([]);
+      setCurrentDraftId(null);
+      return;
+    }
+    setDrafts(listDrafts(publicKey.toBase58()));
+  }, [publicKey]);
+
+  // Clear ALL drafts for this wallet on successful game creation. createdSlug
+  // becoming truthy is the canonical signal — covers both SOL and NFT paths.
+  useEffect(() => {
+    if (createdSlug && publicKey) {
+      clearAllDrafts(publicKey.toBase58());
+      setDrafts([]);
+      setCurrentDraftId(null);
+    }
+  }, [createdSlug, publicKey]);
+
   // Valid round counts for selected question count
   const validRounds = useMemo(() => VALID_ROUND_COUNTS[questionCount] || [1], [questionCount]);
 
@@ -219,6 +256,82 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
     if (!valid.includes(roundCount)) {
       setRoundCount(valid[0]);
     }
+  };
+
+  // ── Drafts ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  // Snapshot the current wizard state into a draft. Same `currentDraftId`
+  // overwrites the slot in-place; null creates a new slot (FIFO drop oldest).
+  // Banner file + selected NFT are intentionally omitted (see customGameDrafts.ts).
+  const handleSaveDraft = () => {
+    if (!publicKey) {
+      setError('Connect your wallet to save drafts.');
+      return;
+    }
+    const id = currentDraftId ?? newDraftId();
+    const now = Date.now();
+    const snapshot: CustomGameDraft = {
+      id,
+      walletAddress: publicKey.toBase58(),
+      savedAt: now,
+      step,
+      gameName,
+      customSlug,
+      questionCount,
+      roundCount,
+      timeLimit,
+      gameType,
+      playerFundTokenType,
+      creatorPrizeType,
+      customSplMint,
+      manualSymbol,
+      manualDecimals,
+      entryFeeLamports,
+      customEntryFee,
+      maxPlayers,
+      gameDurationMinutes,
+      maxWinners,
+      creatorDepositLamports,
+      customCreatorDeposit,
+      questions,
+    };
+    saveDraftToStorage(snapshot);
+    setCurrentDraftId(id);
+    setDraftSavedAt(now);
+    setDrafts(listDrafts(publicKey.toBase58()));
+  };
+
+  const handleRestoreDraft = (d: CustomGameDraft) => {
+    setStep(d.step);
+    setGameName(d.gameName);
+    setCustomSlug(d.customSlug);
+    setQuestionCount(d.questionCount);
+    setRoundCount(d.roundCount);
+    setTimeLimit(d.timeLimit);
+    setGameType(d.gameType);
+    setPlayerFundTokenType(d.playerFundTokenType);
+    setCreatorPrizeType(d.creatorPrizeType);
+    setCustomSplMint(d.customSplMint);
+    setManualSymbol(d.manualSymbol);
+    setManualDecimals(d.manualDecimals);
+    setEntryFeeLamports(d.entryFeeLamports);
+    setCustomEntryFee(d.customEntryFee);
+    setMaxPlayers(d.maxPlayers);
+    setGameDurationMinutes(d.gameDurationMinutes);
+    setMaxWinners(d.maxWinners);
+    setCreatorDepositLamports(d.creatorDepositLamports);
+    setCustomCreatorDeposit(d.customCreatorDeposit);
+    setQuestions(d.questions);
+    setCurrentDraftId(d.id);
+    setDraftsModalOpen(false);
+    setError(null);
+    setDraftSavedAt(d.savedAt);
+  };
+
+  const handleDeleteDraft = (draftId: string) => {
+    if (!publicKey) return;
+    const remaining = deleteDraftFromStorage(publicKey.toBase58(), draftId);
+    setDrafts(remaining);
+    if (currentDraftId === draftId) setCurrentDraftId(null);
   };
 
   // Fee (creation fee for the game itself — separate from entry fee)
@@ -752,9 +865,37 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
           </div>
         </div>
 
-        <p className="text-[#38BDF8] text-[9px] font-black uppercase tracking-[0.4em] mb-2">
-          STEP {ALL_STEPS.indexOf(step) + 1} OF {ALL_STEPS.length} · Create Custom Game
-        </p>
+        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+          <p className="text-[#38BDF8] text-[9px] font-black uppercase tracking-[0.4em]">
+            STEP {ALL_STEPS.indexOf(step) + 1} OF {ALL_STEPS.length} · Create Custom Game
+          </p>
+          <div className="flex items-center gap-1.5">
+            {drafts.length > 0 && (
+              <button
+                onClick={() => setDraftsModalOpen(true)}
+                className="px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-zinc-400 hover:text-white hover:bg-white/10 font-black uppercase text-[9px] tracking-wider transition-colors"
+              >
+                Drafts ({drafts.length})
+              </button>
+            )}
+            {step !== 'review' && publicKey && (
+              <button
+                onClick={handleSaveDraft}
+                className="px-2.5 py-1 rounded-md bg-[#38BDF8]/10 border border-[#38BDF8]/25 text-[#38BDF8] hover:bg-[#38BDF8]/15 font-black uppercase text-[9px] tracking-wider transition-colors flex items-center gap-1.5"
+                title="Save current progress as a draft to resume later"
+              >
+                {draftSavedAt && Date.now() - draftSavedAt < 4000 ? (
+                  <>
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                    Saved
+                  </>
+                ) : (
+                  'Save Draft'
+                )}
+              </button>
+            )}
+          </div>
+        </div>
 
         {error && (
           <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-4">
@@ -1546,6 +1687,17 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
           </div>
         )}
       </div>
+
+      {/* Drafts modal — opens via the header pill. Restore writes wizard
+          state in-place; delete removes the slot from localStorage. */}
+      {draftsModalOpen && (
+        <CustomGameDraftsModal
+          drafts={drafts}
+          onRestore={handleRestoreDraft}
+          onDelete={handleDeleteDraft}
+          onClose={() => setDraftsModalOpen(false)}
+        />
+      )}
     </div>
   );
 };
