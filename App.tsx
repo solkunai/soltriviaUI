@@ -108,7 +108,6 @@ import CustomGamesHubView from './components/CustomGamesHubView';
 import CustomGameLobbyView from './components/CustomGameLobbyView';
 import CustomGameQuizView from './components/CustomGameQuizView';
 import CustomGameResultsView from './components/CustomGameResultsView';
-import DuelLobbyView from './components/DuelLobbyView';
 import DuelWaitingView from './components/DuelWaitingView';
 import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
