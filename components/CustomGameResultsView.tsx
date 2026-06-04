@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { toPng } from 'html-to-image';
 import { getReEntryFeeLamports } from '../src/utils/constants';
+import CustomGameShareCard, { getCustomGameTier } from './CustomGameShareCard';
+import { pickTweet, xIntentUrl } from '../src/utils/tweetVariants';
 
 interface CustomGameResultsViewProps {
   results: {
@@ -37,6 +40,7 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [showReEntryConfirm, setShowReEntryConfirm] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const shareUrl = `${window.location.origin}/game/${results.slug}`;
   const canPlayAgain = attemptsUsed < maxAttempts;
   const isReEntry = isPaidGame && attemptsUsed > 0;
@@ -46,6 +50,20 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
   const minutes = Math.floor(timeSec / 60);
   const seconds = timeSec % 60;
 
+  // Off-screen CustomGameShareCard , render target for html-to-image capture.
+  const shareCardRef = useRef<HTMLDivElement>(null);
+  const { tier, moment } = getCustomGameTier(
+    results.correctCount,
+    results.totalQuestions,
+    results.rank,
+  );
+  const cardMode: 'paid' | 'creator-funded' | 'free' = isCreatorFunded
+    ? 'creator-funded'
+    : isPaidGame
+    ? 'paid'
+    : 'free';
+  const prizeLabel = prizePotSol != null ? `${prizePotSol.toFixed(2)} SOL` : null;
+
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
       setCopied(true);
@@ -53,13 +71,73 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
     }).catch(() => {});
   };
 
-  const handleShareX = () => {
-    const text = isCreatorFunded
-      ? `${results.correctCount}/${results.totalQuestions} on "${results.gameName}" | ${results.totalPoints} XP | @soltrivia_app\n\nfree entry, ${prizePotSol?.toFixed(2) ?? '?'} SOL prize pool. creator-funded trivia.\n\nthink you can beat me?\n\n${shareUrl}`
-      : isPaidGame
-      ? `${results.correctCount}/${results.totalQuestions} on "${results.gameName}" | ${results.totalPoints} XP | @soltrivia_app\n\nprize pool: ${prizePotSol?.toFixed(2) ?? '?'} SOL. real money. real trivia. real degens.\n\nthink you're built different? ape in\n\n${shareUrl}`
-      : `${results.correctCount}/${results.totalQuestions} on "${results.gameName}" | ${results.totalPoints} XP | @soltrivia_app\n\nthis game is lowkey harder than the trenches\n\n${shareUrl}`;
-    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
+  const captureCard = async (): Promise<Blob | null> => {
+    if (!shareCardRef.current) return null;
+    try {
+      const dataUrl = await toPng(shareCardRef.current, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: '#08080a',
+      });
+      const res = await fetch(dataUrl);
+      return await res.blob();
+    } catch (err) {
+      console.error('Custom game share card capture failed:', err);
+      return null;
+    }
+  };
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleShareX = async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const tweet = pickTweet(moment, {
+        topic: results.gameName,
+        score: results.totalPoints,
+        correct: `${results.correctCount}/${results.totalQuestions}`,
+        url: shareUrl,
+      });
+      const blob = await captureCard();
+      const filename = `sol-trivia-custom-${results.slug}.png`;
+      if (blob && typeof navigator.share === 'function') {
+        const file = new File([blob], filename, { type: 'image/png' });
+        const navAny = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
+        if (!navAny.canShare || navAny.canShare({ files: [file] })) {
+          try {
+            await navigator.share({ text: tweet, files: [file] });
+            return;
+          } catch {
+            // user dismissed sheet, fall through to download + intent fallback
+          }
+        }
+      }
+      if (blob) downloadBlob(blob, filename);
+      window.open(xIntentUrl(tweet), '_blank');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleSaveImage = async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const blob = await captureCard();
+      if (blob) downloadBlob(blob, `sol-trivia-custom-${results.slug}.png`);
+    } finally {
+      setSharing(false);
+    }
   };
 
   return (
@@ -166,18 +244,27 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
             {isPaidGame ? 'View Leaderboard & Prizes' : 'View Leaderboard'}
           </button>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <button
               onClick={handleCopyLink}
-              className="min-h-[44px] px-4 py-3 bg-white/5 border border-white/10 text-zinc-400 font-black uppercase text-[10px] tracking-wider rounded-xl hover:bg-white/10 transition-all active:scale-[0.98]"
+              className="min-h-[44px] px-2 py-3 bg-white/5 border border-white/10 text-zinc-400 font-black uppercase text-[10px] tracking-wider rounded-xl hover:bg-white/10 transition-all active:scale-[0.98]"
             >
               {copied ? 'Copied!' : 'Copy Link'}
             </button>
             <button
               onClick={handleShareX}
-              className="min-h-[44px] px-4 py-3 bg-white/5 border border-white/10 text-zinc-400 font-black uppercase text-[10px] tracking-wider rounded-xl hover:bg-white/10 transition-all active:scale-[0.98]"
+              disabled={sharing}
+              className="min-h-[44px] px-2 py-3 bg-white/5 border border-white/10 text-zinc-400 font-black uppercase text-[10px] tracking-wider rounded-xl hover:bg-white/10 transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Share on X
+              {sharing ? 'Capturing…' : 'Share on X'}
+            </button>
+            <button
+              onClick={handleSaveImage}
+              disabled={sharing}
+              className="min-h-[44px] px-2 py-3 bg-white/5 border border-white/10 text-zinc-400 font-black uppercase text-[10px] tracking-wider rounded-xl hover:bg-white/10 transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+              title="Save stats card as PNG"
+            >
+              Save Image
             </button>
           </div>
 
@@ -188,6 +275,37 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
             Back to Home
           </button>
         </div>
+      </div>
+
+      {/*
+        Off-screen CustomGameShareCard , render target for html-to-image.
+        Always mounted regardless of mode so the ref is populated when the
+        user hits Share or Save Image.
+      */}
+      <div
+        aria-hidden
+        style={{
+          position: 'fixed',
+          left: -10000,
+          top: 0,
+          width: 480,
+          height: 600,
+          pointerEvents: 'none',
+          opacity: 0,
+        }}
+      >
+        <CustomGameShareCard
+          ref={shareCardRef}
+          tier={tier}
+          gameName={results.gameName}
+          correctCount={results.correctCount}
+          totalQuestions={results.totalQuestions}
+          points={results.totalPoints}
+          timeSec={timeSec}
+          rank={results.rank}
+          prizeLabel={prizeLabel}
+          mode={cardMode}
+        />
       </div>
     </div>
   );

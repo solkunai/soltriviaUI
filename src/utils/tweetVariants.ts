@@ -29,6 +29,7 @@ export type ShareMoment =
   | 'duel_claim'
   | 'custom_game_lobby'
   | 'custom_game_played'
+  | 'custom_game_won'
   | 'custom_game_claim'
   | 'referral_invite';
 
@@ -127,6 +128,15 @@ const BANKS: Record<ShareMoment, string[]> = {
     "custom trivia room up on @SolTrivia_app.\ntopic is {topic}. think you know it? prove it.\n\n{url}",
     "open trivia game on @SolTrivia_app. {wager} entry.\nbring friends or come solo. winner takes all.\n\n{url}",
     "ser, i built a quiz on @SolTrivia_app.\nare you smart enough to claim the pot?\n\n{url}",
+  ],
+
+  custom_game_won: [
+    "topped the @SolTrivia_app {topic} leaderboard.\nrank #1. {correct} questions deep.\nwho's coming for me?\n\n{url}",
+    "ranked #1 in {topic} trivia on @SolTrivia_app.\nturns out i actually know things.\nbeat that.\n\n{url}",
+    "first place on {topic} custom trivia, @SolTrivia_app.\n{score} XP. ngmi if you can't catch up.\n\n{url}",
+    "top of the leaderboard on @SolTrivia_app for {topic}.\nname a more powerful flex. you can't.\n\n{url}",
+    "i'm currently #1 on a @SolTrivia_app custom game.\n{topic} ftw. catch me if you can.\n\n{url}",
+    "absolutely cooking on @SolTrivia_app right now.\n#1 in {topic}. {score} XP and counting.\n\n{url}",
   ],
 
   custom_game_played: [
