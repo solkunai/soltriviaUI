@@ -356,7 +356,7 @@ const ReferralsViewV2: React.FC = () => {
           <div key={s.t} className="flex items-center gap-3 px-5 py-3" style={{ borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
             <span
               className="font-black italic"
-              style={{ fontSize: 18, color: '#52525b', width: 22, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}
+              style={{ fontSize: 18, color: '#14F195', width: 22, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}
             >
               {String(i + 1).padStart(2, '0')}
             </span>

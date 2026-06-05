@@ -12,7 +12,7 @@
  * Drop-in: same prop interface as HomeView so App.tsx can swap them
  * without touching the callers.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { useIsMobile } from '../src/hooks/useIsMobile';
 import { getCurrentRoundKey, getLiveFeed, type LiveFeedItem } from '../src/utils/api';
@@ -297,28 +297,65 @@ export function HomeRightRail({
         ) : null}
       </div>
 
-      {/* Buy NERD card — opens the Bags swap */}
-      {onOpenSwap ? (
-        <div
-          className="rounded-xl"
-          style={{ background: '#0a0a0a', border: '1px solid rgba(251,191,36,0.33)', padding: '14px 16px' }}
+      {/* Buy NERD card — opens the in-app swap defaulting to SOL → NERD */}
+      {onOpenSwap ? <BuyNerdCard onOpenSwap={onOpenSwap} /> : null}
+    </div>
+  );
+}
+
+const NERD_MINT_ADDRESS = 'DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS';
+
+function BuyNerdCard({ onOpenSwap }: { onOpenSwap: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(NERD_MINT_ADDRESS);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard API can fail in some embedded webviews; surface nothing.
+    }
+  }, []);
+  const shortCa = `${NERD_MINT_ADDRESS.slice(0, 4)}...${NERD_MINT_ADDRESS.slice(-4)}`;
+  return (
+    <div
+      className="rounded-xl"
+      style={{ background: '#0a0a0a', border: '1px solid rgba(251,191,36,0.33)', padding: '14px 16px' }}
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-black italic uppercase" style={{ fontSize: 9, color: '#FBBF24', letterSpacing: '0.18em' }}>
+          $NERD
+        </span>
+        <img src="/token-nerd.png" alt="NERD" style={{ width: 20, height: 20, borderRadius: 10 }} />
+      </div>
+      <div style={{ fontSize: 11, color: '#a1a1aa', marginTop: 6 }}>Swap SOL ↔ NERD, in-app.</div>
+      {/* CA row: short mint + copy button. Click outside of BUY NERD so taps don't bubble. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+        <span className="st-mono" style={{ fontSize: 9, color: '#71717a', fontVariantNumeric: 'tabular-nums' }}>
+          CA: {shortCa}
+        </span>
+        <button
+          onClick={handleCopy}
+          className="font-black italic uppercase"
+          style={{
+            background: copied ? 'rgba(20,241,149,0.18)' : 'rgba(251,191,36,0.18)',
+            color: copied ? '#14F195' : '#FBBF24',
+            border: '1.5px solid ' + (copied ? 'rgba(20,241,149,0.55)' : 'rgba(251,191,36,0.55)'),
+            borderRadius: 4, padding: '3px 8px', fontSize: 10, letterSpacing: '0.16em',
+            cursor: 'pointer',
+          }}
         >
-          <div className="flex items-center justify-between">
-            <span className="font-black italic uppercase" style={{ fontSize: 9, color: '#FBBF24', letterSpacing: '0.18em' }}>
-              $NERD
-            </span>
-            <img src="/token-nerd.png" alt="NERD" style={{ width: 20, height: 20, borderRadius: 10 }} />
-          </div>
-          <div style={{ fontSize: 11, color: '#a1a1aa', marginTop: 6 }}>Swap SOL ↔ NERD, in-app.</div>
-          <button
-            onClick={onOpenSwap}
-            className="w-full rounded-full font-black italic uppercase mt-3 active:opacity-90"
-            style={{ background: '#FBBF24', color: '#000', padding: '8px 12px', fontSize: 11, letterSpacing: '0.14em', border: 'none', cursor: 'pointer' }}
-          >
-            BUY NERD
-          </button>
-        </div>
-      ) : null}
+          {copied ? 'COPIED' : 'COPY'}
+        </button>
+      </div>
+      <button
+        onClick={onOpenSwap}
+        className="w-full rounded-full font-black italic uppercase mt-3 active:opacity-90"
+        style={{ background: '#FBBF24', color: '#000', padding: '8px 12px', fontSize: 11, letterSpacing: '0.14em', border: 'none', cursor: 'pointer' }}
+      >
+        BUY NERD
+      </button>
     </div>
   );
 }

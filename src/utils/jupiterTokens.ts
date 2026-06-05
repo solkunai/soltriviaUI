@@ -93,6 +93,13 @@ export interface JupiterToken {
   tokenProgram?: string;
   /** Dev wallet address. */
   dev?: string;
+  /** Jupiter-exposed launchpad UI the token was minted on. Known values:
+   *  'pump.fun', 'bags.fun', 'letsbonk.fun'. Null/undefined for tokens that
+   *  predate the launchpad era (e.g., BONK, WIF) or self-minted projects. */
+  launchpad?: string | null;
+  /** Underlying bonding-curve / liquidity protocol. E.g., 'met-dbc' for
+   *  Meteora Dynamic Bonding Curve (powers bags.fun + letsbonk.fun). */
+  metaLaunchpad?: string | null;
 }
 
 const V2_BASE = 'https://api.jup.ag/tokens/v2';
@@ -136,6 +143,8 @@ function normalize(raw: any): JupiterToken {
     tags: Array.isArray(raw.tags) ? raw.tags.map(String) : undefined,
     tokenProgram: raw.tokenProgram,
     dev: raw.dev,
+    launchpad: typeof raw.launchpad === 'string' ? raw.launchpad : null,
+    metaLaunchpad: typeof raw.metaLaunchpad === 'string' ? raw.metaLaunchpad : null,
   };
 }
 

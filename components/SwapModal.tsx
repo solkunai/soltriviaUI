@@ -32,8 +32,9 @@ import {
 } from '../src/utils/jupiterTokens';
 
 interface Props {
-  isOpen: boolean;
-  onClose: () => void;
+  /** Optional back/close handler. Web routes here render this as a regular
+   *  view inside WebShell, so onClose typically navigates back to Home. */
+  onClose?: () => void;
 }
 
 type SwapState =
@@ -49,7 +50,29 @@ type SwapState =
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const NERD_MINT = 'DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS';
 
-const SwapModal: React.FC<Props> = ({ isOpen, onClose }) => {
+// Hardcoded fallback metadata for the default pair so the UI never paints
+// a '?' for SOL or NERD before the Jupiter list resolves. Used by fromT/toT.
+const DEFAULT_PAIR_FALLBACK: Record<string, JupiterToken> = {
+  [SOL_MINT]: {
+    address: SOL_MINT,
+    symbol: 'SOL',
+    name: 'Solana',
+    decimals: 9,
+    logoURI: '/token-sol.png',
+  },
+  [NERD_MINT]: {
+    address: NERD_MINT,
+    symbol: 'NERD',
+    name: 'Sol Trivia',
+    decimals: 9,
+    logoURI: '/token-nerd.png',
+  },
+};
+function resolveDefaultPairFallback(mint: string): JupiterToken | undefined {
+  return DEFAULT_PAIR_FALLBACK[mint];
+}
+
+const SwapModal: React.FC<Props> = ({ onClose }) => {
   const { publicKey, sendTransaction, connected } = useWallet();
   const { connection } = useConnection();
   const { tokens: jupTokens, loading: tokensLoading } = useJupiterTokens();
@@ -72,24 +95,21 @@ const SwapModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const quoteAbortRef = useRef<AbortController | null>(null);
 
-  // Resolve token objects from the Jupiter list. Falls back to a stub if the
-  // user picks a token before the list loads (rare).
+  // Resolve token objects from the Jupiter list. For SOL + NERD (the two
+  // canonical default-pair mints), use hardcoded metadata as the fallback so
+  // the UI ALWAYS shows correct symbol + name + logo on initial paint even
+  // before the Jupiter list resolves. Generic '?' stub is the final fallback
+  // for arbitrary mints the user paste-imports before the list loads.
   const fromT = useMemo<JupiterToken>(() => {
-    return jupTokens.find((t) => t.address === fromMint) || {
-      address: fromMint,
-      symbol: '?',
-      name: 'Unknown',
-      decimals: 9,
-    };
+    return jupTokens.find((t) => t.address === fromMint)
+      || resolveDefaultPairFallback(fromMint)
+      || { address: fromMint, symbol: '?', name: 'Unknown', decimals: 9 };
   }, [jupTokens, fromMint]);
 
   const toT = useMemo<JupiterToken>(() => {
-    return jupTokens.find((t) => t.address === toMint) || {
-      address: toMint,
-      symbol: '?',
-      name: 'Unknown',
-      decimals: 9,
-    };
+    return jupTokens.find((t) => t.address === toMint)
+      || resolveDefaultPairFallback(toMint)
+      || { address: toMint, symbol: '?', name: 'Unknown', decimals: 9 };
   }, [jupTokens, toMint]);
 
   // Resolve user's balance of fromT (raw base units)
@@ -135,19 +155,21 @@ const SwapModal: React.FC<Props> = ({ isOpen, onClose }) => {
   }, [publicKey, connection, fromMint, toMint]);
 
   useEffect(() => {
-    if (isOpen && connected) loadBalances();
-  }, [isOpen, connected, loadBalances]);
+    if (connected) loadBalances();
+  }, [connected, loadBalances]);
 
-  // Reset transient state on close
+  // Force SOL → NERD on mount. Buying NERD is the primary CTA from the Home
+  // BUY NERD card; opening the swap view always lands here. User can flip /
+  // change tokens after — this just guarantees the starting pair is correct.
   useEffect(() => {
-    if (!isOpen) {
-      setAmount('');
-      setQuote(null);
-      setErrorMsg(null);
-      setSuccessSig(null);
-      setState('ready');
-    }
-  }, [isOpen]);
+    setFromMint(SOL_MINT);
+    setToMint(NERD_MINT);
+    setAmount('');
+    setQuote(null);
+    setErrorMsg(null);
+    setSuccessSig(null);
+    setState('ready');
+  }, []);
 
   // Debounced quote fetch on amount/mints/slippage change
   useEffect(() => {
@@ -282,14 +304,10 @@ const SwapModal: React.FC<Props> = ({ isOpen, onClose }) => {
     return Number(raw) / Math.pow(10, toT.decimals);
   }, [quote, toT.decimals]);
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/90 backdrop-blur-3xl" onClick={onClose} />
-
+    <div className="flex items-start justify-center w-full" style={{ padding: '8px 0 32px' }}>
       <div
-        className="relative w-full max-w-sm overflow-hidden shadow-2xl"
+        className="relative w-full max-w-md overflow-hidden shadow-2xl"
         style={{
           background: '#0a0a0a',
           border: '1px solid rgba(255,255,255,0.08)',
@@ -328,13 +346,15 @@ const SwapModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   </button>
                 );
               })}
-              <button
-                onClick={onClose}
-                style={{
-                  appearance: 'none', background: 'transparent', border: 'none', color: '#71717a',
-                  cursor: 'pointer', fontSize: 22, marginLeft: 4, padding: 0, lineHeight: 1,
-                }}
-              >×</button>
+              {onClose && (
+                <button
+                  onClick={onClose}
+                  style={{
+                    appearance: 'none', background: 'transparent', border: 'none', color: '#71717a',
+                    cursor: 'pointer', fontSize: 22, marginLeft: 4, padding: 0, lineHeight: 1,
+                  }}
+                >×</button>
+              )}
             </div>
           </div>
         </div>
@@ -381,16 +401,25 @@ const SwapModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
           </SwapCard>
 
-          {/* Flip button */}
+          {/* Flip button — bold white swap arrows, centered between the two cards */}
           <div style={{ display: 'flex', justifyContent: 'center', margin: '-9px 0', position: 'relative', zIndex: 2 }}>
             <button
               onClick={handleFlip}
+              aria-label="Flip swap direction"
+              title="Flip"
               style={{
-                appearance: 'none', cursor: 'pointer', width: 36, height: 36, borderRadius: 11,
-                background: '#111', border: '1.5px solid rgba(20,241,149,0.4)', color: '#14F195',
-                display: 'grid', placeItems: 'center', fontSize: 15,
+                appearance: 'none', cursor: 'pointer', width: 40, height: 40, borderRadius: 12,
+                background: '#0a0a0a', border: '1.5px solid rgba(255,255,255,0.30)', color: '#fff',
+                display: 'grid', placeItems: 'center',
               }}
-            >↕</button>
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M7 4v16" />
+                <path d="M3 8l4-4 4 4" />
+                <path d="M17 20V4" />
+                <path d="M21 16l-4 4-4-4" />
+              </svg>
+            </button>
           </div>
 
           {/* TO card */}
@@ -794,6 +823,18 @@ function TokenPickerSheet({
   );
 }
 
+// Launchpad logos rendered as image badges next to the token symbol. Sourced
+// from Jupiter's launchpad + metaLaunchpad fields (canonical truth). Risk +
+// Verified badges stack independently so a sketchy bags-launched token can
+// show BOTH bags logo AND the RISK warning. All logos transparent so they
+// blend with the dark swap surface.
+const LAUNCHPAD_LOGOS: Record<string, { src: string; alt: string }> = {
+  'pump.fun': { src: '/pump_logo.svg', alt: 'pump.fun' },
+  'bags.fun': { src: '/bags_logo.png', alt: 'bags.fun' },
+  'letsbonk.fun': { src: '/bonk_fun_logo.png', alt: 'letsbonk.fun' },
+  'met-dbc': { src: '/meteora_logo.png', alt: 'Meteora DBC' },
+};
+
 function TokenRow({
   t, onPick,
 }: {
@@ -803,10 +844,17 @@ function TokenRow({
   const price = t.usdPrice;
   const change24h = t.stats24h?.priceChange;
   const risk = getRiskSignals(t);
-  // Show the PUMP.FUN tag for tokens that haven't graduated AND are low-quality.
-  // Pump tokens have addresses ending in 'pump'. Heuristic-only — Jupiter
-  // doesn't expose a "pump.fun pre-graduation" flag directly.
-  const isPump = t.address.toLowerCase().endsWith('pump');
+  // Jupiter's launchpad field is the source of truth (specific UI like
+  // 'pump.fun' or 'bags.fun'). Falls through to metaLaunchpad for the
+  // underlying protocol when no specific UI is tagged (e.g., raw 'met-dbc'
+  // tokens not branded by any launchpad UI). Final fallback is the old
+  // address-suffix heuristic for pre-launchpad-era / fresh mints.
+  const launchpadKey = t.launchpad
+    ? t.launchpad
+    : t.metaLaunchpad === 'met-dbc'
+      ? 'met-dbc'
+      : (t.address.toLowerCase().endsWith('pump') ? 'pump.fun' : null);
+  const launchpadLogo = launchpadKey ? LAUNCHPAD_LOGOS[launchpadKey] : undefined;
 
   return (
     <button
@@ -822,10 +870,12 @@ function TokenRow({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <span className="st-display" style={{ fontSize: 18, color: '#fff', fontStyle: 'italic' }}>{t.symbol}</span>
           {risk.verified && (
-            <span className="st-uplabel" style={{
-              fontSize: 7, color: '#14F195', padding: '2px 5px', borderRadius: 4,
-              background: 'rgba(20,241,149,0.12)',
-            }} title="Jupiter Verified">★</span>
+            <img
+              src="/jup_vrfd_nobg.png"
+              alt="Jupiter Verified"
+              title="Jupiter Verified"
+              style={{ height: 14, width: 'auto', display: 'block' }}
+            />
           )}
           {isAppWhitelisted(t.symbol) && !risk.verified && (
             <span className="st-uplabel" style={{
@@ -833,11 +883,19 @@ function TokenRow({
               background: 'rgba(20,241,149,0.12)',
             }}>SAFE</span>
           )}
-          {isPump && (
+          {launchpadLogo && (
+            <img
+              src={launchpadLogo.src}
+              alt={launchpadLogo.alt}
+              title={launchpadLogo.alt}
+              style={{ height: 14, width: 'auto', display: 'block' }}
+            />
+          )}
+          {launchpadKey && !launchpadLogo && (
             <span className="st-uplabel" style={{
               fontSize: 7, color: '#FFD700', padding: '2px 5px', borderRadius: 4,
               background: 'rgba(255,215,0,0.12)', border: '1px solid rgba(255,215,0,0.35)',
-            }}>PUMP.FUN</span>
+            }}>{launchpadKey.toUpperCase()}</span>
           )}
           {risk.lowOrganic && !risk.verified && (
             <span className="st-uplabel" style={{

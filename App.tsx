@@ -25,6 +25,7 @@ const PATH_TO_VIEW: Record<string, View> = {
   '/game-pass': View.GAME_PASS,
   '/lives': View.LIVES,
   '/mint': View.MINT,
+  '/swap': View.SWAP,
 };
 function viewFromPath(): View {
   if (typeof window === 'undefined') return View.HOME;
@@ -53,6 +54,7 @@ function pathForView(view: View, customSlug?: string | null, duelShareCode?: str
   if (view === View.GAME_PASS) return '/game-pass';
   if (view === View.LIVES) return '/lives';
   if (view === View.MINT) return '/mint';
+  if (view === View.SWAP) return '/swap';
   if ([View.DUEL_WAITING, View.DUEL_PLAY, View.DUEL_RESULTS].includes(view)) {
     if (duelShareCode) return `/duel/${duelShareCode}`;
     const current = window.location.pathname;
@@ -168,7 +170,6 @@ const App: React.FC = () => {
   const [isBuyLivesOpen, setIsBuyLivesOpen] = useState(false);
   const [showFirstTimeDeposit, setShowFirstTimeDeposit] = useState(false);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
-  const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [showWalletRequired, setShowWalletRequired] = useState(false);
   const [appLoading, setAppLoading] = useState(true);
@@ -2227,7 +2228,7 @@ const App: React.FC = () => {
             rightRail={
               <HomeRightRail
                 lives={livesDisplayReady ? lives : null}
-                onOpenSwap={() => setIsSwapOpen(true)}
+                onOpenSwap={() => setCurrentView(View.SWAP)}
                 onBuyLives={() => {
                   if (!connected) {
                     setShowWalletRequired(true);
@@ -2301,7 +2302,7 @@ const App: React.FC = () => {
             rightRail={
               <HomeRightRail
                 lives={livesDisplayReady ? lives : null}
-                onOpenSwap={() => setIsSwapOpen(true)}
+                onOpenSwap={() => setCurrentView(View.SWAP)}
                 onBuyLives={() => {
                   if (!connected) setShowWalletRequired(true);
                   else setIsBuyLivesOpen(true);
@@ -2438,7 +2439,7 @@ const App: React.FC = () => {
                 onEdit={() => setIsEditProfileOpen(true)}
                 onBuyLives={() => setIsBuyLivesOpen(true)}
                 onOpenGamePass={() => setCurrentView(View.GAME_PASS)}
-                onOpenSwap={() => setIsSwapOpen(true)}
+                onOpenSwap={() => setCurrentView(View.SWAP)}
                 onOpenReferrals={() => setCurrentView(View.REFERRALS)}
                 onClaimRoundPrize={handleClaimRoundPrizeFromPlay}
                 onClaimDuelPrize={handleClaimDuelPrize}
@@ -2481,6 +2482,33 @@ const App: React.FC = () => {
                 else setIsBuyLivesOpen(true);
               }}
             />
+          </WebShell>
+        );
+      case View.SWAP:
+        return (
+          <WebShell
+            activeView={currentView}
+            onNav={(v) => setCurrentView(v)}
+            lives={livesDisplayReady ? lives : null}
+            walletAddress={publicKey?.toBase58() ?? null}
+            onBuyLives={() => {
+              if (!connected) setShowWalletRequired(true);
+              else setIsBuyLivesOpen(true);
+            }}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onConnect={() => setShowWalletRequired(true)}
+            rightRail={
+              <HomeRightRail
+                lives={livesDisplayReady ? lives : null}
+                onOpenSwap={() => setCurrentView(View.SWAP)}
+                onBuyLives={() => {
+                  if (!connected) setShowWalletRequired(true);
+                  else setIsBuyLivesOpen(true);
+                }}
+              />
+            }
+          >
+            <SwapModal onClose={() => setCurrentView(View.HOME)} />
           </WebShell>
         );
       case View.QUIZ:
@@ -2995,7 +3023,7 @@ const App: React.FC = () => {
         {!hideSidebar && (
           <div className="sticky top-0 z-10 shrink-0 flex items-center justify-center gap-2 w-full bg-amber-500/[0.06] border-b border-amber-500/15 px-4 py-1.5 text-center">
             <button
-              onClick={() => setIsSwapOpen(true)}
+              onClick={() => setCurrentView(View.SWAP)}
               className="flex items-center justify-center gap-2 hover:opacity-80 transition-opacity"
             >
               <img src="/token-nerd.png" alt="$NERD" className="w-4 h-4 rounded-full object-cover" />
@@ -3077,8 +3105,7 @@ const App: React.FC = () => {
           onGoToProfile={() => setCurrentView(View.PROFILE)}
         />
       )}
-      <SwapModal isOpen={isSwapOpen} onClose={() => setIsSwapOpen(false)} />
-      <EditProfileModal 
+      <EditProfileModal
         isOpen={isEditProfileOpen} 
         onClose={() => setIsEditProfileOpen(false)} 
         currentUsername={profile.username}

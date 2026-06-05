@@ -241,7 +241,7 @@ type WebShellProps = {
   /**
    * Top bar mode:
    *   - 'search' (Custom Games + Duels): big search input across the topbar
-   *   - 'simple' (default): FAQ + language toggle + lives + BUY LIVES + avatar
+   *   - 'simple' (default): FAQ + lives + BUY LIVES + avatar
    */
   topbarMode?: 'search' | 'simple';
   /** Opens the FAQ / How to Play modal. */
@@ -902,20 +902,6 @@ export function WebShell({
                   ? FAQ
                 </button>
               ) : null}
-              <button
-                className="rounded-full font-black italic uppercase active:opacity-90"
-                style={{
-                  background: '#0a0a0a',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#a1a1aa',
-                  padding: '7px 14px',
-                  fontSize: 10,
-                  letterSpacing: '0.14em',
-                  cursor: 'pointer',
-                }}
-              >
-                🌐 EN
-              </button>
             </div>
           )}
           <span

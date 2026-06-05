@@ -363,7 +363,7 @@ const RoundsViewV2: React.FC<Props> = ({
                 className="font-black italic"
                 style={{
                   fontSize: 22,
-                  color: '#52525b',
+                  color: '#14F195',
                   width: 30,
                   fontVariantNumeric: 'tabular-nums',
                   letterSpacing: '-0.03em',
