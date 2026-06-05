@@ -128,7 +128,10 @@ const RoundsViewV2: React.FC<Props> = ({
   const hasLives = (lives ?? 0) > 0;
   const canPlay = walletConnected && !isAtMax && (isFirstEntry || hasLives);
 
-  const poolDisplay = pool >= 1 ? pool.toFixed(2) : pool.toFixed(4);
+  // Pot increments in 0.02 SOL chunks (one entry fee). Show "0" when empty,
+  // 2 decimals otherwise so we never display "0.0000" or "0.0200" — always
+  // "0", "0.02", "0.04", ... "1.00", "1.02", etc.
+  const poolDisplay = pool === 0 ? '0' : pool.toFixed(2);
   const ctaLabel = !walletConnected
     ? 'CONNECT WALLET →'
     : isAtMax
@@ -139,11 +142,22 @@ const RoundsViewV2: React.FC<Props> = ({
           ? `RE-ENTER · 0.02 SOL + 1 LIFE (${roundEntriesUsed}/${roundEntriesMax}) →`
           : 'GET LIVES TO RE-ENTER →';
 
+  // Re-entry confirmation: re-entering the same round consumes 1 life.
+  // First entry is free of life cost — no confirm needed. Buying lives is also
+  // its own flow. Confirm only on the actual re-entry path.
+  const [showReentryConfirm, setShowReentryConfirm] = useState(false);
+
   const handleCta = () => {
     if (entering || isAtMax) return;
     if (!walletConnected) onConnectWallet();
     else if (!isFirstEntry && !hasLives) onOpenBuyLives();
+    else if (!isFirstEntry && hasLives) setShowReentryConfirm(true);
     else onStartQuiz();
+  };
+
+  const handleConfirmReentry = () => {
+    setShowReentryConfirm(false);
+    onStartQuiz();
   };
 
   return (
@@ -192,7 +206,7 @@ const RoundsViewV2: React.FC<Props> = ({
             PRIZE POOL · GROWING
           </div>
           <div
-            className="font-black italic mt-1"
+            className="font-black italic mt-1 flex items-end gap-2"
             style={{
               fontSize: 88,
               lineHeight: 0.85,
@@ -200,13 +214,14 @@ const RoundsViewV2: React.FC<Props> = ({
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {poolDisplay}
+            <span>{poolDisplay}</span>
+            <span style={{ fontSize: 38, letterSpacing: '-0.02em', lineHeight: 0.95, paddingBottom: 6 }}>SOL</span>
           </div>
           <div
             className="font-black italic uppercase mt-2"
             style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
           >
-            SOL · {players} ENTRIES
+            {players} ENTRIES
           </div>
         </div>
         <div
@@ -324,7 +339,7 @@ const RoundsViewV2: React.FC<Props> = ({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {prizeSol.toFixed(3)}
+                  {prizeSol === 0 ? '0' : prizeSol.toFixed(3)}
                 </span>
               </div>
             );
@@ -440,6 +455,81 @@ const RoundsViewV2: React.FC<Props> = ({
           {entering ? 'ENTERING...' : ctaLabel}
         </button>
       </div>
+
+      {/* Re-entry confirmation modal — only triggers when the user has already
+          entered this round (so the next entry consumes 1 life). First-entry
+          users never see this. */}
+      {showReentryConfirm && (
+        <div
+          className="fixed inset-0 flex items-center justify-center p-4"
+          style={{ zIndex: 300 }}
+          onClick={() => setShowReentryConfirm(false)}
+        >
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-md rounded-2xl overflow-hidden"
+            style={{
+              background: '#0A0A0A',
+              border: '1.5px solid rgba(255,49,49,0.55)',
+              boxShadow: '0 24px 60px -22px rgba(255,49,49,0.6)',
+            }}
+          >
+            <div style={{ padding: '24px 24px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="font-black italic uppercase" style={{ fontSize: 10, color: '#FF3131', letterSpacing: '0.18em' }}>
+                RE-ENTRY · USES 1 LIFE
+              </div>
+              <div className="font-black italic uppercase mt-2 text-white" style={{ fontSize: 26, letterSpacing: '-0.02em', lineHeight: 1 }}>
+                Go again?
+              </div>
+              <p className="text-zinc-400 mt-3" style={{ fontSize: 13, lineHeight: 1.45 }}>
+                You've already entered Round #{getCurrentRoundNumber()}. Re-entering costs <span className="text-white font-black">0.02 SOL + 1 life</span>. Only your highest score counts. Re-entry fees are non-refundable.
+              </p>
+              <div className="mt-4 flex items-center gap-4" style={{ fontSize: 11 }}>
+                <span className="text-zinc-500 font-black uppercase tracking-wider">
+                  Lives: <span className="text-white">{lives ?? '—'}</span>
+                </span>
+                <span className="text-zinc-700">·</span>
+                <span className="text-zinc-500 font-black uppercase tracking-wider">
+                  Entries used: <span className="text-white">{roundEntriesUsed}/{roundEntriesMax}</span>
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-2 p-3">
+              <button
+                onClick={() => setShowReentryConfirm(false)}
+                className="flex-1 font-black italic uppercase rounded-xl active:opacity-90"
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  color: '#fff',
+                  padding: '12px 0',
+                  fontSize: 12,
+                  letterSpacing: '0.14em',
+                  cursor: 'pointer',
+                }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleConfirmReentry}
+                className="flex-1 font-black italic uppercase rounded-xl active:opacity-90"
+                style={{
+                  background: '#FF3131',
+                  border: 'none',
+                  color: '#000',
+                  padding: '12px 0',
+                  fontSize: 12,
+                  letterSpacing: '0.14em',
+                  cursor: 'pointer',
+                }}
+              >
+                RE-ENTER →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

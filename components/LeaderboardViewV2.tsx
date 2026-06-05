@@ -18,10 +18,16 @@ type Player = {
   metric: number;
   sol: number;
   games: number;
+  /** Color fallback background when no avatar URL. */
   avatar: string;
+  /** Supabase Storage URL when the player uploaded a PFP. */
+  avatarUrl?: string;
   col: string;
   badge?: string;
 };
+
+const PAGE_SIZE = 50;
+const POLL_INTERVAL_MS = 15_000;
 
 const TABS = ['ALL-TIME', 'ROUNDS', 'DUELS', 'CUSTOM', 'THIS WEEK'] as const;
 type Tab = (typeof TABS)[number];
@@ -56,7 +62,7 @@ function PodiumColumn({ player, isMode }: { player: Player; isMode: boolean }) {
           </div>
         ) : null}
         <div
-          className="mx-auto rounded-full"
+          className="mx-auto rounded-full overflow-hidden"
           style={{
             marginTop: isTop3 ? 10 : 0,
             width: isFirst ? 56 : 44,
@@ -64,7 +70,20 @@ function PodiumColumn({ player, isMode }: { player: Player; isMode: boolean }) {
             background: player.avatar,
             border: `2px solid ${player.col}`,
           }}
-        />
+        >
+          {player.avatarUrl ? (
+            <img
+              src={player.avatarUrl}
+              alt=""
+              loading="lazy"
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              onError={(e) => {
+                // PFP failed to load — hide the img so the color fallback shows.
+                (e.currentTarget as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          ) : null}
+        </div>
         <div className="font-black italic uppercase mt-2 truncate" style={{ fontSize: 9, color: '#fff', letterSpacing: '0.12em' }}>
           {player.user}
         </div>
@@ -108,64 +127,133 @@ const LeaderboardViewV2: React.FC = () => {
   const [tab, setTab] = useState<Tab>('ALL-TIME');
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasNext, setHasNext] = useState(false);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const isMobile = useIsMobile();
 
   const isMode = tab === 'ROUNDS' || tab === 'DUELS' || tab === 'CUSTOM';
 
+  // Reset to page 1 whenever the tab changes — different leaderboards.
+  useEffect(() => {
+    setPage(1);
+  }, [tab]);
+
+  // Load + auto-refresh the active tab + page every 15s. The "silent" branch
+  // (no setLoading(true)) is used by the polling interval so the table doesn't
+  // flash a LOADING state on every tick.
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    (async () => {
+
+    const load = async (silent: boolean) => {
+      if (!silent) setLoading(true);
       try {
         let mapped: Player[] = [];
+        let nextAvailable = false;
+        let totalForTab: number | null = null;
+
         if (tab === 'ALL-TIME' || tab === 'THIS WEEK') {
           const period = tab === 'THIS WEEK' ? 'weekly' : 'all';
-          const resp = await getLeaderboard(undefined, walletAddress || undefined, period);
+          const offset = (page - 1) * PAGE_SIZE;
+          const resp = await getLeaderboard(undefined, walletAddress || undefined, period, offset);
           const entries = resp.leaderboard ?? [];
           const solMap = entries.length
             ? await getTotalSolWonByWallets(entries.map((e) => e.wallet_address)).catch(() => ({}))
             : {};
-          mapped = entries.map((e, i) => ({
-            rank: e.rank ?? i + 1,
-            user: e.display_name || shortWallet(e.wallet_address),
-            metric: e.score,
-            sol: (solMap[e.wallet_address] ?? 0) / SOL,
-            games: e.games_played ?? 0,
-            avatar: e.avatar_bg_color || colorFor(e.wallet_address),
-            col: i < 5 ? PODIUM_COLS[i] : '#a1a1aa',
-            badge: i < 3 ? BADGES[i] : undefined,
-          }));
+          mapped = entries.map((e, i) => {
+            const rank = e.rank ?? offset + i + 1;
+            // EF populates `avatar` from player_profiles.avatar_url, which is
+            // either an https:// URL (newer Supabase Storage uploads) OR a
+            // legacy data:image/... base64 URI (older uploads). Accept both.
+            const isUrl = typeof e.avatar === 'string' && (
+              /^https?:\/\//i.test(e.avatar) ||
+              /^data:image\//i.test(e.avatar)
+            );
+            return {
+              rank,
+              user: e.display_name || shortWallet(e.wallet_address),
+              metric: e.score,
+              sol: (solMap[e.wallet_address] ?? 0) / SOL,
+              games: e.games_played ?? 0,
+              avatar: e.avatar_bg_color || colorFor(e.wallet_address),
+              avatarUrl: isUrl ? e.avatar : undefined,
+              col: rank <= 5 ? PODIUM_COLS[rank - 1] : '#a1a1aa',
+              badge: rank <= 3 ? BADGES[rank - 1] : undefined,
+            };
+          });
+          totalForTab = resp.total_count ?? null;
+          nextAvailable = totalForTab != null
+            ? (page * PAGE_SIZE) < totalForTab
+            : entries.length === PAGE_SIZE;
         } else {
           const mode = tab === 'ROUNDS' ? 'rounds' : tab === 'DUELS' ? 'duels' : 'custom';
           const rows = await getModeLeaderboard(mode);
-          mapped = rows.map((r, i) => ({
-            rank: i + 1,
-            user: r.display_name || shortWallet(r.wallet_address),
-            metric: r.wins,
-            sol: r.sol_lamports / SOL,
-            games: r.wins,
-            avatar: colorFor(r.wallet_address),
-            col: i < 5 ? PODIUM_COLS[i] : '#a1a1aa',
-            badge: i < 3 ? BADGES[i] : undefined,
-          }));
+          totalForTab = rows.length;
+          const startIdx = (page - 1) * PAGE_SIZE;
+          const slice = rows.slice(startIdx, startIdx + PAGE_SIZE);
+          mapped = slice.map((r, i) => {
+            const rank = startIdx + i + 1;
+            return {
+              rank,
+              user: r.display_name || shortWallet(r.wallet_address),
+              metric: r.wins,
+              sol: r.sol_lamports / SOL,
+              games: r.wins,
+              avatar: colorFor(r.wallet_address),
+              col: rank <= 5 ? PODIUM_COLS[rank - 1] : '#a1a1aa',
+              badge: rank <= 3 ? BADGES[rank - 1] : undefined,
+            };
+          });
+          nextAvailable = (page * PAGE_SIZE) < rows.length;
         }
-        if (!cancelled) setPlayers(mapped);
+
+        if (!cancelled) {
+          setPlayers(mapped);
+          setHasNext(nextAvailable);
+          setTotalCount(totalForTab);
+        }
       } catch {
-        if (!cancelled) setPlayers([]);
+        if (!cancelled) {
+          setPlayers([]);
+          setHasNext(false);
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && !silent) setLoading(false);
       }
-    })();
+    };
+
+    load(false);
+    const pollId = setInterval(() => {
+      if (!cancelled) load(true);
+    }, POLL_INTERVAL_MS);
+
     return () => {
       cancelled = true;
+      clearInterval(pollId);
     };
-  }, [tab, walletAddress]);
+  }, [tab, walletAddress, page]);
 
-  const podium = players.slice(0, 5);
-  const listBelow = players.slice(5);
+  // Podium (top 5) only renders on page 1, since ranks 1-5 only live there.
+  // Pages 2+ are pure list with whatever ranks 51+ are returned.
+  const podium = page === 1 ? players.slice(0, 5) : [];
+  const listBelow = page === 1 ? players.slice(5) : players;
   const totalSol = players.reduce((sum, p) => sum + p.sol, 0);
 
-  const podiumOrder = [5, 3, 1, 2, 4];
+  // Adaptive Olympic ordering — centers rank 1, fans outward by rank, gracefully
+  // handles 1-5 players. Avoids the left-aligned look when player count is low.
+  //   1 player   → [1]
+  //   2 players  → [2, 1]
+  //   3 players  → [2, 1, 3]            (Olympic silver-gold-bronze)
+  //   4 players  → [4, 2, 1, 3]
+  //   5+ players → [5, 3, 1, 2, 4]
+  const ORDERINGS: Record<number, number[]> = {
+    1: [1],
+    2: [2, 1],
+    3: [2, 1, 3],
+    4: [4, 2, 1, 3],
+    5: [5, 3, 1, 2, 4],
+  };
+  const podiumOrder = ORDERINGS[Math.min(podium.length, 5)] || [];
   const podiumOrdered = podiumOrder
     .map((r) => podium.find((p) => p.rank === r))
     .filter(Boolean) as Player[];
@@ -261,11 +349,17 @@ const LeaderboardViewV2: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* Olympic podium */}
+          {/* Olympic podium — adaptive width centers low-count podiums cleanly. */}
           {podiumOrdered.length > 0 && (
             <div
-              className="mb-5"
-              style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, alignItems: 'flex-end' }}
+              className="mb-5 mx-auto"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: `repeat(${podiumOrdered.length}, 1fr)`,
+                gap: 8,
+                alignItems: 'flex-end',
+                maxWidth: `${podiumOrdered.length * 130}px`,
+              }}
             >
               {podiumOrdered.map((p) => (
                 <PodiumColumn key={p.rank} player={p} isMode={isMode} />
@@ -316,9 +410,21 @@ const LeaderboardViewV2: React.FC = () => {
                     #{r.rank}
                   </span>
                   <span
-                    className="rounded-full"
-                    style={{ width: 28, height: 28, background: r.avatar, border: '1px solid rgba(255,255,255,0.1)' }}
-                  />
+                    className="rounded-full overflow-hidden"
+                    style={{ width: 28, height: 28, background: r.avatar, border: '1px solid rgba(255,255,255,0.1)', display: 'inline-block' }}
+                  >
+                    {r.avatarUrl ? (
+                      <img
+                        src={r.avatarUrl}
+                        alt=""
+                        loading="lazy"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    ) : null}
+                  </span>
                   <span className="font-black italic uppercase truncate text-white" style={{ fontSize: 13, letterSpacing: '-0.01em' }}>
                     {r.user}
                   </span>
@@ -344,6 +450,50 @@ const LeaderboardViewV2: React.FC = () => {
                   )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Pagination: NEXT / BACK pills. Hidden on page 1 with no next available. */}
+          {(page > 1 || hasNext) && (
+            <div className="flex items-center justify-between gap-3 mt-4">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="font-black italic uppercase rounded-full"
+                style={{
+                  background: page <= 1 ? 'rgba(255,255,255,0.04)' : 'rgba(20,241,149,0.13)',
+                  border: `1px solid ${page <= 1 ? 'rgba(255,255,255,0.08)' : '#14F195'}`,
+                  color: page <= 1 ? '#52525b' : '#14F195',
+                  padding: '8px 14px',
+                  fontSize: 10,
+                  letterSpacing: '0.14em',
+                  cursor: page <= 1 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                ← BACK
+              </button>
+              <span
+                className="font-black italic uppercase"
+                style={{ fontSize: 10, color: '#71717a', letterSpacing: '0.14em' }}
+              >
+                PAGE {page}{totalCount != null ? ` · ${totalCount.toLocaleString()} TOTAL` : ''}
+              </span>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={!hasNext}
+                className="font-black italic uppercase rounded-full"
+                style={{
+                  background: !hasNext ? 'rgba(255,255,255,0.04)' : 'rgba(20,241,149,0.13)',
+                  border: `1px solid ${!hasNext ? 'rgba(255,255,255,0.08)' : '#14F195'}`,
+                  color: !hasNext ? '#52525b' : '#14F195',
+                  padding: '8px 14px',
+                  fontSize: 10,
+                  letterSpacing: '0.14em',
+                  cursor: !hasNext ? 'not-allowed' : 'pointer',
+                }}
+              >
+                NEXT →
+              </button>
             </div>
           )}
         </>

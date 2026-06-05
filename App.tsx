@@ -130,9 +130,11 @@ import {
   buildCancelDuelIx,
   buildExpireDuelIx,
   buildClaimDuelPrizeIx,
+  buildClaimDuelPrizeSplIx,
   buildEnterCustomGameIx,
   buildFundCustomGameIx,
   buildClaimCustomPrizeIx,
+  buildClaimCustomPrizeSplIx,
   buildClaimTierPrizeIx,
   buildClaimTierRefundIx,
   buildClaimCustomRefundIx,
@@ -1288,6 +1290,41 @@ const App: React.FC = () => {
     }
   };
 
+  /** SPL variant of custom-game prize claim. Used when the win row has a
+   *  non-null token_mint (USDC / NERD / any SPL). Mirrors the SOL handler
+   *  signature so ProfileViewV2 can route conditionally. */
+  const handleClaimCustomSplPrize = async (onChainGameId: number, tokenMint: string) => {
+    if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+    setClaimingId(`custom-spl-${onChainGameId}`);
+    try {
+      const mintPk = new PublicKey(tokenMint);
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
+      const ix = buildClaimCustomPrizeSplIx({
+        winner: publicKey,
+        gameId: onChainGameId,
+        mint: mintPk,
+      });
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      setClaimableCustomGames(prev => prev.filter(cg => cg.on_chain_game_id !== onChainGameId));
+    } catch (err: any) {
+      console.error('Failed to claim custom-game SPL prize:', err);
+      if (err.message?.includes('already been claimed') || err.message?.includes('AlreadyClaimed')) {
+        setClaimableCustomGames(prev => prev.filter(cg => cg.on_chain_game_id !== onChainGameId));
+      } else if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to claim SPL prize. Please try again.');
+      }
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
   // ─── NFT custom game handlers (v2.1) ──────────────────────────────────────
   // For NFT prize games, the player signs the on-chain ix directly. EF isn't
   // needed for claim/reclaim — only for tracking metadata after the fact.
@@ -2127,6 +2164,36 @@ const App: React.FC = () => {
     }
   };
 
+  /** SPL variant of duel prize claim. Used when the duel was a token wager
+   *  (USDC / NERD / any SPL). Branches via `tokenMint` arg. Mirrors the SOL
+   *  handler signature so DuelResultsView + ProfileViewV2 route conditionally. */
+  const handleClaimDuelSplPrize = async (claimDuelId: number, tokenMint: string) => {
+    if (!connected || !publicKey || claimDuelId == null) return;
+    try {
+      const mintPk = new PublicKey(tokenMint);
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
+      const ix = buildClaimDuelPrizeSplIx({
+        winner: publicKey,
+        duelId: claimDuelId,
+        mint: mintPk,
+      });
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [ix],
+      }).compileToV0Message();
+      const tx = new VersionedTransaction(messageV0);
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      alert('SPL prize claimed successfully!');
+    } catch (err: any) {
+      console.error('Failed to claim duel SPL prize:', err);
+      if (!err.message?.includes('User rejected')) {
+        alert(err.message || 'Failed to claim SPL prize. Please try again.');
+      }
+    }
+  };
+
   // Referral on-chain claim: drains the referrer's accumulated PDA to wallet.
   // The ProfileViewV2 card calls this and refetches its balance on success.
   // Throws on user-cancel (caller surfaces); throws other errors with the
@@ -2443,7 +2510,9 @@ const App: React.FC = () => {
                 onOpenReferrals={() => setCurrentView(View.REFERRALS)}
                 onClaimRoundPrize={handleClaimRoundPrizeFromPlay}
                 onClaimDuelPrize={handleClaimDuelPrize}
+                onClaimDuelSplPrize={handleClaimDuelSplPrize}
                 onClaimCustomPrize={handleClaimCustomPrize}
+                onClaimCustomSplPrize={handleClaimCustomSplPrize}
                 onClaimRoundRefund={handleClaimRefund}
                 onClaimCustomRefund={handleClaimCGRefundById}
                 onClaimDuelRefund={handleClaimDuelRefund}
@@ -2727,6 +2796,7 @@ const App: React.FC = () => {
               onFundAndStart={handleFundAndStartRequest}
               onEndGame={handleEndCustomGame}
               onClaimPrize={handleClaimCustomPrize}
+              onClaimSplPrize={handleClaimCustomSplPrize}
               onClaimRefund={handleClaimCGRefundById}
               onClaimNftPrize={handleClaimNftCustomPrize}
               onReclaimNftPrize={handleReclaimNftCustomPrize}
@@ -2844,6 +2914,7 @@ const App: React.FC = () => {
               onBack={() => setCurrentView(View.DUEL_LOBBY)}
               tokenSymbol={duelTokenSymbol}
               tokenDecimals={duelTokenDecimals}
+              tokenMint={duelTokenMint}
               creatorFinished={duelCreatorFinished}
               onPlayNow={handleCreatorPrePlay}
               onResultsReady={handleDuelResultsReady}
@@ -2886,6 +2957,9 @@ const App: React.FC = () => {
               duelId={duelId}
               dbDuelId={dbDuelId!}
               myWallet={publicKey!.toBase58()}
+              tokenSymbol={duelTokenSymbol}
+              tokenDecimals={duelTokenDecimals}
+              tokenMint={duelTokenMint}
               myScore={duelResults.myScore}
               myCorrect={duelResults.myCorrect}
               opponentWallet={duelOpponent?.wallet ?? ''}
@@ -2898,7 +2972,15 @@ const App: React.FC = () => {
               totalPot={duelResults.totalPot}
               duelComplete={duelResults.duelComplete}
               isPlayer1={duelIsPlayer1}
-              onClaimPrize={handleClaimDuelPrize}
+              onClaimPrize={async () => {
+                // SPL duels (token_mint set) route to the SPL claim handler;
+                // SOL duels stay on the classic handler. Same UI button.
+                if (duelTokenMint && duelId != null) {
+                  await handleClaimDuelSplPrize(duelId, duelTokenMint);
+                } else {
+                  await handleClaimDuelPrize();
+                }
+              }}
               onPlayAgain={() => setCurrentView(View.DUEL_LOBBY)}
               onBackToLobby={() => setCurrentView(View.DUEL_LOBBY)}
             />

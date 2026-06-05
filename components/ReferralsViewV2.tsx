@@ -2,14 +2,21 @@
  * ReferralsViewV2 — web W6. Title + XP-earned hero + ledger stats + code block
  * + share link + share-on-X + referrals list + how-it-works.
  *
- * Real data via getReferralStats. Referrals reward XP today; the 5% Lives /
- * 10% Pass SOL commission is claim-based and unlocks with the on-chain upgrade,
- * so it's shown as a "SOON" state rather than a fake claimable balance.
+ * Real data via getReferralStats. Referrals reward XP + on-chain SOL commission
+ * (5% Lives, 10% Game Pass). Commission accrues into a ReferralBalance PDA per
+ * referrer; CLAIM button drains it via the V2 contract's claim_referral_balance
+ * ix, with the success row recorded to the referral_claims audit table.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useIsMobile } from '../src/hooks/useIsMobile';
-import { useWallet } from '../src/contexts/WalletContext';
-import { getReferralStats, type ReferralStatsResponse } from '../src/utils/api';
+import { useWallet, useConnection } from '../src/contexts/WalletContext';
+import {
+  getReferralStats,
+  claimReferralPayout,
+  fetchLifetimeReferralClaimed,
+  type ReferralStatsResponse,
+} from '../src/utils/api';
+import { submitClaimReferralBalanceOnChain, fetchReferralBalanceOnChain } from '../src/utils/referralFlow';
 
 function shortWallet(w: string): string {
   return `${w.slice(0, 4)}…${w.slice(-4)}`;
@@ -28,7 +35,8 @@ function relativeAgo(iso: string | null): string {
 }
 
 const ReferralsViewV2: React.FC = () => {
-  const { publicKey } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
   const walletAddress = publicKey?.toBase58() ?? null;
   const isMobile = useIsMobile();
 
@@ -36,6 +44,13 @@ const ReferralsViewV2: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [codeCopied, setCodeCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+
+  // On-chain referral commission state.
+  const [claimableLamports, setClaimableLamports] = useState(0);
+  const [lifetimeClaimedLamports, setLifetimeClaimedLamports] = useState(0);
+  const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const [lastClaimSig, setLastClaimSig] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +74,60 @@ const ReferralsViewV2: React.FC = () => {
       cancelled = true;
     };
   }, [walletAddress]);
+
+  // Pull live claimable PDA balance + lifetime audit total. Refreshes on
+  // wallet change and every 30s while the page is open.
+  const reloadCommission = useCallback(async () => {
+    if (!walletAddress || !publicKey || !connection) {
+      setClaimableLamports(0);
+      setLifetimeClaimedLamports(0);
+      return;
+    }
+    const [bal, lifetime] = await Promise.all([
+      fetchReferralBalanceOnChain(connection, publicKey).catch(() => 0),
+      fetchLifetimeReferralClaimed(walletAddress).catch(() => 0),
+    ]);
+    setClaimableLamports(bal);
+    setLifetimeClaimedLamports(lifetime);
+  }, [walletAddress, publicKey, connection]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      if (!cancelled) reloadCommission();
+    };
+    tick();
+    const interval = setInterval(tick, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [reloadCommission]);
+
+  const handleClaimCommission = useCallback(async () => {
+    if (!publicKey || !sendTransaction || !connection || claiming) return;
+    if (claimableLamports <= 0) return;
+    setClaiming(true);
+    setClaimError(null);
+    setLastClaimSig(null);
+    try {
+      const result = await submitClaimReferralBalanceOnChain(publicKey, sendTransaction, connection);
+      if (result.kind === 'success') {
+        setLastClaimSig(result.signature);
+        // Fire-and-forget audit row insert; UI doesn't block on it.
+        claimReferralPayout({ wallet_address: publicKey.toBase58(), tx_signature: result.signature }).catch(() => {});
+        await reloadCommission();
+      } else if (result.kind === 'nothingToSweep') {
+        await reloadCommission();
+        setClaimError('Nothing to claim — your balance is already at zero.');
+      } else if (result.kind === 'error') {
+        setClaimError(result.message || 'Claim failed.');
+      }
+      // userCancelled = silent, no error UI.
+    } finally {
+      setClaiming(false);
+    }
+  }, [publicKey, sendTransaction, connection, claiming, claimableLamports, reloadCommission]);
 
   const code = stats?.code ?? '';
   const link = stats?.referral_url ?? '';
@@ -123,7 +192,7 @@ const ReferralsViewV2: React.FC = () => {
         </h1>
       </div>
 
-      {/* Hero: XP earned + SOL commission (soon) */}
+      {/* Hero: XP earned + SOL commission claimable */}
       <div className="flex items-end justify-between mb-5" style={{ paddingTop: 16, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
         <div>
           <div className="font-black italic uppercase" style={{ fontSize: 10, color: '#71717a', letterSpacing: '0.14em' }}>
@@ -143,17 +212,46 @@ const ReferralsViewV2: React.FC = () => {
         </div>
         <div
           className="text-right rounded-lg"
-          style={{ background: '#0F0F0F', border: '1px solid rgba(255,215,0,0.25)', padding: '10px 16px' }}
+          style={{ background: '#0F0F0F', border: '1px solid rgba(255,215,0,0.25)', padding: '10px 16px', minWidth: 200 }}
         >
           <div className="font-black italic uppercase" style={{ fontSize: 9, color: '#FFD700', letterSpacing: '0.14em' }}>
-            SOL COMMISSION
+            SOL COMMISSION CLAIMABLE
           </div>
-          <div className="font-black italic uppercase mt-1" style={{ fontSize: 14, color: '#fff', letterSpacing: '0.06em' }}>
-            5% LIVES · 10% PASS
+          <div className="font-black italic mt-1" style={{ fontSize: 20, color: '#FFD700', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+            {(claimableLamports / 1_000_000_000).toFixed(4)} SOL
           </div>
           <div className="font-black italic uppercase mt-1" style={{ fontSize: 8, color: '#71717a', letterSpacing: '0.18em' }}>
-            UNLOCKS WITH ON-CHAIN UPGRADE
+            5% LIVES · 10% PASS · LIFETIME {(lifetimeClaimedLamports / 1_000_000_000).toFixed(3)} SOL
           </div>
+          {claimableLamports > 0 && (
+            <button
+              onClick={handleClaimCommission}
+              disabled={claiming}
+              className="font-black italic uppercase rounded-full mt-3 active:opacity-90"
+              style={{
+                background: claiming ? 'rgba(255,215,0,0.2)' : '#FFD700',
+                color: claiming ? '#71717a' : '#000',
+                border: 'none',
+                padding: '8px 16px',
+                fontSize: 11,
+                letterSpacing: '0.14em',
+                cursor: claiming ? 'wait' : 'pointer',
+                width: '100%',
+              }}
+            >
+              {claiming ? 'CLAIMING…' : 'CLAIM NOW →'}
+            </button>
+          )}
+          {lastClaimSig && (
+            <div className="font-black italic uppercase mt-2" style={{ fontSize: 8, color: '#14F195', letterSpacing: '0.18em' }}>
+              ✓ CLAIMED · ON-CHAIN
+            </div>
+          )}
+          {claimError && (
+            <div className="mt-2" style={{ fontSize: 9, color: '#FF7676', letterSpacing: '0.06em' }}>
+              {claimError}
+            </div>
+          )}
         </div>
       </div>
 
@@ -350,7 +448,7 @@ const ReferralsViewV2: React.FC = () => {
         {[
           { t: 'Share your link or code', d: 'Anyone can sign up with it' },
           { t: 'They join + play first round', d: 'You earn XP for every fren who plays' },
-          { t: 'They buy a Pass or Lives', d: '5% on Lives, 10% on Pass — soon, on-chain' },
+          { t: 'They buy a Pass or Lives', d: '5% on Lives, 10% on Pass — on-chain SOL, claimable below' },
           { t: 'Claim your SOL anytime', d: 'Lands with the contract upgrade' },
         ].map((s, i) => (
           <div key={s.t} className="flex items-center gap-3 px-5 py-3" style={{ borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>

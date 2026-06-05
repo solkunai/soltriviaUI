@@ -354,7 +354,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
             return (
               <button key={k} onClick={() => setDetail(k)} className="flex flex-col items-center active:opacity-90 rounded-xl" style={{ cursor: 'pointer' }}>
                 <div className="rounded-xl overflow-hidden w-full" style={{ border: `1px solid ${MTC.gold}33`, boxShadow: `0 12px 30px -12px ${A.bg2}77` }}>
-                  <img src={A.img} alt={A.label} style={{ width: '100%', aspectRatio: '2 / 3', objectFit: 'cover', display: 'block', filter: 'blur(8px)' }} />
+                  <img src={A.img} alt={A.label} style={{ width: '100%', aspectRatio: '2 / 3', objectFit: 'cover', display: 'block' }} />
                 </div>
                 <div className="flex items-center justify-center gap-1 mt-2">
                   <img src={A.icon} alt="" style={{ width: 11, height: 11 }} />

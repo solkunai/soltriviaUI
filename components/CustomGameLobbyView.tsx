@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getCustomGame, type CustomGameData } from '../src/utils/api';
 import { getJupiterToken } from '../src/utils/jupiterTokens';
+import { JupiterVerifiedBadge } from './JupiterVerifiedBadge';
 import {
   CUSTOM_GAME_MAX_ATTEMPTS,
   DEFAULT_AVATAR,
@@ -186,6 +187,8 @@ interface CustomGameLobbyViewProps {
   onJoinGame: (gameData: CustomGameData) => Promise<void>;
   onStartTimer: (gameData: CustomGameData) => Promise<void>;
   onClaimPrize: (onChainGameId: number) => Promise<void>;
+  /** SPL variant — called when the game used a token_mint (USDC, NERD, etc.). */
+  onClaimSplPrize?: (onChainGameId: number, tokenMint: string) => Promise<void>;
   onClaimRefund?: (onChainGameId: number) => Promise<void>;
   onFundAndStart?: (gameData: CustomGameData) => void;
   onEndGame?: (gameData: CustomGameData) => Promise<void>;
@@ -214,6 +217,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   onStartGame,
   onJoinGame,
   onClaimPrize,
+  onClaimSplPrize,
   onClaimRefund,
   onFundAndStart,
   onEndGame,
@@ -373,7 +377,13 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
     if (gameData?.on_chain_game_id == null) return;
     setClaiming(true);
     try {
-      await onClaimPrize(gameData.on_chain_game_id);
+      // Route to SPL handler when this game used a token_mint (USDC, NERD, any SPL).
+      const splMint = (gameData as any).token_mint as string | null | undefined;
+      if (splMint && onClaimSplPrize) {
+        await onClaimSplPrize(gameData.on_chain_game_id, splMint);
+      } else {
+        await onClaimPrize(gameData.on_chain_game_id);
+      }
       await fetchGame();
     } catch (err: any) {
       if (!err.message?.includes('User rejected')) alert(err.message || 'Failed to claim prize');
@@ -722,8 +732,9 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
               {gameData.time_limit_seconds}s per Q
             </span>
             {isPaid && (
-              <span className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${isCreatorFunded ? 'bg-amber-400/10 border border-amber-400/20 text-amber-400' : 'bg-[#38BDF8]/10 border border-[#38BDF8]/20 text-[#38BDF8]'}`}>
+              <span className={`inline-flex items-center px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${isCreatorFunded ? 'bg-amber-400/10 border border-amber-400/20 text-amber-400' : 'bg-[#38BDF8]/10 border border-[#38BDF8]/20 text-[#38BDF8]'}`}>
                 {isCreatorFunded ? 'Free Entry' : `${entryFeeSOL} ${tokenSymbol} Entry`}
+                {!isCreatorFunded && <JupiterVerifiedBadge mint={gameData.token_mint ?? null} size={11} />}
               </span>
             )}
           </div>
@@ -844,7 +855,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                       <span className={`font-[1000] italic text-base md:text-lg ${idx === 0 ? 'text-yellow-400' : 'text-zinc-300'}`}>
                         {amount.toFixed(3)}
                       </span>
-                      <span className="text-zinc-600 text-[9px] font-black uppercase block">{tokenSymbol}</span>
+                      <span className="text-zinc-600 text-[9px] font-black uppercase inline-flex items-center gap-1">{tokenSymbol}<JupiterVerifiedBadge mint={gameData.token_mint ?? null} size={10} style={{ marginLeft: 2 }} /></span>
                       {formatTokenUsd(amount) && (
                         <span className="text-zinc-700 text-[9px] tabular-nums block">{formatTokenUsd(amount)}</span>
                       )}

@@ -12,13 +12,43 @@
  * Design source: final-handoff-v2.1/prototype-src/st-v21-spl.jsx (SPLSelector)
  * + stw-v21.jsx (WebSPLSelector).
  */
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   useWalletSPL,
-  SPL_CATALOG,
   looksLikeCA,
   type TokenAsset,
 } from '../src/hooks/useWalletSPL';
+import { useJupiterTokens, type JupiterToken } from '../src/utils/jupiterTokens';
+import { JupiterVerifiedBadge } from './JupiterVerifiedBadge';
+
+// Official Sol Trivia NERD mint — block all impersonators that share the
+// brand name but use a different mint. Same logic as the swap modal.
+const OFFICIAL_NERD_MINT = 'DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS';
+function isFakeNerdImpersonator(t: { address: string; symbol?: string; name?: string }): boolean {
+  if (t.address === OFFICIAL_NERD_MINT) return false;
+  const sym = (t.symbol || '').toUpperCase().replace(/^\$/, '');
+  const name = (t.name || '').toUpperCase();
+  if (sym === 'NERD' || sym === 'SOLTRIVIA' || sym === 'SOL TRIVIA') return true;
+  if (name.includes('SOL TRIVIA') || name.includes('SOLTRIVIA')) return true;
+  if (name === 'NERD' || name === '$NERD') return true;
+  return false;
+}
+
+/** Convert a JupiterToken → TokenAsset for unified rendering in the picker. */
+function jupTokenToAsset(j: JupiterToken): TokenAsset {
+  return {
+    mint: j.address,
+    symbol: j.symbol,
+    name: j.name,
+    logo: j.logoURI ?? null,
+    balance: '0',
+    usd: null,
+    held: false,
+    decimals: j.decimals,
+    isVerified: j.isVerified === true,
+    organicScoreLabel: j.organicScoreLabel,
+  };
+}
 
 interface Props {
   walletAddress?: string | null;
@@ -86,16 +116,52 @@ const SPLSelector: React.FC<Props> = ({
   const { assets, status, refetch } = useWalletSPL(walletAddress);
   const [query, setQuery] = useState('');
 
-  const ql = query.trim().toLowerCase();
+  // Two forms of the query: case-preserving for Jupiter (mint addresses are
+  // case-sensitive base58), lowercased for symbol/name matching of held tokens.
+  const qRaw = query.trim();
+  const ql = qRaw.toLowerCase();
   const match = (t: TokenAsset) => !ql || (t.symbol + t.name).toLowerCase().includes(ql);
 
+  // Debounce the query passed to Jupiter — without it every keystroke fires
+  // a network request, and the results flicker as in-flight requests resolve
+  // out of order. 300ms is the standard search-as-you-type debounce.
+  // CA pastes are atomic so the 300ms wait is imperceptible.
+  const [debouncedRaw, setDebouncedRaw] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedRaw(qRaw), 300);
+    return () => clearTimeout(t);
+  }, [qRaw]);
+
+  // Search Jupiter for any token in their universe (verified + memes + new
+  // launches). Brand-protect filter strips fake NERD impersonators.
+  // PRESERVE CASE — mint addresses are case-sensitive.
+  const { tokens: jupResults, loading: jupLoading } = useJupiterTokens(debouncedRaw);
+
   const held = useMemo(() => assets.filter(match), [assets, ql]);
-  // Catalog only surfaces when user actively searches (avoids visual noise).
-  const catalog = useMemo(() => (ql ? SPL_CATALOG.filter(match) : []), [ql]);
-  const caHit = looksLikeCA(query) && held.length === 0 && catalog.length === 0;
+  const heldMints = useMemo(() => new Set(held.map((t) => t.mint)), [held]);
+
+  // True only when the debounce has settled (Jupiter is showing results for
+  // the CURRENT query, not a stale one). While typing/pasting, this is false
+  // and we hold the catalog empty + show a "Searching…" hint instead of
+  // flashing top-traded tokens that don't match the user's intent.
+  const debounceSettled = debouncedRaw === qRaw;
+  const isSearchingExternal = !!qRaw && (!debounceSettled || jupLoading);
+
+  // Map Jupiter results → TokenAsset, drop impersonators + tokens already
+  // shown in YOUR TOKENS so we don't list them twice.
+  const catalog = useMemo(() => {
+    if (!ql || !debounceSettled) return [] as TokenAsset[];
+    return jupResults
+      .filter((t) => !isFakeNerdImpersonator(t))
+      .filter((t) => !heldMints.has(t.address))
+      .slice(0, 20)
+      .map(jupTokenToAsset);
+  }, [ql, debounceSettled, jupResults, heldMints]);
+
+  const caHit = looksLikeCA(query) && held.length === 0 && catalog.length === 0 && debounceSettled && !jupLoading;
 
   return (
-    <div>
+    <div style={{ padding: 18, maxHeight: '80vh', overflowY: 'auto' }}>
       {/* ── Search input ──────────────────────────────────── */}
       <div
         style={{
@@ -235,9 +301,10 @@ const SPLSelector: React.FC<Props> = ({
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
                           className="font-black italic"
-                          style={{ fontSize: 18, color: '#fff', lineHeight: 1 }}
+                          style={{ fontSize: 18, color: '#fff', lineHeight: 1, display: 'inline-flex', alignItems: 'center', gap: 4 }}
                         >
                           {t.symbol}
+                          <JupiterVerifiedBadge mint={t.mint} size={12} style={{ marginLeft: 2 }} />
                         </div>
                         <div style={{ fontSize: 11, color: '#71717a', marginTop: 2 }}>
                           {t.name}
@@ -298,54 +365,66 @@ const SPLSelector: React.FC<Props> = ({
                 NOT IN YOUR WALLET
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {catalog.map((t) => (
-                  <div
-                    key={t.mint}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      padding: '11px 14px',
-                      borderRadius: 12,
-                      background: COLORS.surface,
-                      border: `1px solid ${COLORS.borderLight}`,
-                    }}
-                  >
-                    <TokenAvatar t={t} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        className="font-black italic"
-                        style={{ fontSize: 18, color: '#fff', lineHeight: 1 }}
-                      >
-                        {t.symbol}
+                {catalog.map((t) => {
+                  const sel = selectedMint === t.mint;
+                  return (
+                    <button
+                      key={t.mint}
+                      onClick={() => onSelect(t)}
+                      style={{
+                        appearance: 'none',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '11px 14px',
+                        borderRadius: 12,
+                        background: sel ? `${COLORS.primary}12` : COLORS.surface,
+                        border: `1.5px solid ${sel ? COLORS.primary : COLORS.borderLight}`,
+                        transition: 'background 0.12s ease, border 0.12s ease',
+                      }}
+                    >
+                      <TokenAvatar t={t} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          className="font-black italic"
+                          style={{ fontSize: 18, color: '#fff', lineHeight: 1, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        >
+                          {t.symbol}
+                          {t.isVerified && <JupiterVerifiedBadge mint={t.mint} size={12} style={{ marginLeft: 2 }} />}
+                          {t.organicScoreLabel === 'low' && !t.isVerified && (
+                            <span style={{ fontSize: 7, color: '#FF7676', padding: '2px 5px', borderRadius: 4, background: 'rgba(255,49,49,0.12)', border: '1px solid rgba(255,49,49,0.35)', marginLeft: 4 }}>⚠ RISK</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#71717a', marginTop: 2 }}>
+                          {t.name}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11, color: '#71717a', marginTop: 2 }}>
-                        {t.name}
-                      </div>
-                    </div>
-                    {onBuy && (
-                      <button
-                        onClick={() => onBuy(t)}
-                        className="font-black italic uppercase"
-                        style={{
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          fontSize: 10,
-                          letterSpacing: '0.1em',
-                          padding: '9px 14px',
-                          borderRadius: 999,
-                          color: '#04130b',
-                          background: `linear-gradient(135deg, ${COLORS.gold}, #FF9E3D)`,
-                          border: 'none',
-                        }}
-                      >
-                        ⇄ BUY NOW
-                      </button>
-                    )}
-                  </div>
-                ))}
+                      {onBuy && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onBuy(t); }}
+                          className="font-black italic uppercase"
+                          style={{
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            fontSize: 9,
+                            letterSpacing: '0.1em',
+                            padding: '6px 10px',
+                            borderRadius: 999,
+                            color: '#04130b',
+                            background: `linear-gradient(135deg, ${COLORS.gold}, #FF9E3D)`,
+                            border: 'none',
+                          }}
+                        >
+                          ⇄ BUY
+                        </button>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -437,8 +516,28 @@ const SPLSelector: React.FC<Props> = ({
             </div>
           )}
 
+          {/* Searching state — debounce is in flight OR Jupiter is loading.
+              Prevents the empty "NO MATCHES" flash while results are en route. */}
+          {isSearchingExternal && held.length === 0 && catalog.length === 0 && !caHit && (
+            <div
+              style={{
+                textAlign: 'center',
+                padding: '20px 16px',
+                borderRadius: 12,
+                border: `1px dashed ${COLORS.borderMedium}`,
+              }}
+            >
+              <div
+                className="font-black italic uppercase"
+                style={{ fontSize: 10, color: '#a1a1aa', letterSpacing: '0.14em' }}
+              >
+                Searching Jupiter…
+              </div>
+            </div>
+          )}
+
           {/* Empty (no search, no holdings) */}
-          {held.length === 0 && catalog.length === 0 && !caHit && (
+          {!isSearchingExternal && held.length === 0 && catalog.length === 0 && !caHit && (
             <div
               style={{
                 textAlign: 'center',

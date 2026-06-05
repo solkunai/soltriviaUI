@@ -2505,13 +2505,17 @@ export interface MyDuelWin {
   resolved_at: string | null;
   opponent_wallet: string;
   opponent_username: string | null;
+  /** SPL mint when this duel was a token-denominated wager (USDC, NERD, etc.).
+   *  null means SOL. Used to route to SPL claim handler vs SOL claim handler. */
+  token_mint: string | null;
+  token_symbol: string | null;
 }
 
 export async function fetchMyDuelWins(walletAddress: string): Promise<MyDuelWin[]> {
   if (!isSupabaseConfigured) return [];
   const { data, error } = await supabase
     .from('duels')
-    .select('duel_id, total_pot_lamports, entry_fee_lamports, player1_wallet, player2_wallet, player1_score, player2_score, status, created_at, resolved_at')
+    .select('duel_id, total_pot_lamports, entry_fee_lamports, player1_wallet, player2_wallet, player1_score, player2_score, status, created_at, resolved_at, token_mint, token_symbol')
     .eq('winner_wallet', walletAddress)
     .in('status', ['completed', 'resolved'])
     .order('created_at', { ascending: false })
@@ -2737,6 +2741,11 @@ export interface ClaimableCustomGameWin {
   winner_index: number;
   prize_lamports: number;
   finalized_at: string;
+  /** SPL mint when this custom game used a token-denominated prize. null = SOL.
+   *  Used to route to SPL claim handler vs SOL claim handler. */
+  token_mint: string | null;
+  token_symbol: string | null;
+  token_decimals: number | null;
 }
 
 /** Fetch custom games the wallet won (finalized, player_funded). */
@@ -2744,7 +2753,7 @@ export async function fetchMyCustomGameWins(walletAddress: string): Promise<Clai
   if (!isSupabaseConfigured || !walletAddress?.trim()) return [];
   const { data, error } = await supabase
     .from('custom_games')
-    .select('id, name, slug, on_chain_game_id, winner_wallets, winner_amounts, finalized_at')
+    .select('id, name, slug, on_chain_game_id, winner_wallets, winner_amounts, finalized_at, token_mint, token_symbol, token_decimals')
     .eq('status', 'finalized')
     .in('prize_model', ['player_funded', 'creator_funded'])
     .order('finalized_at', { ascending: false })
@@ -2765,6 +2774,9 @@ export async function fetchMyCustomGameWins(walletAddress: string): Promise<Clai
         winner_index: idx,
         prize_lamports: amounts[idx] ?? 0,
         finalized_at: g.finalized_at,
+        token_mint: g.token_mint ?? null,
+        token_symbol: g.token_symbol ?? null,
+        token_decimals: g.token_decimals ?? null,
       });
     }
   }
@@ -2892,6 +2904,53 @@ export async function fetchRefundableCustomGames(walletAddress: string): Promise
   }));
 }
 
+// ─── Referrals claim audit (Kyle 2026-06-05 Item 2) ─────────────────────────
+// claim-referral-payout EF v1 LIVE per Kyle 2026-06-05. Idempotent (UNIQUE on
+// tx_signature). Flow: client signs + sends claim_referral_balance ix via
+// wallet → call this EF with {wallet_address, tx_signature} → EF verifies the
+// tx drained the PDA + writes an audit row to referral_claims.
+
+export type ClaimReferralPayoutResponse = {
+  success: boolean;
+  claimed_lamports: number;
+  claimed_at: string;
+};
+
+export async function claimReferralPayout(params: {
+  wallet_address: string;
+  tx_signature: string;
+}): Promise<ClaimReferralPayoutResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/claim-referral-payout`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error || 'claim-referral-payout failed');
+  }
+  return response.json();
+}
+
+/** Lifetime claimed = SUM(claimed_lamports) over all the wallet's audit rows.
+ *  Returns 0 on missing rows / table errors. Used to derive the "claimed so
+ *  far" stat on ReferralsViewV2. */
+export async function fetchLifetimeReferralClaimed(
+  walletAddress: string | null,
+): Promise<number> {
+  if (!walletAddress || !isSupabaseConfigured) return 0;
+  const { data } = await supabase
+    .from('referral_claims')
+    .select('claimed_lamports')
+    .eq('wallet_address', walletAddress);
+  if (!Array.isArray(data)) return 0;
+  let sum = 0;
+  for (const r of data) {
+    sum += Number((r as { claimed_lamports?: number }).claimed_lamports) || 0;
+  }
+  return sum;
+}
+
 // ─── Announcements ───────────────────────────────────────────────────────────
 
 export interface Announcement {
@@ -2905,11 +2964,22 @@ export interface Announcement {
 
 export async function fetchAnnouncements(walletAddress?: string): Promise<Announcement[]> {
   if (!isSupabaseConfigured) return [];
-  const { data: announcements, error } = await supabase
+
+  // Filter: every user sees GLOBAL announcements (target_wallet IS NULL). When
+  // we have a wallet, we ALSO include rows targeted specifically at this wallet
+  // (per-wallet notifications like referral commission earned).
+  let query = supabase
     .from('announcements')
-    .select('id, title, body, link_url, created_at')
+    .select('id, title, body, link_url, created_at, target_wallet')
     .order('created_at', { ascending: false })
     .limit(20);
+  if (walletAddress) {
+    query = query.or(`target_wallet.is.null,target_wallet.eq.${walletAddress}`);
+  } else {
+    query = query.is('target_wallet', null);
+  }
+
+  const { data: announcements, error } = await query;
   if (error || !announcements) return [];
 
   if (!walletAddress) return announcements.map(a => ({ ...a, is_read: false }));

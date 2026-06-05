@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWallet, useWalletModal } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
@@ -133,6 +133,45 @@ const WalletConnectButton: React.FC<{ inline?: boolean }> = ({ inline = false })
     phantomModal.open();
   }, [phantomModal]);
 
+  // Installed wallets get rendered as direct buttons at the top of the login
+  // menu. We show them with their official icon + name and connect on click
+  // without going through the standard wallet adapter modal.
+  const installedWallets = useMemo(
+    () => wallets.filter((w) => w.readyState === 'Installed'),
+    [wallets],
+  );
+  // "Other wallets" button opens the standard modal showing all loadable
+  // (installable) wallets, which is everything Wallet Standard knows about.
+  const hasOtherWallets = useMemo(
+    () => wallets.some((w) => w.readyState !== 'Installed'),
+    [wallets],
+  );
+
+  /** Direct connect to a specific installed wallet by name. Used by the
+   *  per-wallet buttons rendered at the top of the login menu. */
+  const handleSelectWallet = useCallback(async (walletName: string) => {
+    setShowLoginMenu(false);
+    setShowRetry(false);
+    if (connecting) return;
+    setConnectError(null);
+    try {
+      select(walletName as any);
+      if (isSeekerTWA) {
+        await connect();
+      }
+    } catch (err: any) {
+      const code = err?.cause?.code || err?.code || 'CONNECTION_FAILED';
+      const msg = err?.message || 'Wallet connection failed';
+      console.error('[wallet connect error]', { code, message: msg, walletName });
+      if (isSeekerTWA) {
+        setConnectError('Almost there — permission granted. Tap below to finish connecting.');
+        setShowRetry(true);
+      } else {
+        setConnectError(`${code}: ${msg}`);
+      }
+    }
+  }, [connecting, select, connect, isSeekerTWA]);
+
   const handleWalletConnect = useCallback(async () => {
     setShowLoginMenu(false);
     setShowRetry(false);
@@ -231,32 +270,60 @@ const WalletConnectButton: React.FC<{ inline?: boolean }> = ({ inline = false })
 
             {!showEmailInput ? (
               <div className="p-3 space-y-2">
-                {/* Connect Wallet (other Solana wallets via wallet-adapter) — TOP.
-                    On Seeker TWA the button shows Seeker-specific copy + badge so
-                    SeedVault users see a clear CTA. SAME onClick handler — no logic
-                    change to the MWA flow. */}
-                <button
-                  onClick={handleWalletConnect}
-                  className="w-full flex items-center gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all active:scale-[0.98]"
-                >
-                  {isSeekerTWA ? (
-                    <img src="/seeker-badge.png" alt="Seeker" className="w-5 h-5 shrink-0" />
-                  ) : (
-                    <svg className="w-5 h-5 text-[#14F195] shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M21 18H3V6h18v12zm-2-2V8H5v8h14zM16 11h2v2h-2v-2z" />
-                    </svg>
-                  )}
-                  <div className="text-left">
-                    <span className="text-white text-xs font-bold block">
-                      {isSeekerTWA ? "Continue with Seeker" : "Other Wallets"}
-                    </span>
-                    <span className="text-zinc-500 text-[9px]">
-                      {isSeekerTWA
-                        ? "Connect via SeedVault"
-                        : "Solflare, Backpack, Ledger, Seeker"}
-                    </span>
-                  </div>
-                </button>
+                {/* DETECTED wallets at the top — one button per installed Solana
+                    wallet (Phantom, Solflare, Backpack, Magic Eden, etc.) so the
+                    user sees their wallet by name + icon immediately and connects
+                    in one tap. Wallet Standard auto-detects them; readyState
+                    'Installed' means the user has the extension/app. */}
+                {!isSeekerTWA && installedWallets.map((w) => (
+                  <button
+                    key={w.adapter.name}
+                    onClick={() => handleSelectWallet(w.adapter.name)}
+                    className="w-full flex items-center gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all active:scale-[0.98]"
+                  >
+                    {w.adapter.icon ? (
+                      <img src={w.adapter.icon} alt={w.adapter.name} className="w-5 h-5 shrink-0 rounded" />
+                    ) : (
+                      <svg className="w-5 h-5 text-[#14F195] shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M21 18H3V6h18v12zm-2-2V8H5v8h14zM16 11h2v2h-2v-2z" />
+                      </svg>
+                    )}
+                    <div className="text-left">
+                      <span className="text-white text-xs font-bold block">
+                        Continue with {w.adapter.name}
+                      </span>
+                      <span className="text-zinc-500 text-[9px]">Detected on this device</span>
+                    </div>
+                  </button>
+                ))}
+
+                {/* Other / installable wallets — the standard modal route.
+                    On Seeker TWA this button shows Seeker-specific copy + badge
+                    so SeedVault users see a clear CTA. */}
+                {(isSeekerTWA || hasOtherWallets) && (
+                  <button
+                    onClick={handleWalletConnect}
+                    className="w-full flex items-center gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all active:scale-[0.98]"
+                  >
+                    {isSeekerTWA ? (
+                      <img src="/seeker-badge.png" alt="Seeker" className="w-5 h-5 shrink-0" />
+                    ) : (
+                      <svg className="w-5 h-5 text-[#14F195] shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M21 18H3V6h18v12zm-2-2V8H5v8h14zM16 11h2v2h-2v-2z" />
+                      </svg>
+                    )}
+                    <div className="text-left">
+                      <span className="text-white text-xs font-bold block">
+                        {isSeekerTWA ? 'Continue with Seeker' : (installedWallets.length > 0 ? 'Other Wallets' : 'Browse Wallets')}
+                      </span>
+                      <span className="text-zinc-500 text-[9px]">
+                        {isSeekerTWA
+                          ? 'Connect via SeedVault'
+                          : 'Solflare, Backpack, Ledger, MWA…'}
+                      </span>
+                    </div>
+                  </button>
+                )}
 
                 <div className="flex items-center gap-3 px-2 py-1">
                   <div className="flex-1 h-px bg-white/5" />

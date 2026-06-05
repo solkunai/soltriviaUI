@@ -15,6 +15,7 @@ import React, { useState, useEffect } from 'react';
 import { View } from '../types';
 import { useWallet } from '../src/contexts/WalletContext';
 import { supabase } from '../src/utils/supabase';
+import NotificationBell from './NotificationBell';
 
 /**
  * Mobile breakpoint hook. < 768px = phone/PWA layout (bottom tab bar, no
@@ -86,10 +87,13 @@ function Icon({
   name,
   size = 18,
   color = '#a1a1aa',
+  filled = false,
 }: {
   name: keyof typeof ICON_PATHS | 'bullseye' | 'mint';
   size?: number;
   color?: string;
+  /** Render with `fill={color}` instead of stroked outline (for hearts etc). */
+  filled?: boolean;
 }) {
   // PNG-masked icons (so they tint with the sidebar text color)
   if (PNG_ICON[name]) {
@@ -117,9 +121,9 @@ function Icon({
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="none"
+      fill={filled ? color : 'none'}
       stroke={color}
-      strokeWidth={2}
+      strokeWidth={filled ? 1 : 2}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -904,26 +908,61 @@ export function WebShell({
               ) : null}
             </div>
           )}
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full"
-            style={{
-              background: '#0a0a0a',
-              border: '1px solid rgba(255,255,255,0.1)',
-              padding: '6px 12px',
-            }}
-          >
-            <Icon name="heart" size={12} color="#FF3131" />
-            <span
-              className="font-black italic uppercase"
+          {/* Notification bell — shows on every WebShell-wrapped view so users
+              don't miss referral commissions, payouts, etc. Polls every 60s. */}
+          <NotificationBell walletAddress={walletAddress ?? null} />
+          {/* Lives pill — clickable: tapping the heart or count opens the Buy
+              Lives flow (same as the BUY LIVES button). Falls back to a static
+              span when no onBuyLives handler is wired so it doesn't act dead. */}
+          {onBuyLives ? (
+            <button
+              type="button"
+              onClick={onBuyLives}
+              className="inline-flex items-center gap-1.5 rounded-full active:opacity-90 transition-colors"
+              title="Buy lives"
               style={{
-                fontSize: 10,
-                fontVariantNumeric: 'tabular-nums',
-                letterSpacing: '0.14em',
+                background: '#0a0a0a',
+                border: '1px solid rgba(255,255,255,0.1)',
+                padding: '6px 12px',
+                cursor: 'pointer',
+                appearance: 'none',
               }}
             >
-              {lives == null ? '—' : String(lives)}
+              <Icon name="heart" size={12} color="#FF3131" filled />
+              <span
+                className="font-black italic uppercase"
+                style={{
+                  fontSize: 10,
+                  color: '#fff',
+                  fontVariantNumeric: 'tabular-nums',
+                  letterSpacing: '0.14em',
+                }}
+              >
+                {lives == null ? '—' : String(lives)}
+              </span>
+            </button>
+          ) : (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full"
+              style={{
+                background: '#0a0a0a',
+                border: '1px solid rgba(255,255,255,0.1)',
+                padding: '6px 12px',
+              }}
+            >
+              <Icon name="heart" size={12} color="#FF3131" filled />
+              <span
+                className="font-black italic uppercase"
+                style={{
+                  fontSize: 10,
+                  fontVariantNumeric: 'tabular-nums',
+                  letterSpacing: '0.14em',
+                }}
+              >
+                {lives == null ? '—' : String(lives)}
+              </span>
             </span>
-          </span>
+          )}
           {onBuyLives ? (
             <button
               onClick={onBuyLives}

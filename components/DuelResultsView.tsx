@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getDuel, subscribeDuelUpdates, type DuelInfo } from '../src/utils/api';
 import { toPng } from 'html-to-image';
+import { JupiterVerifiedBadge } from './JupiterVerifiedBadge';
 import DuelShareCard from './DuelShareCard';
 import { pickTweet, xIntentUrl } from '../src/utils/tweetVariants';
 
@@ -24,6 +25,8 @@ interface DuelResultsViewProps {
    *  amount + symbol instead of "SOL". Falls back to SOL formatting when null. */
   tokenSymbol?: string | null;
   tokenDecimals?: number | null;
+  /** Mint for SPL duel — drives the Jupiter Verified badge in the prize display. */
+  tokenMint?: string | null;
   onClaimPrize: () => Promise<void>;
   onPlayAgain: () => void;
   onBackToLobby: () => void;
@@ -34,7 +37,7 @@ const DuelResultsView: React.FC<DuelResultsViewProps> = ({
   opponentWallet, opponentUsername, opponentAvatar,
   opponentScore, opponentCorrect, winnerWallet: initialWinner,
   entryFee, totalPot: initialPot, duelComplete: initialComplete,
-  isPlayer1, tokenSymbol, tokenDecimals, onClaimPrize, onPlayAgain, onBackToLobby,
+  isPlayer1, tokenSymbol, tokenDecimals, tokenMint, onClaimPrize, onPlayAgain, onBackToLobby,
 }) => {
   const [winner, setWinner] = useState<string | null>(initialWinner);
   const [resolved, setResolved] = useState(false);
@@ -266,7 +269,12 @@ const DuelResultsView: React.FC<DuelResultsViewProps> = ({
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
               <p className="text-zinc-600 text-[9px] font-black uppercase">Total Pot</p>
-              <p className="text-white font-bold text-sm">{(totalPot / 1_000_000_000).toFixed(4)} SOL</p>
+              <p className="text-white font-bold text-sm inline-flex items-center gap-1 justify-center">
+                {tokenSymbol && tokenDecimals != null
+                  ? `${(totalPot / Math.pow(10, tokenDecimals)).toFixed(2)} ${tokenSymbol}`
+                  : `${(totalPot / 1_000_000_000).toFixed(4)} SOL`}
+                <JupiterVerifiedBadge mint={tokenMint ?? null} size={12} />
+              </p>
             </div>
             <div>
               <p className="text-zinc-600 text-[9px] font-black uppercase">House Cut (10%)</p>

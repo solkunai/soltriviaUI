@@ -536,7 +536,9 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
   }, []);
 
   const liveRoundNumber = useMemo(() => getCurrentRoundNumber(), []);
-  const poolDisplay = prizePool >= 1 ? prizePool.toFixed(2) : prizePool.toFixed(4);
+  // Pot increments in 0.02 SOL chunks. Show "0" when empty, 2 decimals
+  // otherwise — never "0.0000". Mirrors RoundsViewV2 formatting.
+  const poolDisplay = prizePool === 0 ? '0' : prizePool.toFixed(2);
 
   return (
     <div className="max-w-5xl">
@@ -604,7 +606,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
               PRIZE POOL · GROWING
             </div>
             <div
-              className="font-black italic mt-1"
+              className="font-black italic mt-1 flex items-end gap-2"
               style={{
                 fontSize: 72,
                 lineHeight: 0.85,
@@ -612,13 +614,14 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {poolDisplay}
+              <span>{poolDisplay}</span>
+              <span style={{ fontSize: 32, letterSpacing: '-0.02em', lineHeight: 0.95, paddingBottom: 5 }}>SOL</span>
             </div>
             <div
               className="font-black italic uppercase mt-2"
               style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
             >
-              SOL · {playersEntered} ENTRIES · CLOSES IN{' '}
+              {playersEntered} ENTRIES · CLOSES IN{' '}
               <span
                 style={{
                   background: 'rgba(0,0,0,0.16)',
@@ -651,7 +654,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
               className="font-black italic uppercase"
               style={{ fontSize: 9, color: 'rgba(0,0,0,0.6)', letterSpacing: '0.14em' }}
             >
-              + 0.0025 NETWORK FEE · USES 1 LIFE
+              + 0.0025 PLATFORM FEE
             </span>
           </div>
         </div>

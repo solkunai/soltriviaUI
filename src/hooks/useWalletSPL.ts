@@ -26,8 +26,14 @@ export interface TokenAsset {
   held: boolean;
   /** Optional monogram tint color (used when logo is null). */
   tint?: string;
-  /** Internal raw decimals + UI amount, for upstream sizing math. */
+  /** Token decimals (6 for USDC, 9 for SOL/NERD, etc.). Populated from
+   *  Jupiter when available, otherwise inferred at site of use. */
   decimals?: number;
+  /** Jupiter Verified status — true = officially verified by Jupiter. */
+  isVerified?: boolean;
+  /** Jupiter organic score label — 'low' suggests possible wash trading. */
+  organicScoreLabel?: 'low' | 'medium' | 'high' | string;
+  /** Raw UI amount, for upstream sizing math (held tokens only). */
   uiAmount?: number;
 }
 

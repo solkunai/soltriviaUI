@@ -29,8 +29,10 @@ interface ProfileViewProps {
   onSeekerVerified?: (verified: boolean) => void;
   onViewCustomGame?: (slug: string) => void;
   onClaimDuelPrize?: (duelId: number) => Promise<void>;
+  onClaimDuelSplPrize?: (duelId: number, tokenMint: string) => Promise<void>;
   onClaimDuelRefund?: (duelId: number, player1Wallet: string) => Promise<void>;
   onClaimCustomPrize?: (onChainGameId: number) => Promise<void>;
+  onClaimCustomSplPrize?: (onChainGameId: number, tokenMint: string) => Promise<void>;
   onOpenSwap?: () => void;
 }
 
@@ -65,7 +67,7 @@ interface PlayedCustomGame {
   completed_at: string;
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize, onClaimDuelRefund, onClaimCustomPrize, onOpenSwap }) => {
+const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize, onClaimDuelSplPrize, onClaimDuelRefund, onClaimCustomPrize, onClaimCustomSplPrize, onOpenSwap }) => {
   const { t } = useTranslation();
   const { publicKey, sendTransaction, signMessage, isPrivyUser, isPhantomConnectUser } = useWallet();
   const { exportWallet } = useExportWallet();
@@ -1279,6 +1281,20 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                         type="button"
                         disabled={claimingDuelId === dw.duel_id}
                         onClick={async () => {
+                          // Branch SOL vs SPL based on token_mint on the win row.
+                          const splMint = (dw as any).token_mint as string | null | undefined;
+                          if (splMint && onClaimDuelSplPrize) {
+                            setClaimingDuelId(dw.duel_id);
+                            try {
+                              await onClaimDuelSplPrize(dw.duel_id, splMint);
+                              setClaimableDuels(prev => prev.filter(d => d.duel_id !== dw.duel_id));
+                            } catch {
+                              /* claim failed — button re-enables */
+                            } finally {
+                              setClaimingDuelId(null);
+                            }
+                            return;
+                          }
                           if (!onClaimDuelPrize) return;
                           setClaimingDuelId(dw.duel_id);
                           try {
@@ -1318,11 +1334,36 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                     <span className="text-zinc-500 text-xs ml-2">#{cg.winner_index + 1}</span>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="text-white font-bold">{(cg.prize_lamports / 1_000_000_000).toFixed(4)} SOL</span>
+                    <span className="text-white font-bold">
+                      {(() => {
+                        // Display in the actual token's units when SPL, else SOL.
+                        const splMint = (cg as any).token_mint as string | null | undefined;
+                        const splDecimals = (cg as any).token_decimals as number | null | undefined;
+                        const splSymbol = (cg as any).token_symbol as string | null | undefined;
+                        if (splMint && splDecimals != null) {
+                          return `${(cg.prize_lamports / Math.pow(10, splDecimals)).toFixed(splDecimals <= 2 ? 2 : 4)} ${splSymbol || 'SPL'}`;
+                        }
+                        return `${(cg.prize_lamports / 1_000_000_000).toFixed(4)} SOL`;
+                      })()}
+                    </span>
                     <button
                       type="button"
                       disabled={claimingCustomGameId === cg.on_chain_game_id}
                       onClick={async () => {
+                        // Branch SOL vs SPL based on token_mint on the win row.
+                        const splMint = (cg as any).token_mint as string | null | undefined;
+                        if (splMint && onClaimCustomSplPrize) {
+                          setClaimingCustomGameId(cg.on_chain_game_id);
+                          try {
+                            await onClaimCustomSplPrize(cg.on_chain_game_id, splMint);
+                            setClaimableCustomGames(prev => prev.filter(g => g.on_chain_game_id !== cg.on_chain_game_id));
+                          } catch {
+                            /* claim failed — button re-enables */
+                          } finally {
+                            setClaimingCustomGameId(null);
+                          }
+                          return;
+                        }
                         if (!onClaimCustomPrize) return;
                         setClaimingCustomGameId(cg.on_chain_game_id);
                         try {

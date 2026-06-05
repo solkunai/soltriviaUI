@@ -950,47 +950,72 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 in create-custom-game EF v41+. */}
             {isAdmin && (
               <div
-                className="rounded-xl p-4 flex items-center gap-3"
+                className="rounded-2xl p-4 flex items-center gap-4"
                 style={{
-                  background: 'rgba(255,215,0,0.08)',
-                  border: '1.5px solid rgba(255,215,0,0.40)',
+                  background: isFeatured
+                    ? 'linear-gradient(135deg,#FFD700 0%,#FFC107 100%)'
+                    : 'linear-gradient(135deg,rgba(255,215,0,0.18) 0%,rgba(255,193,7,0.12) 100%)',
+                  border: `2px solid ${isFeatured ? '#FFD700' : 'rgba(255,215,0,0.55)'}`,
+                  boxShadow: isFeatured
+                    ? '0 18px 40px -18px rgba(255,215,0,0.85)'
+                    : '0 14px 30px -18px rgba(255,215,0,0.45)',
+                  transition: 'background 120ms ease, border 120ms ease',
                 }}
               >
-                <span style={{ color: '#FFD700', fontSize: 20 }}>★</span>
+                <div
+                  className="flex items-center justify-center shrink-0"
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    background: isFeatured ? '#000' : 'rgba(0,0,0,0.45)',
+                    color: '#FFD700',
+                    fontSize: 22,
+                    fontWeight: 900,
+                  }}
+                >
+                  ★
+                </div>
                 <div className="flex-1 min-w-0">
                   <div
                     className="font-black italic uppercase"
-                    style={{ color: '#FFD700', fontSize: 13, letterSpacing: '0.04em' }}
+                    style={{ color: isFeatured ? '#000' : '#FFD700', fontSize: 15, letterSpacing: '0.06em', lineHeight: 1.05 }}
                   >
                     Featured by Sol Trivia
                   </div>
-                  <p className="text-zinc-400 text-[10px] mt-0.5">
+                  <p
+                    className="mt-1"
+                    style={{ color: isFeatured ? 'rgba(0,0,0,0.7)' : 'rgba(255,215,0,0.78)', fontSize: 11, fontWeight: 700, lineHeight: 1.35 }}
+                  >
                     Render this game in the swipeable Featured strip on the Custom Games hub. Admin-only.
                   </p>
                 </div>
                 <button
                   onClick={() => setIsFeatured(v => !v)}
                   aria-pressed={isFeatured}
-                  className="shrink-0 transition-colors"
+                  className="shrink-0"
                   style={{
-                    width: 48,
-                    height: 28,
+                    width: 56,
+                    height: 32,
                     borderRadius: 999,
-                    background: isFeatured ? '#FFD700' : 'rgba(255,255,255,0.10)',
-                    border: `1.5px solid ${isFeatured ? '#FFD700' : 'rgba(255,255,255,0.15)'}`,
+                    background: isFeatured ? '#000' : 'rgba(0,0,0,0.25)',
+                    border: `2px solid ${isFeatured ? '#000' : 'rgba(0,0,0,0.45)'}`,
                     padding: 2,
                     position: 'relative',
+                    cursor: 'pointer',
+                    transition: 'background 120ms ease, border 120ms ease',
                   }}
                 >
                   <span
                     style={{
                       display: 'block',
-                      width: 20,
-                      height: 20,
+                      width: 24,
+                      height: 24,
                       borderRadius: '50%',
-                      background: isFeatured ? '#0a0a0a' : '#ffffff',
-                      transform: `translateX(${isFeatured ? 20 : 0}px)`,
-                      transition: 'transform 120ms ease',
+                      background: isFeatured ? '#FFD700' : '#FFFFFF',
+                      transform: `translateX(${isFeatured ? 24 : 0}px)`,
+                      transition: 'transform 140ms ease, background 120ms ease',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.35)',
                     }}
                   />
                 </button>
@@ -999,7 +1024,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
             {/* Game Name */}
             <div>
-              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Game Name *</label>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Game Name *</label>
               <input
                 type="text"
                 value={gameName}
@@ -1012,7 +1037,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
             {/* Custom Slug */}
             <div>
-              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Custom Link (optional)</label>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Custom Link (optional)</label>
               <div className="flex items-center gap-2">
                 <span className="text-zinc-600 text-xs font-mono shrink-0">soltrivia.app/game/</span>
                 <input
@@ -1027,7 +1052,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
             {/* Banner Image */}
             <div>
-              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Banner Image (optional)</label>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Banner Image (optional)</label>
               {bannerPreview ? (
                 <div className="relative mb-2">
                   <img src={bannerPreview} alt="Banner preview" className="w-full h-32 md:h-40 object-cover rounded-xl border border-white/10" />
@@ -1060,16 +1085,48 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
               <p className="text-zinc-700 text-[10px] mt-1">Shows on your game lobby and share links</p>
             </div>
 
-            {/* Content Disclaimer */}
-            <div className="bg-amber-500/5 border border-amber-500/15 rounded-xl p-3">
-              <p className="text-amber-400/80 text-[10px] font-bold leading-relaxed">
-                By creating a game, you agree that any inappropriate, offensive, or disrespectful content violates our Terms of Service. Sol Trivia reserves the right to ban games and creators without notice. Funds associated with banned games may not be recoverable.
-              </p>
+            {/* Content Disclaimer — bold so it actually gets read. */}
+            <div
+              className="rounded-2xl p-4 flex items-start gap-3"
+              style={{
+                background: 'linear-gradient(135deg,rgba(245,158,11,0.14) 0%,rgba(255,107,53,0.10) 100%)',
+                border: '1.5px solid rgba(245,158,11,0.55)',
+                boxShadow: '0 14px 30px -18px rgba(245,158,11,0.45)',
+              }}
+            >
+              <div
+                className="flex items-center justify-center shrink-0"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: '#F59E0B',
+                  color: '#000',
+                  fontSize: 18,
+                  fontWeight: 900,
+                }}
+              >
+                !
+              </div>
+              <div className="flex-1 min-w-0">
+                <div
+                  className="font-black italic uppercase"
+                  style={{ color: '#F59E0B', fontSize: 12, letterSpacing: '0.14em', lineHeight: 1 }}
+                >
+                  Content Agreement
+                </div>
+                <p
+                  className="mt-1.5"
+                  style={{ color: 'rgba(255,233,170,0.92)', fontSize: 11, fontWeight: 600, lineHeight: 1.45 }}
+                >
+                  By creating a game, you agree that inappropriate, offensive, or disrespectful content violates our <span style={{ color: '#FBBF24', textDecoration: 'underline' }}>Terms of Service</span>. Sol Trivia reserves the right to ban games and creators without notice. Funds tied to banned games may not be recoverable.
+                </p>
+              </div>
             </div>
 
             {/* Question Count */}
             <div>
-              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Questions</label>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Questions</label>
               <div className="flex gap-2">
                 {CUSTOM_GAME_QUESTION_COUNTS.map((count) => (
                   <button
@@ -1085,7 +1142,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
             {/* Round Count */}
             <div>
-              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Rounds</label>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Rounds</label>
               <div className="flex gap-2 flex-wrap">
                 {validRounds.map((count) => (
                   <button
@@ -1102,7 +1159,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
             {/* Time Limit */}
             <div>
-              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Time per Question</label>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Time per Question</label>
               <div className="flex gap-2">
                 {CUSTOM_GAME_TIME_LIMITS.map((t) => (
                   <button
@@ -1132,7 +1189,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
             {/* Game Type Toggle */}
             <div>
-              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Game Type</label>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Game Type</label>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => setGameType('free')}
@@ -1157,7 +1214,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
               {/* Players-Fund sub-picker: SOL / USDC / SPL (no NFT — players can't escrow NFTs) */}
               {gameType === 'players_fund' && (
                 <div className="mt-3">
-                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Entry Token</label>
+                  <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Entry Token</label>
                   <div className="grid grid-cols-3 gap-2">
                     <button
                       onClick={() => setPlayerFundTokenType('sol')}
@@ -1184,7 +1241,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
               {/* Creator-Funds sub-picker: SOL / USDC / NFT / SPL */}
               {gameType === 'creator_funds' && (
                 <div className="mt-3">
-                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Prize Type</label>
+                  <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Prize Type</label>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     <button
                       onClick={() => setCreatorPrizeType('sol')}
@@ -1223,7 +1280,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 <div className="mt-3 rounded-xl bg-white/[0.03] border border-white/5 p-3 space-y-3">
                   {/* WALLET HOLDINGS LIST , click to auto-fill */}
                   <div>
-                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Tokens in Your Wallet</label>
+                    <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Tokens in Your Wallet</label>
                     {!publicKey ? (
                       <p className="text-zinc-600 text-[10px] italic">Connect your wallet to see your SPL tokens.</p>
                     ) : walletSplStatus === 'loading' ? (
@@ -1277,7 +1334,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   </div>
 
                   <div className="border-t border-white/5 pt-3">
-                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Or Enter Contract Address</label>
+                    <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Or Enter Contract Address</label>
                     <input
                       type="text"
                       value={customSplMint}
@@ -1304,7 +1361,12 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                           <span className="text-white font-[1000] italic text-sm">{jupiterToken.symbol}</span>
                           <span className="text-zinc-500 text-[10px] truncate">{jupiterToken.name}</span>
                           {jupiterToken.isVerified && (
-                            <span className="text-[8px] font-black uppercase tracking-wider text-[#38BDF8] bg-[#38BDF8]/15 border border-[#38BDF8]/30 rounded px-1.5 py-0.5">Verified</span>
+                            <img
+                              src="/jup_vrfd_nobg.png"
+                              alt="Jupiter Verified"
+                              title="Jupiter Verified"
+                              style={{ height: 14, width: 'auto', display: 'inline-block', verticalAlign: 'middle' }}
+                            />
                           )}
                         </div>
                         <div className="text-zinc-600 text-[9px] mt-0.5">{jupiterToken.decimals} decimals</div>
@@ -1349,7 +1411,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
             {/* NFT prize selection — visible when prizeModel === 'nft_prize' */}
             {isNftPrize && (
               <div>
-                <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Pick the NFT prize</label>
+                <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Pick the NFT prize</label>
                 <NFTSelector
                   walletAddress={publicKey?.toBase58() ?? null}
                   selectedMint={selectedNft?.mint ?? null}
@@ -1380,7 +1442,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                     differs wildly across token decimals (0.1 SOL vs 0.1 BONK etc). */}
                 {!isCreatorFunded && (
                   <div>
-                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Entry Fee ({activeSymbol})</label>
+                    <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Entry Fee ({activeSymbol})</label>
                     {!isSplGame && (
                       <div className="flex gap-2 flex-wrap mb-2">
                         {CUSTOM_GAME_ENTRY_FEE_PRESETS.map((fee, i) => (
@@ -1413,7 +1475,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 {/* Prize Deposit (creator-funded only). Presets SOL-only, same reasoning. */}
                 {isCreatorFunded && (
                   <div>
-                    <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Prize Pool Deposit ({activeSymbol})</label>
+                    <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Prize Pool Deposit ({activeSymbol})</label>
                     {!isSplGame && (
                       <div className="flex gap-2 flex-wrap mb-2">
                         {CREATOR_FUNDED_PRIZE_PRESETS.map((amt, i) => (
@@ -1446,7 +1508,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
                 {/* Max Players */}
                 <div>
-                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Max Players</label>
+                  <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Max Players</label>
                   <div className="flex gap-2 flex-wrap">
                     {CUSTOM_GAME_MAX_PLAYER_PRESETS.map((count) => (
                       <button
@@ -1462,7 +1524,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
                 {/* Game Duration */}
                 <div>
-                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Game Duration</label>
+                  <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Game Duration</label>
                   <div className="flex gap-2 flex-wrap">
                     {CUSTOM_GAME_DURATION_PRESETS.map((d) => (
                       <button
@@ -1479,7 +1541,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
                 {/* Winners */}
                 <div>
-                  <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Winner Count</label>
+                  <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Winner Count</label>
                   <div className="flex gap-2">
                     {([1, 3, 5] as const).map((w) => (
                       <button
@@ -1621,7 +1683,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
             {/* Question Text */}
             <div>
-              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block mb-2">Question *</label>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Question *</label>
               <textarea
                 value={questions[currentQIdx].questionText}
                 onChange={(e) => updateQuestion('questionText', e.target.value.slice(0, CUSTOM_GAME_QUESTION_TEXT_MAX))}
@@ -1634,7 +1696,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
             {/* Options */}
             <div className="space-y-3">
-              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block">Answers * (tap to mark correct)</label>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block">Answers * (tap to mark correct)</label>
               {['A', 'B', 'C', 'D'].map((label, idx) => (
                 <div key={idx} className="flex items-center gap-3">
                   <button
@@ -1808,7 +1870,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
             {/* Questions Preview */}
             <div className="space-y-2">
-              <label className="text-zinc-500 text-[10px] font-black uppercase tracking-wider block">Questions Preview</label>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block">Questions Preview</label>
               {questions.map((q, i) => (
                 <details key={i} className="bg-white/[0.02] border border-white/5 rounded-xl overflow-hidden">
                   <summary className="px-4 py-3 cursor-pointer flex items-center gap-3 hover:bg-white/[0.03] transition-colors">

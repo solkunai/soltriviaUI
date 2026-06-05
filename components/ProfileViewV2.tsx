@@ -17,6 +17,7 @@
  * filtered by on-chain truth via claims.ts wrappers.
  */
 import React, { useEffect, useState } from 'react';
+import { JupiterVerifiedBadge } from './JupiterVerifiedBadge';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { useIsMobile } from '../src/hooks/useIsMobile';
 import { SOLANA_NETWORK, DEFAULT_AVATAR } from '../src/utils/constants';
@@ -86,7 +87,11 @@ interface Props {
   // Claim handlers — fire on-chain claim flows
   onClaimRoundPrize?: (payout: ClaimablePayout) => Promise<void>;
   onClaimDuelPrize?: (duelId: number) => Promise<void>;
+  /** SPL variant — called when the duel was a token-denominated wager. */
+  onClaimDuelSplPrize?: (duelId: number, tokenMint: string) => Promise<void>;
   onClaimCustomPrize?: (onChainGameId: number) => Promise<void>;
+  /** SPL variant — called when the custom game used a token_mint prize. */
+  onClaimCustomSplPrize?: (onChainGameId: number, tokenMint: string) => Promise<void>;
   onClaimRoundRefund?: (entry: RefundableEntry) => Promise<void>;
   onClaimCustomRefund?: (onChainGameId: number) => Promise<void>;
   onClaimDuelRefund?: (duelId: number, player1Wallet: string) => Promise<void>;
@@ -161,14 +166,19 @@ function Icon({ name, size = 14, color = '#000' }: { name: string; size?: number
     ),
     swords: <path d="M14 6l4-4 3 3-4 4M8 8L4 4l-1 1 4 4M14 14l6 6 1-1-6-6M10 10l-6 6 6 6 6-6-6-6z" stroke={color} fill="none" strokeWidth="1.5" />,
     bolt: <path d="M13 2L4 14h6l-2 8 10-13h-7l2-7z" fill={color} />,
-    heart: <path d="M12 21s-7-4.5-7-11a4 4 0 017-2.6A4 4 0 0119 10c0 6.5-7 11-7 11z" fill={color} />,
+    // Heart — Lucide-style, matches the topbar lives pill. Proportional,
+    // filled solid in the chosen color.
+    heart: <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z" fill={color} stroke={color} strokeWidth="1" strokeLinejoin="round" />,
     sparkles: (
       <>
         <path d="M5 3l1.5 3L10 7l-3.5 1L5 11l-1.5-3L0 7l3.5-1L5 3z" fill={color} />
         <path d="M16 10l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2z" fill={color} />
       </>
     ),
-    ticket: <path d="M3 8a2 2 0 002-2h14a2 2 0 002 2v2a2 2 0 000 4v2a2 2 0 00-2 2H5a2 2 0 00-2-2v-2a2 2 0 000-4V8z" fill="none" stroke={color} strokeWidth="1.6" />,
+    // Ticket — matches sidebar/topbar ticket (with perforations + center dashes).
+    ticket: <path d="M2 9a3 3 0 010 6v2a2 2 0 002 2h16a2 2 0 002-2v-2a3 3 0 010-6V7a2 2 0 00-2-2H4a2 2 0 00-2 2zM13 5v2M13 17v2M13 11v2" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />,
+    // user-plus — matches sidebar Referrals icon exactly.
+    'user-plus': <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0M19 8v6M22 11h-6" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24">
@@ -192,7 +202,9 @@ const ProfileViewV2: React.FC<Props> = ({
   onSeekerVerified,
   onClaimRoundPrize,
   onClaimDuelPrize,
+  onClaimDuelSplPrize,
   onClaimCustomPrize,
+  onClaimCustomSplPrize,
   onClaimRoundRefund,
   onClaimCustomRefund,
   onClaimDuelRefund,
@@ -573,11 +585,15 @@ const ProfileViewV2: React.FC<Props> = ({
   };
 
   const handleClaimDuel = async (duel: MyDuelWin) => {
-    if (!onClaimDuelPrize) return;
+    // Branch SOL vs SPL based on token_mint on the win row.
+    const splMint = (duel as { token_mint?: string | null }).token_mint;
+    const useSpl = !!splMint && !!onClaimDuelSplPrize;
+    if (!useSpl && !onClaimDuelPrize) return;
     const key = `duel-${duel.duel_id}`;
     setClaimingKey(key);
     try {
-      await onClaimDuelPrize(duel.duel_id);
+      if (useSpl) await onClaimDuelSplPrize!(duel.duel_id, splMint!);
+      else await onClaimDuelPrize!(duel.duel_id);
       setDuelWins((prev) => prev.filter((d) => d.duel_id !== duel.duel_id));
     } finally {
       setClaimingKey(null);
@@ -585,11 +601,15 @@ const ProfileViewV2: React.FC<Props> = ({
   };
 
   const handleClaimCustom = async (win: ClaimableCustomGameWin) => {
-    if (!onClaimCustomPrize) return;
+    // Branch SOL vs SPL based on token_mint on the win row.
+    const splMint = win.token_mint;
+    const useSpl = !!splMint && !!onClaimCustomSplPrize;
+    if (!useSpl && !onClaimCustomPrize) return;
     const key = `custom-${win.on_chain_game_id}`;
     setClaimingKey(key);
     try {
-      await onClaimCustomPrize(win.on_chain_game_id);
+      if (useSpl) await onClaimCustomSplPrize!(win.on_chain_game_id, splMint!);
+      else await onClaimCustomPrize!(win.on_chain_game_id);
       setCustomWins((prev) =>
         prev.filter((c) => c.on_chain_game_id !== win.on_chain_game_id)
       );
@@ -1063,7 +1083,16 @@ const ProfileViewV2: React.FC<Props> = ({
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    +{(c.prize_lamports / 1_000_000_000).toFixed(4)} SOL · CUSTOM GAME
+                    +{(() => {
+                      // SPL custom games: show token amount in real units + symbol.
+                      if (c.token_mint && c.token_decimals != null) {
+                        const amt = c.prize_lamports / Math.pow(10, c.token_decimals);
+                        return `${amt.toFixed(2)} ${c.token_symbol || 'SPL'}`;
+                      }
+                      return `${(c.prize_lamports / 1_000_000_000).toFixed(4)} SOL`;
+                    })()}
+                    <JupiterVerifiedBadge mint={c.token_mint ?? null} size={10} />
+                    {' · CUSTOM GAME'}
                   </div>
                 </div>
                 <button
@@ -1652,43 +1681,46 @@ const ProfileViewV2: React.FC<Props> = ({
               border: `1px solid ${C.borderLight}`,
               borderRadius: 12,
               padding: '14px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ ...baseLabel, fontSize: 9, color: C.red }}>LIVES</div>
-                <div
-                  style={{
-                    ...display,
-                    fontSize: 28,
-                    color: '#fff',
-                    marginTop: 4,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {lives == null ? '—' : lives}
-                </div>
-                <div style={{ ...baseLabel, fontSize: 9, color: '#a1a1aa', marginTop: 4 }}>
-                  RESTOCK ANY TIME
-                </div>
-              </div>
-              <button
-                onClick={onBuyLives}
+            <Icon name="heart" size={22} color={C.red} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ ...baseLabel, fontSize: 9, color: C.red }}>LIVES</div>
+              <div
                 style={{
-                  ...baseLabel,
-                  appearance: 'none',
-                  border: `1.5px solid ${C.red}`,
-                  background: C.red,
-                  color: '#000',
-                  fontSize: 11,
-                  padding: '8px 14px',
-                  borderRadius: 999,
-                  cursor: 'pointer',
+                  ...display,
+                  fontSize: 28,
+                  color: '#fff',
+                  marginTop: 4,
+                  fontVariantNumeric: 'tabular-nums',
+                  lineHeight: 1,
                 }}
               >
-                BUY MORE
-              </button>
+                {lives == null ? '—' : lives}
+              </div>
+              <div style={{ ...baseLabel, fontSize: 9, color: '#a1a1aa', marginTop: 4 }}>
+                RESTOCK ANY TIME
+              </div>
             </div>
+            <button
+              onClick={onBuyLives}
+              style={{
+                ...baseLabel,
+                appearance: 'none',
+                border: `1.5px solid ${C.red}`,
+                background: C.red,
+                color: '#000',
+                fontSize: 11,
+                padding: '8px 14px',
+                borderRadius: 999,
+                cursor: 'pointer',
+              }}
+            >
+              BUY MORE
+            </button>
           </div>
           {/* Game Pass */}
           <div
@@ -1738,7 +1770,7 @@ const ProfileViewV2: React.FC<Props> = ({
               gap: 14,
             }}
           >
-            <Icon name="sparkles" size={22} color={C.gold} />
+            <Icon name="user-plus" size={22} color={C.gold} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ ...baseLabel, fontSize: 9, color: C.gold }}>REFERRAL XP EARNED</div>
               <div

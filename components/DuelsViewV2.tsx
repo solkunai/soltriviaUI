@@ -127,6 +127,7 @@ function relativeAgo(iso: string | null): string {
 }
 
 const WAGER_PRESETS = [0.01, 0.05, 0.1, 0.25, 0.5, 1];
+const USDC_PRESETS = [1, 5, 20, 50, 100];
 
 // SOL platform fee charged on top of every duel entry (matches contract).
 const PLATFORM_FEE_SOL = 0.0025;
@@ -149,6 +150,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel, onViewOwnDuel 
   // appears, capped at 500 SOL (a high but bounded ceiling so accidental
   // huge inputs don't ship).
   const [solCustomMode, setSolCustomMode] = useState(false);
+  const [usdcCustomMode, setUsdcCustomMode] = useState(false);
   const [solCustomInput, setSolCustomInput] = useState<string>('');
   const SOL_CUSTOM_MAX = 500;
 
@@ -398,7 +400,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel, onViewOwnDuel 
                     fontSize: 10,
                     padding: '6px 14px',
                     background: on ? '#000' : 'rgba(0,0,0,0.15)',
-                    color: on ? '#FF3131' : '#000',
+                    color: on ? '#fff' : '#000',
                     border: 'none',
                     letterSpacing: '0.14em',
                     whiteSpace: 'nowrap',
@@ -423,30 +425,77 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel, onViewOwnDuel 
           }
         </div>
 
-        {/* USDC mode: just the free-form $ amount input (no picker needed) */}
+        {/* USDC mode: 6-cell grid (5 presets + CUSTOM inline input). Same
+            pattern as SOL — CUSTOM stays in the grid as an input, presets
+            remain tappable without "going back". */}
         {tokenMode === 'usdc' && (
-          <div className="mt-2">
+        <div
+          className="mt-2"
+          style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(6, 1fr)', gap: 8 }}
+        >
+          {USDC_PRESETS.map((amt) => {
+            const on = splWagerInput === String(amt) && !usdcCustomMode;
+            return (
+              <button
+                key={amt}
+                onClick={() => { setSplWagerInput(String(amt)); setUsdcCustomMode(false); }}
+                className="font-black italic rounded-lg active:opacity-90"
+                style={{
+                  padding: '12px 0',
+                  fontSize: 18,
+                  background: on ? '#000' : 'rgba(0,0,0,0.15)',
+                  color: on ? '#fff' : '#000',
+                  border: 'none',
+                  fontVariantNumeric: 'tabular-nums',
+                  cursor: 'pointer',
+                }}
+              >
+                ${amt}
+              </button>
+            );
+          })}
+          {usdcCustomMode ? (
             <input
               type="text"
               inputMode="decimal"
+              autoFocus
               value={splWagerInput}
               onChange={(e) => {
                 const v = e.target.value;
                 if (/^\d*\.?\d*$/.test(v)) setSplWagerInput(v);
               }}
-              placeholder="Amount in USDC (e.g. 25)"
+              placeholder="$"
               className="font-black italic rounded-lg"
               style={{
+                padding: '12px 0',
+                fontSize: 18,
                 background: '#000',
                 color: '#fff',
-                padding: '12px 16px',
-                fontSize: 18,
                 border: 'none',
                 outline: 'none',
+                textAlign: 'center',
+                fontVariantNumeric: 'tabular-nums',
                 width: '100%',
               }}
             />
-          </div>
+          ) : (
+            <button
+              onClick={() => { setUsdcCustomMode(true); setSplWagerInput(''); }}
+              className="font-black italic uppercase rounded-lg active:opacity-90"
+              style={{
+                padding: '12px 0',
+                fontSize: 11,
+                background: 'rgba(0,0,0,0.15)',
+                color: '#000',
+                border: 'none',
+                letterSpacing: '0.14em',
+                cursor: 'pointer',
+              }}
+            >
+              CUSTOM
+            </button>
+          )}
+        </div>
         )}
 
         {/* SPL mode: token picker button + free-form amount input */}
@@ -496,26 +545,27 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel, onViewOwnDuel 
           </div>
         )}
 
-        {/* SOL mode: classic 6-preset grid + CUSTOM toggle. When CUSTOM is
-            tapped, the grid is replaced with a free-form input (capped at
-            SOL_CUSTOM_MAX = 500 SOL) and a "back to presets" pill. */}
-        {tokenMode === 'sol' && !solCustomMode && (
+        {/* SOL mode: 6-cell grid (5 presets + CUSTOM). When CUSTOM is tapped
+            the 6th cell becomes an inline input in place — the presets stay
+            visible so the user can still tap one without going "back". */}
+        {tokenMode === 'sol' && (
+        <>
         <div
           className="mt-2"
           style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(4, 1fr)' : 'repeat(7, 1fr)', gap: 8 }}
         >
           {WAGER_PRESETS.map((w) => {
-            const on = wager === w;
+            const on = wager === w && !solCustomMode;
             return (
               <button
                 key={w}
-                onClick={() => setWager(w)}
+                onClick={() => { setWager(w); setSolCustomMode(false); setSolCustomInput(''); }}
                 className="font-black italic rounded-lg active:opacity-90"
                 style={{
                   padding: '12px 0',
                   fontSize: 18,
                   background: on ? '#000' : 'rgba(0,0,0,0.15)',
-                  color: on ? '#FF3131' : '#000',
+                  color: on ? '#fff' : '#000',
                   border: 'none',
                   fontVariantNumeric: 'tabular-nums',
                   cursor: 'pointer',
@@ -525,27 +575,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel, onViewOwnDuel 
               </button>
             );
           })}
-          <button
-            onClick={() => setSolCustomMode(true)}
-            className="font-black italic uppercase rounded-lg active:opacity-90"
-            style={{
-              padding: '12px 0',
-              fontSize: 11,
-              background: 'rgba(0,0,0,0.15)',
-              color: '#000',
-              border: 'none',
-              letterSpacing: '0.14em',
-              cursor: 'pointer',
-            }}
-          >
-            CUSTOM
-          </button>
-        </div>
-        )}
-
-        {/* SOL mode + custom: free-form input + back-to-presets affordance */}
-        {tokenMode === 'sol' && solCustomMode && (
-          <div className="mt-2 flex flex-col gap-2">
+          {solCustomMode ? (
             <input
               type="text"
               inputMode="decimal"
@@ -554,52 +584,46 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel, onViewOwnDuel 
               onChange={(e) => {
                 const v = e.target.value;
                 if (!/^\d*\.?\d*$/.test(v)) return;
-                // Soft-cap during typing: if user enters > SOL_CUSTOM_MAX we
-                // still update the input but the effectiveSolWager clamps it.
-                // Lets them backspace gracefully without weird jumps.
                 setSolCustomInput(v);
               }}
-              placeholder={`Amount in SOL (max ${SOL_CUSTOM_MAX})`}
+              placeholder="0.00"
               className="font-black italic rounded-lg"
               style={{
+                padding: '12px 0',
+                fontSize: 18,
                 background: '#000',
                 color: '#fff',
-                padding: '12px 16px',
-                fontSize: 18,
                 border: 'none',
                 outline: 'none',
-                width: '100%',
+                textAlign: 'center',
                 fontVariantNumeric: 'tabular-nums',
+                width: '100%',
               }}
             />
-            {/* Warn when user exceeds the cap. effectiveSolWager already
-                clamps; this just surfaces what they'll actually pay. */}
-            {parseFloat(solCustomInput) > SOL_CUSTOM_MAX && (
-              <div style={{ fontSize: 10, color: '#000', opacity: 0.7, fontStyle: 'italic' }}>
-                Capped at {SOL_CUSTOM_MAX} SOL · adjust below if you want less.
-              </div>
-            )}
+          ) : (
             <button
-              onClick={() => {
-                setSolCustomMode(false);
-                setSolCustomInput('');
-              }}
-              className="font-black italic uppercase rounded-full active:opacity-90"
+              onClick={() => setSolCustomMode(true)}
+              className="font-black italic uppercase rounded-lg active:opacity-90"
               style={{
-                appearance: 'none',
-                cursor: 'pointer',
-                fontSize: 10,
-                padding: '6px 14px',
+                padding: '12px 0',
+                fontSize: 11,
                 background: 'rgba(0,0,0,0.15)',
                 color: '#000',
                 border: 'none',
                 letterSpacing: '0.14em',
-                alignSelf: 'flex-start',
+                cursor: 'pointer',
               }}
             >
-              ← BACK TO PRESETS
+              CUSTOM
             </button>
+          )}
+        </div>
+        {solCustomMode && parseFloat(solCustomInput) > SOL_CUSTOM_MAX && (
+          <div className="mt-1" style={{ fontSize: 10, color: '#000', opacity: 0.7, fontStyle: 'italic' }}>
+            Capped at {SOL_CUSTOM_MAX} SOL.
           </div>
+        )}
+        </>
         )}
 
         {/* Mount the SPL picker as an absolute overlay on the hero so it

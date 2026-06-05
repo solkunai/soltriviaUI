@@ -50,6 +50,24 @@ type SwapState =
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const NERD_MINT = 'DEc6Gf57RfFJbjqGrzo4zeRBr5iQS8vTV8r11ZuyBAGS';
 
+// Brand-protect: prevent users from accidentally swapping a fake NERD or
+// Sol Trivia impersonator token. Only the official NERD mint (above) is
+// allowed under our brand. Anything else with the same ticker or name in
+// the Jupiter list is filtered out of the picker.
+function isFakeNerdImpersonator(t: { address: string; symbol?: string; name?: string }): boolean {
+  if (t.address === NERD_MINT) return false; // official NERD, allowed
+  const sym = (t.symbol || '').toUpperCase().replace(/^\$/, '');
+  const name = (t.name || '').toUpperCase();
+  // Block exact ticker matches on our brand names.
+  if (sym === 'NERD' || sym === 'SOLTRIVIA' || sym === 'SOL TRIVIA') return true;
+  // Block name matches that look like Sol Trivia branding.
+  if (name.includes('SOL TRIVIA') || name.includes('SOLTRIVIA')) return true;
+  // Block tokens explicitly named just "NERD" (loose name matches like
+  // "NERDS BAR" stay allowed since they aren't our brand).
+  if (name === 'NERD' || name === '$NERD') return true;
+  return false;
+}
+
 // Hardcoded fallback metadata for the default pair so the UI never paints
 // a '?' for SOL or NERD before the Jupiter list resolves. Used by fromT/toT.
 const DEFAULT_PAIR_FALLBACK: Record<string, JupiterToken> = {
@@ -726,10 +744,15 @@ function TokenPickerSheet({
     return mints.map((m) => results.find((t) => t.address === m)).filter(Boolean) as JupiterToken[];
   }, [results]);
 
+  // Brand-protect filter: drop fake NERD / Sol Trivia impersonators from the
+  // swap picker. The official NERD mint is allowlisted; anything else sharing
+  // our ticker or name is hidden so users can't accidentally buy a scam token.
+  const safeResults = results.filter((t) => !isFakeNerdImpersonator(t));
+
   // Split into whitelist-first / rest for visual ordering. App whitelist always
   // pinned at the top when present in the current result set.
-  const wl = results.filter((t) => isAppWhitelisted(t.symbol));
-  const rest = results.filter((t) => !isAppWhitelisted(t.symbol));
+  const wl = safeResults.filter((t) => isAppWhitelisted(t.symbol));
+  const rest = safeResults.filter((t) => !isAppWhitelisted(t.symbol));
 
   // No matches at all + query is a CA → Jupiter hasn't indexed yet (rare;
   // V2 covers pump.fun + bags). Show "not indexed" notice.

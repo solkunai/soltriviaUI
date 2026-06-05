@@ -29,12 +29,17 @@ interface Props {
 
 const TOKEN_CHIPS: PaymentToken[] = ['SOL', 'USDC', 'SKR', 'NERD'];
 
+// `n` true = NEW for v2.1, highlighted with a NEW tag in the perks list.
 const PERKS = [
+  { t: '+3 lives per purchase', d: 'Stacks on every renewal, no expiry', n: true },
+  { t: '2x XP on quests', d: 'Stacks with the round XP boost', n: true },
+  { t: 'Daily streak protection', d: '1x per 30 days · auto-restores streak', n: true },
+  { t: 'Higher entry caps', d: '10 per round · 40 per 24h (vs 5/20)', n: true },
+  { t: 'Free custom game creation', d: 'Skip the 0.005 SOL host fee' },
   { t: 'Unlimited daily practice', d: 'No lives used, endless rounds' },
   { t: 'All 7 categories unlocked', d: 'Sports · Web3 · Sci-Tech · etc' },
   { t: '10% off all lives', d: 'Forever, stacks every purchase' },
   { t: '+25% XP every round', d: 'Climb all-time ranks faster' },
-  { t: 'Custom game discount', d: 'Create rooms for 0.003 SOL' },
 ];
 
 const GamePassViewV2: React.FC<Props> = ({ hasGamePass, isSeekerVerified, onPurchased }) => {
@@ -176,9 +181,12 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, isSeekerVerified, onPurc
         </h1>
       </div>
 
-      {/* 2-col layout */}
-      <div className="mb-5" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 1fr', gap: 20 }}>
-        {/* NFT ticket hero */}
+      {/* 2-col layout — alignItems: start so the Solana gradient ticket keeps its
+          natural height instead of stretching to match the perks column. */}
+      <div className="mb-5" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 1fr', gap: 20, alignItems: 'start' }}>
+        {/* Left column: NFT ticket hero + Seeker discount nudge stacked below
+            the ticket so they form one cohesive visual block against the perks. */}
+        <div className="flex flex-col gap-3">
         <div
           className="relative rounded-2xl flex flex-col"
           style={{
@@ -229,6 +237,25 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, isSeekerVerified, onPurc
           </div>
         </div>
 
+        {/* Seeker discount nudge — sits directly under the gradient ticket
+            inside the left column so there's no awkward gap. Hidden once the
+            user verifies. */}
+        {!isSeekerVerified && (
+          <div className="rounded-xl flex items-center gap-3" style={{ background: 'rgba(20,241,149,0.06)', border: '1px solid rgba(20,241,149,0.27)', padding: '12px 14px' }}>
+            <img src="/seeker-badge.png" alt="Seeker" style={{ width: 26, height: 26, objectFit: 'contain', flexShrink: 0 }} />
+            <div className="flex-1 min-w-0">
+              <div className="font-black italic uppercase" style={{ fontSize: 9.5, color: '#14F195', letterSpacing: '0.16em' }}>
+                ● SEEKER HOLDERS
+              </div>
+              <div style={{ fontSize: 11, color: '#d4d4d8', marginTop: 2, lineHeight: 1.35 }}>
+                Verify your Seeker token for{' '}
+                <span className="font-black italic uppercase" style={{ color: '#14F195' }}>35% off forever</span>.
+              </div>
+            </div>
+          </div>
+        )}
+        </div>
+
         {/* Perks */}
         <div className="rounded-2xl overflow-hidden" style={{ background: '#0a0a0a', border: '1px solid rgba(20,241,149,0.27)' }}>
           <div
@@ -238,39 +265,55 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, isSeekerVerified, onPurc
             WHAT YOU GET
           </div>
           {PERKS.map((p, i) => (
-            <div key={p.t} className="flex items-center gap-3 px-4 py-3" style={{ borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
+            <div
+              key={p.t}
+              className="flex items-center gap-3 px-4"
+              style={{
+                paddingTop: 9,
+                paddingBottom: 9,
+                borderTop: i > 0 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                background: p.n ? 'rgba(20,241,149,0.04)' : 'transparent',
+              }}
+            >
               <div
                 className="rounded-md flex items-center justify-center flex-shrink-0"
-                style={{ width: 26, height: 26, background: 'rgba(20,241,149,0.12)', border: '1px solid rgba(20,241,149,0.33)', color: '#14F195', fontSize: 13, fontWeight: 900 }}
+                style={{
+                  width: 22,
+                  height: 22,
+                  background: p.n ? 'rgba(20,241,149,0.18)' : 'rgba(20,241,149,0.10)',
+                  border: `1px solid ${p.n ? '#14F195' : 'rgba(20,241,149,0.30)'}`,
+                  color: '#14F195',
+                  fontSize: 12,
+                  fontWeight: 900,
+                }}
               >
                 ✓
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-black italic uppercase text-white" style={{ fontSize: 11, letterSpacing: '0.12em' }}>
-                  {p.t}
+                <div className="font-black italic uppercase text-white flex items-center gap-1.5" style={{ fontSize: 10.5, letterSpacing: '0.10em' }}>
+                  <span className="truncate">{p.t}</span>
+                  {p.n && (
+                    <span
+                      className="font-black italic uppercase shrink-0"
+                      style={{
+                        fontSize: 7,
+                        letterSpacing: '0.14em',
+                        color: '#000',
+                        background: '#14F195',
+                        padding: '1px 5px',
+                        borderRadius: 999,
+                      }}
+                    >
+                      NEW
+                    </span>
+                  )}
                 </div>
-                <div style={{ fontSize: 10, color: '#71717a', marginTop: 2 }}>{p.d}</div>
+                <div style={{ fontSize: 9.5, color: '#71717a', marginTop: 1, lineHeight: 1.3 }}>{p.d}</div>
               </div>
             </div>
           ))}
         </div>
       </div>
-
-      {/* Seeker discount callout — only when NOT already verified */}
-      {!isSeekerVerified && (
-        <div className="rounded-xl mb-4 flex items-center gap-4" style={{ background: 'rgba(20,241,149,0.06)', border: '1px solid rgba(20,241,149,0.27)', padding: '14px 18px' }}>
-          <img src="/seeker-badge.png" alt="Seeker" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-          <div className="flex-1 min-w-0">
-            <div className="font-black italic uppercase" style={{ fontSize: 10, color: '#14F195', letterSpacing: '0.18em' }}>
-              ● SEEKER HOLDERS
-            </div>
-            <div style={{ fontSize: 12, color: '#d4d4d8', marginTop: 4 }}>
-              Verify your Seeker Genesis Token for 35% off Game Pass and lives,{' '}
-              <span className="font-black italic uppercase" style={{ color: '#14F195' }}>FOREVER!</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {!hasGamePass && (
         <>

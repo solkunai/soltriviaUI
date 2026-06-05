@@ -198,90 +198,98 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
         </h1>
       </div>
 
-      {/* 2-col: CREATE hero + JOIN code */}
+      {/* Unified hero — mirrors the Duels "READY TO 1V1?" pattern. Cyan
+          gradient + bold tagline + CREATE on the right + JOIN CODE inline
+          below. Zero behavior change to onCreate / onJoinByCode handlers. */}
       <div
-        className="mb-5"
-        style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr', gap: 14 }}
+        className="rounded-2xl mb-5"
+        style={{
+          background: 'linear-gradient(135deg,#38BDF8 0%,#7CD4F5 100%)',
+          color: '#000',
+          padding: '24px 28px',
+          boxShadow: '0 22px 50px -22px rgba(56,189,248,0.7)',
+        }}
       >
-        <button
-          onClick={onCreate}
-          className="rounded-2xl text-left active:opacity-95"
-          style={{
-            background: 'linear-gradient(110deg,#38BDF8 0%,#0EA5E9 100%)',
-            color: '#000',
-            padding: '18px 22px',
-            boxShadow: '0 22px 50px -22px rgba(56,189,248,0.6)',
-            cursor: 'pointer',
-            border: 'none',
-          }}
-        >
-          <div
-            className="font-black italic uppercase"
-            style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
-          >
-            MAKE YOUR OWN ROOM
+        <div className="flex items-end justify-between gap-6 flex-wrap">
+          <div>
+            <div
+              className="font-black italic uppercase"
+              style={{ fontSize: 11, opacity: 0.7, letterSpacing: '0.14em' }}
+            >
+              CREATE OR JOIN
+            </div>
+            <div
+              className="font-black italic uppercase mt-1"
+              style={{ fontSize: isMobile ? 26 : 36, lineHeight: 1, letterSpacing: '-0.02em' }}
+            >
+              BUILD YOUR OWN CUSTOM TRIVIA GAME
+            </div>
+            <div
+              className="font-black italic uppercase mt-2"
+              style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
+            >
+              0.005 SOL TO HOST · PASS HOLDERS FREE
+            </div>
           </div>
-          <div
-            className="font-black italic uppercase mt-1"
-            style={{ fontSize: 28, lineHeight: 1, letterSpacing: '-0.02em' }}
+          <button
+            onClick={onCreate}
+            className="font-black italic uppercase rounded-full active:opacity-90"
+            style={{
+              background: '#000',
+              color: '#fff',
+              padding: '14px 28px',
+              fontSize: 13,
+              letterSpacing: '0.14em',
+              border: 'none',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
           >
             CREATE GAME →
-          </div>
-          <div
-            className="font-black italic uppercase mt-2"
-            style={{ fontSize: 9, opacity: 0.7, letterSpacing: '0.14em' }}
-          >
-            0.005 SOL TO HOST · PASS HOLDERS FREE
-          </div>
-        </button>
+          </button>
+        </div>
 
-        <div
-          className="rounded-2xl"
-          style={{
-            background: '#0a0a0a',
-            border: '1px solid rgba(255,49,49,0.27)',
-            padding: '14px 16px',
-          }}
-        >
+        {/* Inline JOIN CODE row */}
+        <div className="flex items-center gap-3 mt-5 flex-wrap">
           <div
-            className="font-black italic uppercase mb-2"
-            style={{ fontSize: 10, color: '#FF3131', letterSpacing: '0.18em' }}
+            className="font-black italic uppercase"
+            style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em', whiteSpace: 'nowrap' }}
           >
             JOIN PRIVATE ROOM
           </div>
-          <div className="flex gap-2">
-            <input
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-              placeholder="XXX-XXX"
-              className="flex-1 rounded-lg outline-none"
-              style={{
-                background: '#000',
-                border: '1px solid rgba(255,49,49,0.3)',
-                color: '#fff',
-                fontFamily: 'JetBrains Mono, Menlo, monospace',
-                fontSize: 16,
-                letterSpacing: '0.15em',
-                padding: '10px 14px',
-              }}
-            />
-            <button
-              onClick={handleJoin}
-              disabled={joinCode.trim().length < 3}
-              className="font-black italic uppercase rounded-lg active:opacity-90"
-              style={{
-                background: joinCode.trim().length >= 3 ? '#FF3131' : '#0a0a0a',
-                color: joinCode.trim().length >= 3 ? '#000' : '#52525b',
-                border: joinCode.trim().length < 3 ? '1px solid rgba(255,255,255,0.1)' : 'none',
-                padding: '0 18px',
-                fontSize: 11,
-                letterSpacing: '0.14em',
-                cursor: joinCode.trim().length >= 3 ? 'pointer' : 'not-allowed',
-              }}
-            >
-              JOIN
-            </button>
-          </div>
+          <input
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            placeholder="XXX-XXX"
+            className="rounded-lg outline-none flex-1"
+            style={{
+              background: 'rgba(0,0,0,0.18)',
+              border: '1px solid rgba(0,0,0,0.30)',
+              color: '#000',
+              fontFamily: 'JetBrains Mono, Menlo, monospace',
+              fontSize: 16,
+              letterSpacing: '0.15em',
+              padding: '10px 14px',
+              minWidth: 140,
+            }}
+          />
+          <button
+            onClick={handleJoin}
+            disabled={joinCode.trim().length < 3}
+            className="font-black italic uppercase rounded-full active:opacity-90"
+            style={{
+              background: joinCode.trim().length >= 3 ? '#000' : 'rgba(0,0,0,0.18)',
+              color: joinCode.trim().length >= 3 ? '#fff' : 'rgba(0,0,0,0.45)',
+              border: 'none',
+              padding: '10px 22px',
+              fontSize: 12,
+              letterSpacing: '0.14em',
+              cursor: joinCode.trim().length >= 3 ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            JOIN →
+          </button>
         </div>
       </div>
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { subscribeDuelUpdates, getDuel } from '../src/utils/api';
+import { JupiterVerifiedBadge } from './JupiterVerifiedBadge';
 
 interface DuelWaitingViewProps {
   duelId: number;
@@ -20,6 +21,8 @@ interface DuelWaitingViewProps {
    */
   tokenSymbol?: string | null;
   tokenDecimals?: number | null;
+  /** Mint for SPL duels — drives the Jupiter Verified badge in the wager pill. */
+  tokenMint?: string | null;
   /**
    * v2.1 hybrid: pre-play state. Initial value indicates whether the
    * creator already banked their score before this mount (e.g. they came
@@ -49,7 +52,7 @@ function formatWager(entryFee: number, tokenSymbol?: string | null, tokenDecimal
   return `${(entryFee / 1_000_000_000).toFixed(2)} SOL`;
 }
 
-const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, shareCode, entryFee, isPublic, expiresAt, walletAddress, onDuelJoined, onCancel, onClaimRefund, onBack, tokenSymbol, tokenDecimals, creatorFinished: creatorFinishedInitial = false, onPlayNow, onResultsReady }) => {
+const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, shareCode, entryFee, isPublic, expiresAt, walletAddress, onDuelJoined, onCancel, onClaimRefund, onBack, tokenSymbol, tokenDecimals, tokenMint, creatorFinished: creatorFinishedInitial = false, onPlayNow, onResultsReady }) => {
   const wagerLabel = formatWager(entryFee, tokenSymbol, tokenDecimals);
   const [timeLeft, setTimeLeft] = useState('');
   const [expired, setExpired] = useState(false);
@@ -194,8 +197,10 @@ const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, sha
               ? 'Score Banked · Waiting for Opponent'
               : 'Waiting for Opponent'}
         </p>
-        <h2 className="text-3xl font-[1000] italic text-white uppercase tracking-tighter mb-2">
-          {wagerLabel} Duel
+        <h2 className="text-3xl font-[1000] italic text-white uppercase tracking-tighter mb-2 inline-flex items-center justify-center gap-2 w-full">
+          <span>{wagerLabel}</span>
+          <JupiterVerifiedBadge mint={tokenMint ?? null} size={18} />
+          <span>Duel</span>
         </h2>
         <p className="text-zinc-500 text-xs font-bold uppercase mb-1">
           {isPublic ? 'Public — visible in lobby' : 'Private — share link only'}

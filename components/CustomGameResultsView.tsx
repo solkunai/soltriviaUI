@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { JupiterVerifiedBadge } from './JupiterVerifiedBadge';
 import { toPng } from 'html-to-image';
 import { getReEntryFeeLamports } from '../src/utils/constants';
 import CustomGameShareCard, { getCustomGameTier } from './CustomGameShareCard';
@@ -262,6 +263,7 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
               }}
             >
               {prizePotSol.toFixed(2)} {tokenSymbol}
+              <JupiterVerifiedBadge mint={tokenMint} size={14} />
             </span>
             {formatTokenUsd(prizePotSol) && (
               <span className="block font-bold tabular-nums mt-1" style={{ color: 'rgba(255,215,0,0.6)', fontSize: 13 }}>

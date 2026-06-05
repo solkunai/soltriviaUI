@@ -185,19 +185,19 @@ const TermsOfServiceView: React.FC<TermsOfServiceViewProps> = ({ onBack }) => {
               <div>
                 <h3 className="st-uplabel text-[#14F195] text-sm mb-3 flex items-center gap-3">10.1 Overview</h3>
                 <p className="text-white font-medium text-sm leading-relaxed opacity-90">
-                  The Game Pass is a one-time purchase that unlocks premium features including unlimited practice plays, access to all question categories, and reduced custom-game creation fees. Game Pass pricing is displayed in USD and can be paid in <span className="text-[#14F195] font-black">SOL, USDC, SKR, or NERD</span>. The token amount is calculated at the time of purchase based on real-time market prices fetched from third-party APIs (primarily Jupiter Aggregator).
+                  The Game Pass is a subscription that unlocks premium features and bonus perks for as long as your subscription is active. Monthly ($10 USD / $6.50 Seeker) renews every 30 days. Annual ($85 USD / $55 Seeker) renews every 365 days. Renewing extends your current expiry. Game Pass purchases can be paid in <span className="text-[#14F195] font-black">SOL, USDC, SKR, or NERD</span>, calculated at the time of purchase based on real-time prices fetched from third-party APIs (primarily Jupiter Aggregator).
                 </p>
               </div>
               <div>
                 <h3 className="st-uplabel text-[#14F195] text-sm mb-3 flex items-center gap-3">10.2 Pricing & Payments</h3>
                 <p className="text-white font-medium text-sm leading-relaxed opacity-90">
-                  Game Pass costs $10 USD (or $6.50 USD for verified Seeker holders, reflecting the 35% Seeker discount). Payment is sent to the dedicated Game Pass / Lives revenue wallet. Game Pass purchases are non-refundable. Token prices are fetched from third-party price APIs and may fluctuate; the price shown at checkout is the price you pay. If a paid transaction does not confirm on-chain within a reasonable window, the purchase may be voided and the tokens returned to your wallet by the network.
+                  Monthly: $10 USD (or $6.50 USD for verified Seeker holders, reflecting the 35% Seeker discount). Annual: $85 USD (or $55 USD for Seeker). Payment is sent to the dedicated Game Pass / Lives revenue wallet. Game Pass purchases are non-refundable. Token prices are fetched from third-party price APIs and may fluctuate; the price shown at checkout is the price you pay. If a paid transaction does not confirm on-chain within a reasonable window, the purchase may be voided and the tokens returned to your wallet by the network.
                 </p>
               </div>
               <div>
                 <h3 className="st-uplabel text-[#14F195] text-sm mb-3 flex items-center gap-3">10.3 Benefits</h3>
                 <p className="text-white font-medium text-sm leading-relaxed opacity-90">
-                  Game Pass holders receive: unlimited practice plays (no daily limit), access to all question categories in practice mode, and free custom game creation (platform fee of 0.0025 SOL still applies). Game Pass benefits may be expanded or modified at our discretion with notice.
+                  Active Game Pass holders receive: <span className="text-[#14F195] font-black">+3 bonus lives on every purchase and renewal</span>, <span className="text-[#14F195] font-black">2x XP on quest rewards</span> (stacks with the round XP boost), <span className="text-[#14F195] font-black">daily streak protection</span> (auto-restores your streak once per 30 days if you miss a day), <span className="text-[#14F195] font-black">higher daily entry caps</span> (10 per round / 40 per 24 hours, vs the standard 5 / 20), <span className="text-[#14F195] font-black">free custom game creation</span> (skips the 0.005 SOL host fee, still pays the 0.0025 SOL platform fee), unlimited daily practice plays, access to all question categories in practice mode, 10% off all lives purchases (forever, stacks every purchase), and +25% XP on every round. Game Pass benefits may be expanded or modified at our discretion with notice. Pre-existing one-time Game Pass purchases are grandfathered as lifetime access and retain all benefits without expiry.
                 </p>
               </div>
             </div>
