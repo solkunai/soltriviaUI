@@ -20,7 +20,7 @@ import React, { useEffect, useState } from 'react';
 import { JupiterVerifiedBadge } from './JupiterVerifiedBadge';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import { useIsMobile } from '../src/hooks/useIsMobile';
-import { SOLANA_NETWORK, DEFAULT_AVATAR } from '../src/utils/constants';
+import { DEFAULT_AVATAR } from '../src/utils/constants';
 import { supabase } from '../src/utils/supabase';
 import {
   type ClaimablePayout,
@@ -179,12 +179,65 @@ function Icon({ name, size = 14, color = '#000' }: { name: string; size?: number
     ticket: <path d="M2 9a3 3 0 010 6v2a2 2 0 002 2h16a2 2 0 002-2v-2a3 3 0 010-6V7a2 2 0 00-2-2H4a2 2 0 00-2 2zM13 5v2M13 17v2M13 11v2" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />,
     // user-plus — matches sidebar Referrals icon exactly.
     'user-plus': <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0M19 8v6M22 11h-6" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />,
+    // gift — wrapped present box for UNCLAIMED PRIZES header. Box + lid +
+    // center ribbon + two bow loops. Lucide-style.
+    gift: (
+      <>
+        <path d="M20 12v10H4V12" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M2 7h20v5H2z" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M12 22V7" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z" fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" />
+        <path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z" fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" />
+      </>
+    ),
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24">
       {paths[name] ?? null}
     </svg>
   );
+}
+
+// ─── Recently-claimed persistence ────────────────────────────────────────
+// Why this exists: when a user successfully claims a prize/refund on-chain,
+// the row drops from the UI immediately (optimistic update). But on the next
+// poll or page revisit, the backend (e.g. fetchUnpaidRoundPayouts) might
+// still return that row because the indexer hasn't seen the claim tx yet.
+// Without this localStorage layer, the row REAPPEARS and the user re-clicks
+// CLAIM, which fails on-chain (AlreadyClaimed) and they get a confusing UI.
+//
+// Strategy: track claimed keys in localStorage scoped per wallet. Filter the
+// fetched lists through this set. Entries expire after 24h (by which point
+// the backend should be sync'd and the row will be excluded server-side).
+const RECENT_CLAIMS_TTL_MS = 24 * 60 * 60 * 1000;
+const recentClaimsKey = (wallet: string) => `soltrivia:recent-claims:${wallet}`;
+
+function readRecentClaims(wallet: string | null | undefined): Map<string, number> {
+  if (!wallet || typeof window === 'undefined') return new Map();
+  try {
+    const raw = window.localStorage.getItem(recentClaimsKey(wallet));
+    if (!raw) return new Map();
+    const arr = JSON.parse(raw) as Array<{ key: string; at: number }>;
+    const cutoff = Date.now() - RECENT_CLAIMS_TTL_MS;
+    return new Map(arr.filter((r) => r.at > cutoff).map((r) => [r.key, r.at]));
+  } catch {
+    return new Map();
+  }
+}
+
+function persistRecentClaims(wallet: string, claims: Map<string, number>) {
+  if (typeof window === 'undefined') return;
+  try {
+    const arr = Array.from(claims.entries()).map(([key, at]) => ({ key, at }));
+    window.localStorage.setItem(recentClaimsKey(wallet), JSON.stringify(arr));
+  } catch { /* localStorage quota / disabled — silently fail */ }
+}
+
+function markClaimed(wallet: string | null | undefined, key: string) {
+  if (!wallet) return;
+  const map = readRecentClaims(wallet);
+  map.set(key, Date.now());
+  persistRecentClaims(wallet, map);
 }
 
 const ProfileViewV2: React.FC<Props> = ({
@@ -326,9 +379,13 @@ const ProfileViewV2: React.FC<Props> = ({
 
       // v2.1 on-chain referral commission balance (PDA lamports).
       // Returns 0 if PDA never credited or V2.1 not on this cluster.
+      // Also: if the wallet recently claimed referral, force 0 so the card
+      // doesn't reappear before the on-chain PDA write propagates.
       fetchReferralBalance(connection, publicKey!)
         .then((lamports) => {
-          if (!cancelled) setReferralBalanceLamports(lamports);
+          if (cancelled) return;
+          const claimed = readRecentClaims(wallet);
+          setReferralBalanceLamports(claimed.has('referral-balance') ? 0 : lamports);
         })
         .catch(() => {
           // Silent — card just stays hidden if RPC blips.
@@ -513,12 +570,16 @@ const ProfileViewV2: React.FC<Props> = ({
         fetchClaimableRefundDuels(connection, wallet),
       ]);
       if (cancelled) return;
-      setRefundRounds(refRounds);
-      setRefundCustoms(refCustoms);
-      setRefundDuels(refDuels);
-      setRoundPayouts(rounds);
-      setDuelWins(duelCandidates);
-      setCustomWins(customCandidates);
+      // Filter the just-fetched lists through localStorage recent-claims set
+      // so anything the user already claimed (and the indexer hasn't sync'd
+      // yet) stays HIDDEN. Prevents "claim row reappears on refresh" UX bug.
+      const claimed = readRecentClaims(wallet);
+      setRefundRounds(refRounds.filter((e) => !claimed.has(`refund-round-${e.round_id}-${e.tier_index}`)));
+      setRefundCustoms(refCustoms.filter((c) => !claimed.has(`refund-custom-${c.on_chain_game_id}`)));
+      setRefundDuels(refDuels.filter((d) => !claimed.has(`refund-duel-${d.duel_id}`)));
+      setRoundPayouts(rounds.filter((p) => !claimed.has(`round-${p.round_id}-${p.rank}`)));
+      setDuelWins(duelCandidates.filter((d) => !claimed.has(`duel-${d.duel_id}`)));
+      setCustomWins(customCandidates.filter((c) => !claimed.has(`custom-${c.on_chain_game_id}`)));
     })();
     return () => {
       cancelled = true;
@@ -540,6 +601,9 @@ const ProfileViewV2: React.FC<Props> = ({
     setClaimingKey(key);
     try {
       await onClaimReferralBalance();
+      // Persist that this wallet has claimed referrals so the card stays
+      // hidden even if a stale balance read comes back before backend syncs.
+      markClaimed(publicKey?.toBase58() ?? null, key);
       // Refetch the on-chain balance — should now be 0.
       const wallet = publicKey;
       if (wallet) {
@@ -570,12 +634,19 @@ const ProfileViewV2: React.FC<Props> = ({
     }
   };
 
+  // Each claim handler: optimistically removes the row + persists the key
+  // to localStorage so it stays hidden across page revisits/polls until the
+  // backend syncs (24h TTL). Prevents the "claim button reappears, user
+  // clicks again, fails on-chain" UX bug.
+  const walletStr = publicKey?.toBase58() ?? null;
+
   const handleClaimRound = async (payout: ClaimablePayout) => {
     if (!onClaimRoundPrize) return;
     const key = `round-${payout.round_id}-${payout.rank}`;
     setClaimingKey(key);
     try {
       await onClaimRoundPrize(payout);
+      markClaimed(walletStr, key);
       setRoundPayouts((prev) =>
         prev.filter((p) => !(p.round_id === payout.round_id && p.rank === payout.rank))
       );
@@ -585,7 +656,6 @@ const ProfileViewV2: React.FC<Props> = ({
   };
 
   const handleClaimDuel = async (duel: MyDuelWin) => {
-    // Branch SOL vs SPL based on token_mint on the win row.
     const splMint = (duel as { token_mint?: string | null }).token_mint;
     const useSpl = !!splMint && !!onClaimDuelSplPrize;
     if (!useSpl && !onClaimDuelPrize) return;
@@ -594,6 +664,7 @@ const ProfileViewV2: React.FC<Props> = ({
     try {
       if (useSpl) await onClaimDuelSplPrize!(duel.duel_id, splMint!);
       else await onClaimDuelPrize!(duel.duel_id);
+      markClaimed(walletStr, key);
       setDuelWins((prev) => prev.filter((d) => d.duel_id !== duel.duel_id));
     } finally {
       setClaimingKey(null);
@@ -601,7 +672,6 @@ const ProfileViewV2: React.FC<Props> = ({
   };
 
   const handleClaimCustom = async (win: ClaimableCustomGameWin) => {
-    // Branch SOL vs SPL based on token_mint on the win row.
     const splMint = win.token_mint;
     const useSpl = !!splMint && !!onClaimCustomSplPrize;
     if (!useSpl && !onClaimCustomPrize) return;
@@ -610,6 +680,7 @@ const ProfileViewV2: React.FC<Props> = ({
     try {
       if (useSpl) await onClaimCustomSplPrize!(win.on_chain_game_id, splMint!);
       else await onClaimCustomPrize!(win.on_chain_game_id);
+      markClaimed(walletStr, key);
       setCustomWins((prev) =>
         prev.filter((c) => c.on_chain_game_id !== win.on_chain_game_id)
       );
@@ -624,6 +695,7 @@ const ProfileViewV2: React.FC<Props> = ({
     setClaimingKey(key);
     try {
       await onClaimRoundRefund(entry);
+      markClaimed(walletStr, key);
       setRefundRounds((prev) =>
         prev.filter((e) => !(e.round_id === entry.round_id && e.tier_index === entry.tier_index))
       );
@@ -638,6 +710,7 @@ const ProfileViewV2: React.FC<Props> = ({
     setClaimingKey(key);
     try {
       await onClaimCustomRefund(cg.on_chain_game_id);
+      markClaimed(walletStr, key);
       setRefundCustoms((prev) => prev.filter((c) => c.on_chain_game_id !== cg.on_chain_game_id));
     } finally {
       setClaimingKey(null);
@@ -650,6 +723,7 @@ const ProfileViewV2: React.FC<Props> = ({
     setClaimingKey(key);
     try {
       await onClaimDuelRefund(d.duel_id, publicKey.toBase58());
+      markClaimed(walletStr, key);
       setRefundDuels((prev) => prev.filter((x) => x.duel_id !== d.duel_id));
     } finally {
       setClaimingKey(null);
@@ -704,7 +778,6 @@ const ProfileViewV2: React.FC<Props> = ({
   const streakDays = streakFinal != null ? streakFinal : 0;
   const topFinishes = topFinishesFinal != null ? topFinishesFinal : 0;
   const joinedLabel = formatJoined(joinedFinal);
-  const networkLabel = SOLANA_NETWORK === 'devnet' ? 'DEVNET' : 'MAINNET';
 
   const baseLabel: React.CSSProperties = {
     fontFamily: '"Saira Condensed", "Bebas Neue", system-ui, sans-serif',
@@ -743,19 +816,6 @@ const ProfileViewV2: React.FC<Props> = ({
               {username || '@YOU'}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-              <span
-                style={{
-                  ...baseLabel,
-                  fontSize: 9,
-                  background: 'rgba(0,0,0,0.85)',
-                  color: C.primary,
-                  padding: '4px 10px',
-                  borderRadius: 999,
-                  letterSpacing: '0.14em',
-                }}
-              >
-                {networkLabel}
-              </span>
               <button
                 onClick={copyWallet}
                 style={{
@@ -808,20 +868,25 @@ const ProfileViewV2: React.FC<Props> = ({
           style={{
             marginTop: 18,
             paddingTop: 14,
+            // Padding-left clears the avatar (88x88 + 5px pad + 28px left offset
+            // = 121px wide overlap). Stats now start to the right of the PFP so
+            // STREAK + FINISHES no longer hide behind it.
+            paddingLeft: 124,
             borderTop: '1.5px dashed rgba(0,0,0,0.22)',
             display: 'flex',
             flexWrap: 'wrap',
             gap: 24,
+            rowGap: 8,
           }}
         >
-          <div style={{ ...baseLabel, fontSize: 9, opacity: 0.7 }}>
-            JOINED <b style={{ color: '#000' }}>{joinedLabel}</b>
+          <div style={{ ...baseLabel, fontSize: 11, opacity: 0.85 }}>
+            JOINED <b style={{ color: '#000', fontWeight: 900 }}>{joinedLabel}</b>
           </div>
-          <div style={{ ...baseLabel, fontSize: 9, opacity: 0.7 }}>
-            🔥 <b style={{ color: '#000' }}>{streakDays}-DAY STREAK</b>
+          <div style={{ ...baseLabel, fontSize: 11, opacity: 0.85 }}>
+            🔥 <b style={{ color: '#000', fontWeight: 900 }}>{streakDays}-DAY STREAK</b>
           </div>
-          <div style={{ ...baseLabel, fontSize: 9, opacity: 0.7 }}>
-            🏆 <b style={{ color: '#000' }}>{topFinishes} TOP-3 FINISHES</b>
+          <div style={{ ...baseLabel, fontSize: 11, opacity: 0.85 }}>
+            🏆 <b style={{ color: '#000', fontWeight: 900 }}>{topFinishes} TOP-3 FINISHES</b>
           </div>
         </div>
         {/* 2. Avatar floats over the bottom-left edge — click to upload */}
@@ -856,15 +921,19 @@ const ProfileViewV2: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Pending claims — only renders when wallet has unclaimed prizes */}
-      {hasAnyClaims && (
+      {/* Pending claims — each TYPE gets its own colored card so the visual
+          identity at a glance matches the claim type. Green = round, red =
+          duel, blue = custom, gold = referral. Replaces the single mega-card
+          where everything bled together. */}
+      {/* ─── ROUND WINNINGS (GREEN) ─────────────────────────────────────── */}
+      {roundPayouts.length > 0 && (
         <div
           style={{
             background: C.surfaceUp,
-            border: `1px solid ${C.gold}55`,
+            border: `1px solid ${C.primary}55`,
             borderRadius: 14,
             overflow: 'hidden',
-            marginBottom: 18,
+            marginBottom: 12,
           }}
         >
           <div
@@ -875,32 +944,25 @@ const ProfileViewV2: React.FC<Props> = ({
               alignItems: 'center',
               justifyContent: 'space-between',
               gap: 12,
-              background: `linear-gradient(110deg, ${C.gold}1a, transparent 60%)`,
+              background: `linear-gradient(110deg, ${C.primary}1a, transparent 60%)`,
             }}
           >
             <div>
-              <div style={{ ...baseLabel, fontSize: 10, color: C.gold, letterSpacing: '0.18em' }}>
-                ● UNCLAIMED PRIZES
+              <div style={{ ...baseLabel, fontSize: 10, color: C.primary, letterSpacing: '0.18em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Icon name="gift" size={13} color="#fff" />
+                ROUND WINNINGS
               </div>
-              <div
-                style={{
-                  ...display,
-                  fontSize: 22,
-                  color: '#fff',
-                  marginTop: 4,
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                +{(totalClaimableLamports / 1_000_000_000).toFixed(4)}{' '}
-                <span style={{ fontSize: 12, color: C.gold }}>SOL</span>
+              <div style={{ ...display, fontSize: 22, color: '#fff', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+                +{(roundPayouts.reduce((s, p) => s + p.prize_lamports, 0) / 1_000_000_000).toFixed(4)}{' '}
+                <span style={{ fontSize: 12, color: C.primary }}>SOL</span>
               </div>
             </div>
-            <div style={{ ...baseLabel, fontSize: 10, color: C.gold }}>
-              {roundPayouts.length + duelWins.length + customWins.length + (referralBalanceLamports > 0 ? 1 : 0)} READY
+            <div style={{ ...baseLabel, fontSize: 10, color: C.primary }}>
+              {roundPayouts.length} READY
             </div>
           </div>
 
-          {/* Round payouts */}
+          {/* Round payout rows */}
           {roundPayouts.map((p, i) => {
             const key = `round-${p.round_id}-${p.rank}`;
             const isClaiming = claimingKey === key;
@@ -921,13 +983,13 @@ const ProfileViewV2: React.FC<Props> = ({
                     width: 28,
                     height: 28,
                     borderRadius: 6,
-                    background: C.gold,
+                    background: C.primary,
                     display: 'grid',
                     placeItems: 'center',
                     flexShrink: 0,
                   }}
                 >
-                  <Icon name="trophy" size={14} color="#000" />
+                  <Icon name="gift" size={14} color="#000" />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ ...baseLabel, fontSize: 11, color: '#fff' }}>
@@ -952,7 +1014,7 @@ const ProfileViewV2: React.FC<Props> = ({
                     ...baseLabel,
                     appearance: 'none',
                     border: 'none',
-                    background: C.gold,
+                    background: C.primary,
                     color: '#000',
                     fontSize: 11,
                     padding: '8px 16px',
@@ -967,9 +1029,48 @@ const ProfileViewV2: React.FC<Props> = ({
               </div>
             );
           })}
+        </div>
+      )}
 
-          {/* Duel wins */}
-          {duelWins.map((d) => {
+      {/* ─── DUEL WINNINGS (RED) ─────────────────────────────────────────── */}
+      {duelWins.length > 0 && (
+        <div
+          style={{
+            background: C.surfaceUp,
+            border: `1px solid ${C.red}55`,
+            borderRadius: 14,
+            overflow: 'hidden',
+            marginBottom: 12,
+          }}
+        >
+          <div
+            style={{
+              padding: '14px 18px',
+              borderBottom: `1px solid ${C.borderLight}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              background: `linear-gradient(110deg, ${C.red}1a, transparent 60%)`,
+            }}
+          >
+            <div>
+              <div style={{ ...baseLabel, fontSize: 10, color: C.red, letterSpacing: '0.18em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Icon name="gift" size={13} color="#fff" />
+                DUEL WINNINGS
+              </div>
+              <div style={{ ...display, fontSize: 22, color: '#fff', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+                +{(duelWins.reduce((s, d) => s + d.total_pot_lamports, 0) / 1_000_000_000).toFixed(4)}{' '}
+                <span style={{ fontSize: 12, color: C.red }}>SOL</span>
+              </div>
+            </div>
+            <div style={{ ...baseLabel, fontSize: 10, color: C.red }}>
+              {duelWins.length} READY
+            </div>
+          </div>
+
+          {/* Duel win rows */}
+          {duelWins.map((d, i) => {
             const key = `duel-${d.duel_id}`;
             const isClaiming = claimingKey === key;
             const otherClaiming = claimingKey !== null && claimingKey !== key;
@@ -986,7 +1087,7 @@ const ProfileViewV2: React.FC<Props> = ({
                   alignItems: 'center',
                   padding: '12px 18px',
                   gap: 12,
-                  borderTop: `1px solid ${C.borderLight}`,
+                  borderTop: i === 0 ? 'none' : `1px solid ${C.borderLight}`,
                 }}
               >
                 <div
@@ -1000,7 +1101,7 @@ const ProfileViewV2: React.FC<Props> = ({
                     flexShrink: 0,
                   }}
                 >
-                  <Icon name="swords" size={14} color="#000" />
+                  <Icon name="gift" size={14} color="#000" />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ ...baseLabel, fontSize: 11, color: '#fff' }}>
@@ -1025,7 +1126,7 @@ const ProfileViewV2: React.FC<Props> = ({
                     ...baseLabel,
                     appearance: 'none',
                     border: 'none',
-                    background: C.gold,
+                    background: C.red,
                     color: '#000',
                     fontSize: 11,
                     padding: '8px 16px',
@@ -1040,9 +1141,48 @@ const ProfileViewV2: React.FC<Props> = ({
               </div>
             );
           })}
+        </div>
+      )}
 
-          {/* Custom game wins */}
-          {customWins.map((c) => {
+      {/* ─── CUSTOM GAME WINNINGS (BLUE) ─────────────────────────────────── */}
+      {customWins.length > 0 && (
+        <div
+          style={{
+            background: C.surfaceUp,
+            border: `1px solid ${C.blue}55`,
+            borderRadius: 14,
+            overflow: 'hidden',
+            marginBottom: 12,
+          }}
+        >
+          <div
+            style={{
+              padding: '14px 18px',
+              borderBottom: `1px solid ${C.borderLight}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              background: `linear-gradient(110deg, ${C.blue}1a, transparent 60%)`,
+            }}
+          >
+            <div>
+              <div style={{ ...baseLabel, fontSize: 10, color: C.blue, letterSpacing: '0.18em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Icon name="gift" size={13} color="#fff" />
+                CUSTOM GAME WINNINGS
+              </div>
+              <div style={{ ...display, fontSize: 22, color: '#fff', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+                +{(customWins.reduce((s, c) => s + c.prize_lamports, 0) / 1_000_000_000).toFixed(4)}{' '}
+                <span style={{ fontSize: 12, color: C.blue }}>SOL</span>
+              </div>
+            </div>
+            <div style={{ ...baseLabel, fontSize: 10, color: C.blue }}>
+              {customWins.length} READY
+            </div>
+          </div>
+
+          {/* Custom game win rows */}
+          {customWins.map((c, i) => {
             const key = `custom-${c.on_chain_game_id}`;
             const isClaiming = claimingKey === key;
             const otherClaiming = claimingKey !== null && claimingKey !== key;
@@ -1054,7 +1194,7 @@ const ProfileViewV2: React.FC<Props> = ({
                   alignItems: 'center',
                   padding: '12px 18px',
                   gap: 12,
-                  borderTop: `1px solid ${C.borderLight}`,
+                  borderTop: i === 0 ? 'none' : `1px solid ${C.borderLight}`,
                 }}
               >
                 <div
@@ -1068,7 +1208,7 @@ const ProfileViewV2: React.FC<Props> = ({
                     flexShrink: 0,
                   }}
                 >
-                  <Icon name="sparkles" size={14} color="#000" />
+                  <Icon name="gift" size={14} color="#000" />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ ...baseLabel, fontSize: 11, color: '#fff' }}>
@@ -1102,7 +1242,7 @@ const ProfileViewV2: React.FC<Props> = ({
                     ...baseLabel,
                     appearance: 'none',
                     border: 'none',
-                    background: C.gold,
+                    background: C.blue,
                     color: '#000',
                     fontSize: 11,
                     padding: '8px 16px',
@@ -1118,91 +1258,22 @@ const ProfileViewV2: React.FC<Props> = ({
             );
           })}
 
-          {/* Referral commission (v2.1 on-chain PDA). Renders only when balance > 0. */}
-          {referralBalanceLamports > 0 && (() => {
-            const key = 'referral-balance';
-            const isClaiming = claimingKey === key;
-            const otherClaiming = claimingKey !== null && claimingKey !== key;
-            return (
-              <div
-                key={key}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '12px 18px',
-                  gap: 12,
-                  borderTop: `1px solid ${C.borderLight}`,
-                }}
-              >
-                <div
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 6,
-                    background: C.gold,
-                    display: 'grid',
-                    placeItems: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  <Icon name="sparkles" size={14} color="#000" />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ ...baseLabel, fontSize: 11, color: '#fff' }}>
-                    REFERRAL EARNINGS
-                  </div>
-                  <div
-                    style={{
-                      ...baseLabel,
-                      fontSize: 10,
-                      color: C.gold,
-                      marginTop: 2,
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    +{(referralBalanceLamports / 1_000_000_000).toFixed(4)} SOL · COMMISSIONS
-                  </div>
-                </div>
-                <button
-                  onClick={handleClaimReferral}
-                  disabled={isClaiming || otherClaiming || !onClaimReferralBalance}
-                  style={{
-                    ...baseLabel,
-                    appearance: 'none',
-                    border: 'none',
-                    background: C.gold,
-                    color: '#000',
-                    fontSize: 11,
-                    padding: '8px 16px',
-                    borderRadius: 999,
-                    cursor: isClaiming || otherClaiming || !onClaimReferralBalance ? 'not-allowed' : 'pointer',
-                    opacity: isClaiming || otherClaiming || !onClaimReferralBalance ? 0.5 : 1,
-                    flexShrink: 0,
-                  }}
-                >
-                  {isClaiming ? 'CLAIMING…' : 'CLAIM'}
-                </button>
-              </div>
-            );
-          })()}
         </div>
       )}
 
-      {/* Refunds available — entries from rounds w/ <5 finishers, expired customs, no-opponent duels */}
-      {(refundRounds.length + refundCustoms.length + refundDuels.length > 0) && (() => {
-        const totalRefundLamports =
-          refundRounds.reduce((s, e) => s + e.entry_fee_lamports, 0) +
-          refundCustoms.reduce((s, c) => s + c.entry_fee_lamports, 0) +
-          refundDuels.reduce((s, d) => s + d.entry_fee_lamports, 0);
-        const totalRefunds = refundRounds.length + refundCustoms.length + refundDuels.length;
+      {/* ─── REFERRAL EARNINGS (GOLD) ────────────────────────────────────── */}
+      {referralBalanceLamports > 0 && (() => {
+        const key = 'referral-balance';
+        const isClaiming = claimingKey === key;
+        const otherClaiming = claimingKey !== null && claimingKey !== key;
         return (
           <div
             style={{
               background: C.surfaceUp,
-              border: `1px solid ${C.blue}55`,
+              border: `1px solid ${C.gold}55`,
               borderRadius: 14,
               overflow: 'hidden',
-              marginBottom: 18,
+              marginBottom: 12,
             }}
           >
             <div
@@ -1213,33 +1284,125 @@ const ProfileViewV2: React.FC<Props> = ({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: 12,
-                background: `linear-gradient(110deg, ${C.blue}1a, transparent 60%)`,
+                background: `linear-gradient(110deg, ${C.gold}1a, transparent 60%)`,
               }}
             >
               <div>
-                <div style={{ ...baseLabel, fontSize: 10, color: C.blue, letterSpacing: '0.18em' }}>
-                  ● REFUNDS AVAILABLE
+                <div style={{ ...baseLabel, fontSize: 10, color: C.gold, letterSpacing: '0.18em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Icon name="gift" size={13} color="#fff" />
+                  REFERRAL EARNINGS
+                </div>
+                <div style={{ ...display, fontSize: 22, color: '#fff', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+                  +{(referralBalanceLamports / 1_000_000_000).toFixed(4)}{' '}
+                  <span style={{ fontSize: 12, color: C.gold }}>SOL</span>
+                </div>
+              </div>
+              <div style={{ ...baseLabel, fontSize: 10, color: C.gold }}>
+                1 READY
+              </div>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '12px 18px',
+                gap: 12,
+              }}
+            >
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  background: C.gold,
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Icon name="gift" size={14} color="#000" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ ...baseLabel, fontSize: 11, color: '#fff' }}>
+                  COMMISSIONS EARNED
                 </div>
                 <div
                   style={{
-                    ...display,
-                    fontSize: 22,
-                    color: '#fff',
-                    marginTop: 4,
+                    ...baseLabel,
+                    fontSize: 10,
+                    color: C.gold,
+                    marginTop: 2,
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  +{(totalRefundLamports / 1_000_000_000).toFixed(4)}{' '}
-                  <span style={{ fontSize: 12, color: C.blue }}>SOL</span>
+                  +{(referralBalanceLamports / 1_000_000_000).toFixed(4)} SOL · ON-CHAIN PDA
                 </div>
               </div>
-              <div style={{ ...baseLabel, fontSize: 10, color: C.blue }}>
-                {totalRefunds} READY
+              <button
+                onClick={handleClaimReferral}
+                disabled={isClaiming || otherClaiming || !onClaimReferralBalance}
+                style={{
+                  ...baseLabel,
+                  appearance: 'none',
+                  border: 'none',
+                  background: C.gold,
+                  color: '#000',
+                  fontSize: 11,
+                  padding: '8px 16px',
+                  borderRadius: 999,
+                  cursor: isClaiming || otherClaiming || !onClaimReferralBalance ? 'not-allowed' : 'pointer',
+                  opacity: isClaiming || otherClaiming || !onClaimReferralBalance ? 0.5 : 1,
+                  flexShrink: 0,
+                }}
+              >
+                {isClaiming ? 'CLAIMING…' : 'CLAIM'}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Refunds — split per type, same color-coding logic as the wins:
+          green = round refund, blue = custom refund, red = duel refund. */}
+      {/* ─── ROUND REFUNDS (GREEN) ───────────────────────────────────────── */}
+      {refundRounds.length > 0 && (
+        <div
+          style={{
+            background: C.surfaceUp,
+            border: `1px solid ${C.primary}55`,
+            borderRadius: 14,
+            overflow: 'hidden',
+            marginBottom: 12,
+          }}
+        >
+          <div
+            style={{
+              padding: '14px 18px',
+              borderBottom: `1px solid ${C.borderLight}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              background: `linear-gradient(110deg, ${C.primary}1a, transparent 60%)`,
+            }}
+          >
+            <div>
+              <div style={{ ...baseLabel, fontSize: 10, color: C.primary, letterSpacing: '0.18em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <img src="/refund.png" alt="" style={{ width: 13, height: 13, display: 'inline-block', verticalAlign: 'middle', filter: 'brightness(0) invert(1)' }} />
+                ROUND REFUNDS
+              </div>
+              <div style={{ ...display, fontSize: 22, color: '#fff', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+                +{(refundRounds.reduce((s, e) => s + e.entry_fee_lamports, 0) / 1_000_000_000).toFixed(4)}{' '}
+                <span style={{ fontSize: 12, color: C.primary }}>SOL</span>
               </div>
             </div>
+            <div style={{ ...baseLabel, fontSize: 10, color: C.primary }}>
+              {refundRounds.length} READY
+            </div>
+          </div>
 
-            {/* Round refunds (rounds with <5 finishers) */}
-            {refundRounds.map((e, i) => {
+          {/* Round refund rows */}
+          {refundRounds.map((e, i) => {
               const key = `refund-round-${e.round_id}-${e.tier_index}`;
               const isClaiming = claimingKey === key;
               const otherClaiming = claimingKey !== null && claimingKey !== key;
@@ -1259,13 +1422,13 @@ const ProfileViewV2: React.FC<Props> = ({
                       width: 28,
                       height: 28,
                       borderRadius: 6,
-                      background: C.blue,
+                      background: C.primary,
                       display: 'grid',
                       placeItems: 'center',
                       flexShrink: 0,
                     }}
                   >
-                    <Icon name="trophy" size={14} color="#000" />
+                    <img src="/refund.png" alt="Refund" style={{ width: 18, height: 18, display: 'block' }} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ ...baseLabel, fontSize: 11, color: '#fff' }}>
@@ -1290,7 +1453,7 @@ const ProfileViewV2: React.FC<Props> = ({
                       ...baseLabel,
                       appearance: 'none',
                       border: 'none',
-                      background: C.blue,
+                      background: C.primary,
                       color: '#000',
                       fontSize: 11,
                       padding: '8px 16px',
@@ -1305,9 +1468,48 @@ const ProfileViewV2: React.FC<Props> = ({
                 </div>
               );
             })}
+        </div>
+      )}
 
-            {/* Custom game refunds (expired) */}
-            {refundCustoms.map((cg) => {
+      {/* ─── CUSTOM GAME REFUNDS (BLUE) ──────────────────────────────────── */}
+      {refundCustoms.length > 0 && (
+        <div
+          style={{
+            background: C.surfaceUp,
+            border: `1px solid ${C.blue}55`,
+            borderRadius: 14,
+            overflow: 'hidden',
+            marginBottom: 12,
+          }}
+        >
+          <div
+            style={{
+              padding: '14px 18px',
+              borderBottom: `1px solid ${C.borderLight}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              background: `linear-gradient(110deg, ${C.blue}1a, transparent 60%)`,
+            }}
+          >
+            <div>
+              <div style={{ ...baseLabel, fontSize: 10, color: C.blue, letterSpacing: '0.18em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <img src="/refund.png" alt="" style={{ width: 13, height: 13, display: 'inline-block', verticalAlign: 'middle', filter: 'brightness(0) invert(1)' }} />
+                CUSTOM GAME REFUNDS
+              </div>
+              <div style={{ ...display, fontSize: 22, color: '#fff', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+                +{(refundCustoms.reduce((s, c) => s + c.entry_fee_lamports, 0) / 1_000_000_000).toFixed(4)}{' '}
+                <span style={{ fontSize: 12, color: C.blue }}>SOL</span>
+              </div>
+            </div>
+            <div style={{ ...baseLabel, fontSize: 10, color: C.blue }}>
+              {refundCustoms.length} READY
+            </div>
+          </div>
+
+          {/* Custom refund rows */}
+          {refundCustoms.map((cg, i) => {
               const key = `refund-custom-${cg.on_chain_game_id}`;
               const isClaiming = claimingKey === key;
               const otherClaiming = claimingKey !== null && claimingKey !== key;
@@ -1319,7 +1521,7 @@ const ProfileViewV2: React.FC<Props> = ({
                     alignItems: 'center',
                     padding: '12px 18px',
                     gap: 12,
-                    borderTop: `1px solid ${C.borderLight}`,
+                    borderTop: i === 0 ? 'none' : `1px solid ${C.borderLight}`,
                   }}
                 >
                   <div
@@ -1333,7 +1535,7 @@ const ProfileViewV2: React.FC<Props> = ({
                       flexShrink: 0,
                     }}
                   >
-                    <Icon name="sparkles" size={14} color="#000" />
+                    <img src="/refund.png" alt="Refund" style={{ width: 18, height: 18, display: 'block' }} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ ...baseLabel, fontSize: 11, color: '#fff' }}>
@@ -1373,9 +1575,48 @@ const ProfileViewV2: React.FC<Props> = ({
                 </div>
               );
             })}
+        </div>
+      )}
 
-            {/* Duel refunds (no opponent joined before expiry) */}
-            {refundDuels.map((d) => {
+      {/* ─── DUEL REFUNDS (RED) ──────────────────────────────────────────── */}
+      {refundDuels.length > 0 && (
+        <div
+          style={{
+            background: C.surfaceUp,
+            border: `1px solid ${C.red}55`,
+            borderRadius: 14,
+            overflow: 'hidden',
+            marginBottom: 12,
+          }}
+        >
+          <div
+            style={{
+              padding: '14px 18px',
+              borderBottom: `1px solid ${C.borderLight}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              background: `linear-gradient(110deg, ${C.red}1a, transparent 60%)`,
+            }}
+          >
+            <div>
+              <div style={{ ...baseLabel, fontSize: 10, color: C.red, letterSpacing: '0.18em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <img src="/refund.png" alt="" style={{ width: 13, height: 13, display: 'inline-block', verticalAlign: 'middle', filter: 'brightness(0) invert(1)' }} />
+                DUEL REFUNDS
+              </div>
+              <div style={{ ...display, fontSize: 22, color: '#fff', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+                +{(refundDuels.reduce((s, d) => s + d.entry_fee_lamports, 0) / 1_000_000_000).toFixed(4)}{' '}
+                <span style={{ fontSize: 12, color: C.red }}>SOL</span>
+              </div>
+            </div>
+            <div style={{ ...baseLabel, fontSize: 10, color: C.red }}>
+              {refundDuels.length} READY
+            </div>
+          </div>
+
+          {/* Duel refund rows */}
+          {refundDuels.map((d, i) => {
               const key = `refund-duel-${d.duel_id}`;
               const isClaiming = claimingKey === key;
               const otherClaiming = claimingKey !== null && claimingKey !== key;
@@ -1387,7 +1628,7 @@ const ProfileViewV2: React.FC<Props> = ({
                     alignItems: 'center',
                     padding: '12px 18px',
                     gap: 12,
-                    borderTop: `1px solid ${C.borderLight}`,
+                    borderTop: i === 0 ? 'none' : `1px solid ${C.borderLight}`,
                   }}
                 >
                   <div
@@ -1395,13 +1636,13 @@ const ProfileViewV2: React.FC<Props> = ({
                       width: 28,
                       height: 28,
                       borderRadius: 6,
-                      background: C.blue,
+                      background: C.red,
                       display: 'grid',
                       placeItems: 'center',
                       flexShrink: 0,
                     }}
                   >
-                    <Icon name="swords" size={14} color="#000" />
+                    <img src="/refund.png" alt="Refund" style={{ width: 18, height: 18, display: 'block' }} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ ...baseLabel, fontSize: 11, color: '#fff' }}>
@@ -1411,7 +1652,7 @@ const ProfileViewV2: React.FC<Props> = ({
                       style={{
                         ...baseLabel,
                         fontSize: 10,
-                        color: C.blue,
+                        color: C.red,
                         marginTop: 2,
                         fontVariantNumeric: 'tabular-nums',
                       }}
@@ -1426,7 +1667,7 @@ const ProfileViewV2: React.FC<Props> = ({
                       ...baseLabel,
                       appearance: 'none',
                       border: 'none',
-                      background: C.blue,
+                      background: C.red,
                       color: '#000',
                       fontSize: 11,
                       padding: '8px 16px',
@@ -1441,9 +1682,8 @@ const ProfileViewV2: React.FC<Props> = ({
                 </div>
               );
             })}
-          </div>
-        );
-      })()}
+        </div>
+      )}
 
       {/* 3. Big colored stats — solid colored backgrounds, no borders.
           5-up on desktop, 2-up on mobile so the numbers stay legible. */}

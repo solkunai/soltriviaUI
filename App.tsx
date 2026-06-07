@@ -114,7 +114,8 @@ import DuelWaitingView from './components/DuelWaitingView';
 import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
 import CompeteLobbyView from './components/CompeteLobbyView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, buildRoundEntryTx, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, updateDuelStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type ActiveDuel } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, buildRoundEntryTx, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, updateDuelStatus, getOnboardingStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type ActiveDuel } from './src/utils/api';
+import OnboardingModal from './components/OnboardingModal';
 import { fetchUnpaidRoundPayouts, fetchUnclaimedCustomWins, fetchClaimableRefundEntries, fetchClaimableRefundCustoms } from './src/utils/claims';
 import { REVENUE_WALLET, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, getReEntryFeeLamports } from './src/utils/constants';
 import {
@@ -189,6 +190,13 @@ const App: React.FC = () => {
   
   // Seeker Genesis Token verification status (for discounted lives pricing)
   const [isSeekerVerified, setIsSeekerVerified] = useState(false);
+  // Onboarding modal gate (v2.1, 2026-06-05). When a NEW wallet connects
+  // (or any wallet whose profile lacks onboarded_at), we render
+  // OnboardingModal on top of everything until they finish age + ToS + name.
+  // Existing players were grandfathered via the migration so they skip this.
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [onboardingSeekerDomain, setOnboardingSeekerDomain] = useState<string | null>(null);
+  const [onboardingPendingRef, setOnboardingPendingRef] = useState<string | null>(null);
 
   // Game Pass state (unlocks premium practice categories)
   const [hasGamePass, setHasGamePass] = useState(false);
@@ -464,6 +472,37 @@ const App: React.FC = () => {
     const t = setTimeout(() => setFreeEntryNotification(null), 5000);
     return () => clearTimeout(t);
   }, [freeEntryNotification]);
+
+  // Onboarding gate — fires once per wallet connect. If the profile lacks
+  // `onboarded_at`, we surface the 3-step modal. Pre-fills referral input
+  // with any code captured from `?ref=X` so the user sees who referred them.
+  useEffect(() => {
+    if (!connected || !publicKey) {
+      setNeedsOnboarding(false);
+      setOnboardingSeekerDomain(null);
+      setOnboardingPendingRef(null);
+      return;
+    }
+    const walletAddr = publicKey.toBase58();
+    let cancelled = false;
+    getOnboardingStatus(walletAddr)
+      .then((status) => {
+        if (cancelled || currentWalletRef.current !== walletAddr) return;
+        setNeedsOnboarding(status.needsOnboarding);
+        setOnboardingSeekerDomain(status.seekerDomain);
+        try {
+          const stored = localStorage.getItem('soltrivia_referral_code');
+          setOnboardingPendingRef(stored?.trim() || null);
+        } catch {
+          setOnboardingPendingRef(null);
+        }
+      })
+      .catch(() => {
+        // Defensive: never block the app behind a transient failure here.
+        if (!cancelled) setNeedsOnboarding(false);
+      });
+    return () => { cancelled = true; };
+  }, [connected, publicKey]);
 
   // Fetch Seeker verification status + Game Pass when wallet connects
   useEffect(() => {
@@ -3098,6 +3137,28 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#050505] overflow-hidden text-white selection:bg-[#00FFA3] selection:text-black">
+      {/* First-connect onboarding modal — gates new wallets until age + ToS
+          + username are confirmed. Pre-fills the referral input from any
+          ?ref=X code we caught. Renders above EVERYTHING (z-index 400). */}
+      {needsOnboarding && connected && publicKey && (
+        <OnboardingModal
+          walletAddress={publicKey.toBase58()}
+          seekerDomain={onboardingSeekerDomain}
+          initialReferralCode={onboardingPendingRef}
+          onComplete={({ username, referralRegistered }) => {
+            setNeedsOnboarding(false);
+            // Reflect the new username in the profile state so the topbar +
+            // profile page update immediately without a hard refresh.
+            setProfile((prev) => ({ ...prev, username }));
+            // Clear the captured ref code regardless of whether the modal
+            // registered it (the existing App.tsx referral effect may have
+            // beaten the modal to it; either way the code is now consumed).
+            if (referralRegistered) {
+              try { localStorage.removeItem('soltrivia_referral_code'); } catch {}
+            }
+          }}
+        />
+      )}
       {!hideSidebar && <Sidebar currentView={currentView} setView={handleViewChange} />}
 
       <main className="flex-1 overflow-y-auto relative h-full scroll-smooth flex flex-col pb-[100px] md:pb-0 safe-bottom">

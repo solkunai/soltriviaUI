@@ -652,6 +652,182 @@ export async function updateProfile(
   return response.json();
 }
 
+/** Live username availability check. Case-insensitive. Returns true if the
+ *  name is free (no other wallet currently holds it). Empty / too short / too
+ *  long usernames are treated as "not available" so callers don't have to
+ *  duplicate the format check. Optionally excludes a wallet from the search
+ *  so the user can keep their own current name without it being flagged. */
+export async function checkUsernameAvailable(
+  username: string,
+  excludeWallet?: string,
+): Promise<boolean> {
+  if (!isSupabaseConfigured) return true; // fail-open in dev so UI isn't gated
+  const trimmed = (username || '').trim();
+  if (trimmed.length < 2 || trimmed.length > 24) return false;
+  let query = supabase
+    .from('player_profiles')
+    .select('wallet_address', { count: 'exact', head: true })
+    .ilike('username', trimmed);
+  if (excludeWallet) {
+    query = query.neq('wallet_address', excludeWallet);
+  }
+  const { count, error } = await query;
+  if (error) return true; // fail-open on RPC blip; EF will reject if actually taken
+  return (count ?? 0) === 0;
+}
+
+// ─── Onboarding flow (v2.1, 2026-06-05) ─────────────────────────────────────
+// First-connect modal stamps three timestamps on player_profiles:
+//   age_verified_at, tos_accepted_at, onboarded_at.
+// Pre-existing players are auto-grandfathered via the migration so they
+// don't see the modal on next visit. Defensive: also auto-grandfather if
+// the row exists but row.created_at is older than 24h (joined long ago).
+
+export interface OnboardingStatus {
+  needsOnboarding: boolean;
+  seekerDomain: string | null;
+}
+
+export async function getOnboardingStatus(walletAddress: string): Promise<OnboardingStatus> {
+  if (!isSupabaseConfigured || !walletAddress?.trim()) {
+    return { needsOnboarding: false, seekerDomain: null };
+  }
+  const { data, error } = await supabase
+    .from('player_profiles')
+    .select('onboarded_at, created_at, skr_domain')
+    .eq('wallet_address', walletAddress)
+    .maybeSingle();
+  if (error) {
+    // Defensive: pre-migration or RLS hiccup. Skip the modal rather than
+    // gate the whole app behind it.
+    return { needsOnboarding: false, seekerDomain: null };
+  }
+  // No row = first-ever connection for this wallet. Show onboarding.
+  if (!data) return { needsOnboarding: true, seekerDomain: null };
+  const row = data as { onboarded_at?: string | null; created_at?: string | null; skr_domain?: string | null };
+  return {
+    needsOnboarding: !row.onboarded_at,
+    seekerDomain: row.skr_domain ?? null,
+  };
+}
+
+export interface CompleteOnboardingPayload {
+  username: string;
+  referralCode?: string | null;
+  useSkrAsDisplay?: boolean;
+  skrDomain?: string | null;
+}
+
+export interface CompleteOnboardingResult {
+  success: boolean;
+  username?: string;
+  referralRegistered?: boolean;
+  referralError?: string;
+  error?: string;
+}
+
+/** Final submit of the onboarding modal. Creates/updates player_profiles
+ *  with the username + onboarding timestamps, then (optionally) registers a
+ *  referral. Referral failure does NOT roll back onboarding — the user is
+ *  still onboarded, we just surface the error so they can retry the link. */
+export async function completeOnboarding(
+  walletAddress: string,
+  payload: CompleteOnboardingPayload,
+): Promise<CompleteOnboardingResult> {
+  if (!isSupabaseConfigured) return { success: false, error: 'Supabase not configured' };
+  const wallet = walletAddress.trim();
+  const username = payload.username.trim();
+  if (!wallet) return { success: false, error: 'Missing wallet' };
+  if (!username) return { success: false, error: 'Username required' };
+
+  // Calls the `complete-onboarding` Edge Function (v1, Kyle 2026-06-07)
+  // instead of upserting directly — `player_profiles` RLS only allows
+  // service-role writes, so a client upsert returns "new row violates
+  // row-level security policy". The EF performs the upsert + optional
+  // referral registration server-side.
+  try {
+    const res = await fetch(`${FUNCTIONS_URL}/complete-onboarding`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        wallet_address: wallet,
+        username,
+        referral_code: payload.referralCode ?? null,
+        use_skr_as_display: payload.useSkrAsDisplay,
+        skr_domain: payload.skrDomain ?? null,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || `complete-onboarding failed (${res.status})` };
+    }
+    return {
+      success: true,
+      username: data.username || username,
+      referralRegistered: data.referralRegistered === true,
+      referralError: data.referralError,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Network error',
+    };
+  }
+}
+
+// Legacy fallback path kept for reference — not executed (the function
+// returns above). The old client-upsert flow was blocked by RLS.
+async function _completeOnboarding_legacy_disabled(
+  _walletAddress: string,
+  _payload: CompleteOnboardingPayload,
+): Promise<CompleteOnboardingResult> {
+  const wallet = _walletAddress.trim();
+  const username = _payload.username.trim();
+  const now = new Date().toISOString();
+  // Upsert: existing rows get the timestamps; new rows get full profile.
+  const { error: upsertError } = await supabase
+    .from('player_profiles')
+    .upsert(
+      {
+        wallet_address: wallet,
+        username,
+        age_verified_at: now,
+        tos_accepted_at: now,
+        onboarded_at: now,
+        last_activity_date: now.split('T')[0],
+        ...(_payload.useSkrAsDisplay !== undefined && { use_skr_as_display: _payload.useSkrAsDisplay }),
+        ...(_payload.skrDomain !== undefined && _payload.skrDomain !== null && { skr_domain: _payload.skrDomain }),
+      },
+      { onConflict: 'wallet_address' },
+    );
+
+  if (upsertError) {
+    const msg = (upsertError.message || '').toLowerCase();
+    // Friendly translation for the case-insensitive username unique index.
+    if (msg.includes('unique') && msg.includes('username')) {
+      return { success: false, error: 'That username is taken. Try another one.' };
+    }
+    return { success: false, error: upsertError.message || 'Failed to save profile' };
+  }
+
+  // Referral is optional. If provided, register it via the existing EF.
+  let referralRegistered = false;
+  let referralError: string | undefined;
+  const refCode = _payload.referralCode?.trim();
+  if (refCode) {
+    try {
+      await registerReferral(wallet, refCode);
+      referralRegistered = true;
+    } catch (err) {
+      // Self-referral / already-referred / invalid code: surface but don't
+      // block onboarding completion.
+      referralError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  return { success: true, username, referralRegistered, referralError };
+}
+
 // Quests: fetch definitions and user progress
 export async function fetchQuests(): Promise<Quest[]> {
   const { data, error } = await supabase
@@ -1759,6 +1935,31 @@ export async function getReferralCode(walletAddress: string): Promise<ReferralCo
   }
 
   return response.json();
+}
+
+/** v2.1 — one-time custom referral code picker. Validates length (4-20) +
+ *  alphanumeric on the EF; returns { success, code } on accept, or { success
+ *  false, error } on reject. Resolves to a discriminated result so callers
+ *  branch without try/catch. */
+export type SetReferralCodeResult =
+  | { success: true; code: string }
+  | { success: false; error: string };
+
+export async function setReferralCode(walletAddress: string, code: string): Promise<SetReferralCodeResult> {
+  try {
+    const response = await fetch(`${FUNCTIONS_URL}/set-referral-code`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ walletAddress, code }),
+    });
+    const data = await response.json().catch(() => ({} as { error?: string; success?: boolean; code?: string }));
+    if (!response.ok || !data.success) {
+      return { success: false, error: data.error || 'Failed to set code' };
+    }
+    return { success: true, code: data.code || code };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' };
+  }
 }
 
 /** Register a referral when a new wallet connects with a stored referral code. */

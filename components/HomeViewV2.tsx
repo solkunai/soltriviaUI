@@ -460,7 +460,11 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           supabase
             .from('custom_games')
             .select('*', { count: 'exact', head: true })
-            .in('status', ['active', 'started']),
+            .in('status', ['active', 'started'])
+            // Stale rows in DB still carry status='active' past their
+            // expires_at because auto-expire cron isn't always caught up.
+            // Filter on the read side so the homepage count is honest.
+            .gt('expires_at', now),
         ]);
         setActiveDuelCount(duels.count ?? 0);
         setActiveCustomGameCount(cg.count ?? 0);

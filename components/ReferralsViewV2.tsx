@@ -14,6 +14,7 @@ import {
   getReferralStats,
   claimReferralPayout,
   fetchLifetimeReferralClaimed,
+  setReferralCode,
   type ReferralStatsResponse,
 } from '../src/utils/api';
 import { submitClaimReferralBalanceOnChain, fetchReferralBalanceOnChain } from '../src/utils/referralFlow';
@@ -44,6 +45,15 @@ const ReferralsViewV2: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [codeCopied, setCodeCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+
+  // Customize-code modal state (v2.1, 2026-06-05): one-time vanity pick.
+  const [showCustomizeModal, setShowCustomizeModal] = useState(false);
+  const [customInput, setCustomInput] = useState('');
+  const [customError, setCustomError] = useState<string | null>(null);
+  const [customSubmitting, setCustomSubmitting] = useState(false);
+  // Tracks if we KNOW the user has already used their custom pick this session
+  // (set on a successful pick, or surfaced via the EF rejection on retry).
+  const [customAlreadyUsed, setCustomAlreadyUsed] = useState(false);
 
   // On-chain referral commission state.
   const [claimableLamports, setClaimableLamports] = useState(0);
@@ -136,6 +146,43 @@ const ReferralsViewV2: React.FC = () => {
   const pending = stats?.pending_referrals ?? 0;
   const totalXp = stats?.referral_points ?? 0;
   const recent = stats?.recent_referrals ?? [];
+
+  // Live validation as the user types in the customize modal. Mirrors the
+  // server-side rules so the user sees red/green immediately without a round
+  // trip. Server still re-validates so the EF is the source of truth.
+  const customNormalized = customInput.toUpperCase();
+  const customLengthOk = customNormalized.length >= 4 && customNormalized.length <= 20;
+  const customAlphanumOk = /^[A-Z0-9]+$/.test(customNormalized);
+  const customRulesOk = customLengthOk && customAlphanumOk;
+  const customLengthLabel = `${customNormalized.length}/20`;
+
+  const handleSubmitCustomCode = async () => {
+    if (!walletAddress) return;
+    if (!customRulesOk) return;
+    setCustomError(null);
+    setCustomSubmitting(true);
+    try {
+      const result = await setReferralCode(walletAddress, customNormalized);
+      if (result.success === true) {
+        // Refetch stats so the new code shows everywhere it's read from
+        // `stats?.code` (header, link, share text).
+        setCustomAlreadyUsed(true);
+        setShowCustomizeModal(false);
+        setCustomInput('');
+        const fresh = await getReferralStats(walletAddress);
+        setStats(fresh);
+      } else {
+        // Server-side already-used response: lock the local UI so the button
+        // stays hidden after this rejection.
+        if (/already set/i.test(result.error)) setCustomAlreadyUsed(true);
+        setCustomError(result.error);
+      }
+    } catch (err) {
+      setCustomError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setCustomSubmitting(false);
+    }
+  };
 
   const copy = async (text: string, which: 'code' | 'link') => {
     if (!text) return;
@@ -282,8 +329,32 @@ const ReferralsViewV2: React.FC = () => {
         {/* Code + share */}
         <div className="flex flex-col gap-3">
           <div>
-            <div className="font-black italic uppercase mb-2" style={{ fontSize: 10, color: '#71717a', letterSpacing: '0.18em' }}>
-              YOUR CODE
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-black italic uppercase" style={{ fontSize: 10, color: '#71717a', letterSpacing: '0.18em' }}>
+                YOUR CODE
+              </div>
+              {/* Show CUSTOMIZE link only if the wallet hasn't already used
+                  its one-time vanity pick this session. The EF is still the
+                  source of truth on retry. */}
+              {walletAddress && code && !customAlreadyUsed && (
+                <button
+                  onClick={() => { setCustomError(null); setCustomInput(''); setShowCustomizeModal(true); }}
+                  className="font-black italic uppercase active:opacity-90"
+                  style={{
+                    appearance: 'none',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#14F195',
+                    fontSize: 10,
+                    letterSpacing: '0.16em',
+                    cursor: 'pointer',
+                    padding: '0 4px',
+                  }}
+                  title="Pick a custom code (one time only)"
+                >
+                  ✎ CUSTOMIZE
+                </button>
+              )}
             </div>
             <div className="flex gap-2 items-center">
               <div
@@ -467,6 +538,139 @@ const ReferralsViewV2: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {/* CUSTOMIZE CODE modal — one-time vanity referral pick. */}
+      {showCustomizeModal && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={() => !customSubmitting && setShowCustomizeModal(false)}
+        >
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)' }} />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="rounded-2xl"
+            style={{
+              position: 'relative',
+              width: '100%',
+              maxWidth: 460,
+              background: '#0A0A0A',
+              border: '1.5px solid rgba(20,241,149,0.4)',
+              boxShadow: '0 24px 60px -22px rgba(20,241,149,0.45)',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ padding: '20px 22px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="font-black italic uppercase" style={{ fontSize: 10, color: '#14F195', letterSpacing: '0.18em' }}>
+                ✎ CUSTOMIZE YOUR CODE
+              </div>
+              <div className="font-black italic uppercase mt-2 text-white" style={{ fontSize: 22, letterSpacing: '-0.02em', lineHeight: 1 }}>
+                Pick a vanity code
+              </div>
+              <p className="text-zinc-400 mt-3" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                4-20 letters or numbers. <span className="text-white font-black">One-time only</span> , once set, it can't be changed. Your referral count, XP, and on-chain commissions all stay intact.
+              </p>
+            </div>
+
+            <div style={{ padding: '16px 22px' }}>
+              <div className="font-black italic uppercase mb-2" style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.16em' }}>
+                NEW CODE
+              </div>
+              <input
+                type="text"
+                value={customInput}
+                onChange={(e) => {
+                  // Strip whitespace + lowercase visually, but the canonical
+                  // value is uppercased on the fly for validation/preview.
+                  const filtered = e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 20);
+                  setCustomInput(filtered);
+                  setCustomError(null);
+                }}
+                placeholder="e.g. TRIVIANERD"
+                maxLength={20}
+                autoFocus
+                className="rounded-lg"
+                style={{
+                  width: '100%',
+                  background: '#000',
+                  border: `1px solid ${customInput.length > 0 ? (customRulesOk ? '#14F195' : 'rgba(255,49,49,0.55)') : 'rgba(255,255,255,0.10)'}`,
+                  padding: '12px 14px',
+                  fontFamily: 'JetBrains Mono, Menlo, monospace',
+                  fontSize: 18,
+                  letterSpacing: '0.18em',
+                  color: '#fff',
+                  outline: 'none',
+                }}
+              />
+              <div className="flex justify-between mt-2" style={{ fontSize: 10 }}>
+                <span
+                  className="font-black italic uppercase"
+                  style={{
+                    color: customInput.length === 0 ? '#52525b' : customRulesOk ? '#14F195' : '#FF7676',
+                    letterSpacing: '0.14em',
+                  }}
+                >
+                  {customInput.length === 0
+                    ? 'enter 4-20 letters or numbers'
+                    : !customLengthOk
+                      ? 'must be 4-20 characters'
+                      : !customAlphanumOk
+                        ? 'letters and numbers only'
+                        : '✓ looks good'}
+                </span>
+                <span style={{ color: '#52525b', fontFamily: 'JetBrains Mono, Menlo, monospace', letterSpacing: '0.1em' }}>
+                  {customLengthLabel}
+                </span>
+              </div>
+              {customError && (
+                <div
+                  className="mt-3 rounded-lg"
+                  style={{ background: 'rgba(255,49,49,0.10)', border: '1px solid rgba(255,49,49,0.35)', padding: '10px 12px', fontSize: 11, color: '#FF7676' }}
+                >
+                  {customError}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '8px 14px 14px', display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => { setShowCustomizeModal(false); setCustomInput(''); setCustomError(null); }}
+                disabled={customSubmitting}
+                className="flex-1 font-black italic uppercase rounded-xl active:opacity-90"
+                style={{
+                  appearance: 'none',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  color: '#fff',
+                  padding: '12px 0',
+                  fontSize: 12,
+                  letterSpacing: '0.14em',
+                  cursor: customSubmitting ? 'not-allowed' : 'pointer',
+                  opacity: customSubmitting ? 0.5 : 1,
+                }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleSubmitCustomCode}
+                disabled={!customRulesOk || customSubmitting}
+                className="flex-1 font-black italic uppercase rounded-xl active:opacity-90"
+                style={{
+                  appearance: 'none',
+                  background: customRulesOk && !customSubmitting ? '#14F195' : 'rgba(20,241,149,0.20)',
+                  border: 'none',
+                  color: customRulesOk && !customSubmitting ? '#000' : 'rgba(255,255,255,0.5)',
+                  padding: '12px 0',
+                  fontSize: 12,
+                  letterSpacing: '0.14em',
+                  cursor: !customRulesOk || customSubmitting ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {customSubmitting ? 'SAVING…' : 'SAVE FOREVER'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

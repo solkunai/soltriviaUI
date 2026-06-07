@@ -32,7 +32,7 @@ interface UseALifePopupProps {
   onSkip: () => void;
 }
 
-const COUNTDOWN_MS = 5000;
+const COUNTDOWN_MS = 3000;
 const RING_R = 48;
 const RING_CIRC = 2 * Math.PI * RING_R;
 

@@ -12,7 +12,7 @@
  * Design source: final-handoff-v2.1/prototype-src/st-v21-spl.jsx (SPLSelector)
  * + stw-v21.jsx (WebSPLSelector).
  */
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   useWalletSPL,
   looksLikeCA,
@@ -47,7 +47,21 @@ function jupTokenToAsset(j: JupiterToken): TokenAsset {
     decimals: j.decimals,
     isVerified: j.isVerified === true,
     organicScoreLabel: j.organicScoreLabel,
+    usdPrice: typeof j.usdPrice === 'number' ? j.usdPrice : undefined,
   };
+}
+
+/** Format a per-token USD price for compact display. Tiny prices keep enough
+ *  sig figs to be readable ($0.000123), normal prices use 2 decimals ($1.23),
+ *  big prices add thousands separator ($1,234). null → null. */
+function formatUsdPrice(p: number | undefined): string | null {
+  if (typeof p !== 'number' || !isFinite(p) || p <= 0) return null;
+  if (p >= 1) return `$${p.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+  if (p >= 0.01) return `$${p.toFixed(3)}`;
+  if (p >= 0.0001) return `$${p.toFixed(5)}`;
+  // Sub-cent micros: show up to 8 decimals, trim trailing zeros.
+  const s = p.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+  return `$${s}`;
 }
 
 interface Props {
@@ -140,25 +154,47 @@ const SPLSelector: React.FC<Props> = ({
   const held = useMemo(() => assets.filter(match), [assets, ql]);
   const heldMints = useMemo(() => new Set(held.map((t) => t.mint)), [held]);
 
-  // True only when the debounce has settled (Jupiter is showing results for
-  // the CURRENT query, not a stale one). While typing/pasting, this is false
-  // and we hold the catalog empty + show a "Searching…" hint instead of
-  // flashing top-traded tokens that don't match the user's intent.
-  const debounceSettled = debouncedRaw === qRaw;
-  const isSearchingExternal = !!qRaw && (!debounceSettled || jupLoading);
+  // Track which query the current jupResults were produced FOR. This is the
+  // key to preventing the glitch.
+  //
+  // CRITICAL: only update on a true → false TRANSITION of jupLoading. Watching
+  // !jupLoading directly is a trap because jupLoading is stale-false during
+  // the render where debouncedRaw changes (the hook's setLoading(true) only
+  // fires in its useEffect, which runs AFTER the render). If we update
+  // resultsAreFor on every effect, we'd mark "BONK" as resolved before Jupiter
+  // even starts fetching it, exposing stale top-traded results to the catalog.
+  const [resultsAreFor, setResultsAreFor] = useState('');
+  const prevJupLoadingRef = useRef(jupLoading);
+  useEffect(() => {
+    const wasLoading = prevJupLoadingRef.current;
+    prevJupLoadingRef.current = jupLoading;
+    // Only mark resultsAreFor when jupLoading just transitioned true → false.
+    // That's the only moment we KNOW Jupiter actually resolved a fetch for
+    // the current debouncedRaw — the hook cancels stale fetches via its own
+    // `cancelled` flag, so the resolved tokens are guaranteed fresh.
+    if (wasLoading && !jupLoading) {
+      setResultsAreFor(debouncedRaw);
+    }
+  }, [jupLoading, debouncedRaw]);
+
+  // Fresh = the in-flight debounce + Jupiter fetch BOTH match the current
+  // user input. Any mismatch = stale data, hide the catalog.
+  const resultsAreFresh = resultsAreFor === debouncedRaw && debouncedRaw === qRaw;
+  const isSearchingExternal = !!qRaw && !resultsAreFresh;
 
   // Map Jupiter results → TokenAsset, drop impersonators + tokens already
-  // shown in YOUR TOKENS so we don't list them twice.
+  // shown in YOUR TOKENS so we don't list them twice. Only renders when
+  // results are confirmed fresh (matched query + Jupiter responded).
   const catalog = useMemo(() => {
-    if (!ql || !debounceSettled) return [] as TokenAsset[];
+    if (!ql || !resultsAreFresh) return [] as TokenAsset[];
     return jupResults
       .filter((t) => !isFakeNerdImpersonator(t))
       .filter((t) => !heldMints.has(t.address))
       .slice(0, 20)
       .map(jupTokenToAsset);
-  }, [ql, debounceSettled, jupResults, heldMints]);
+  }, [ql, resultsAreFresh, jupResults, heldMints]);
 
-  const caHit = looksLikeCA(query) && held.length === 0 && catalog.length === 0 && debounceSettled && !jupLoading;
+  const caHit = looksLikeCA(query) && held.length === 0 && catalog.length === 0 && resultsAreFresh;
 
   return (
     <div style={{ padding: 18, maxHeight: '80vh', overflowY: 'auto' }}>
@@ -309,6 +345,18 @@ const SPLSelector: React.FC<Props> = ({
                         <div style={{ fontSize: 11, color: '#71717a', marginTop: 2 }}>
                           {t.name}
                         </div>
+                        {/* Mint CA — truncated for legit verification at a glance. */}
+                        <div
+                          style={{
+                            fontSize: 9,
+                            color: '#52525b',
+                            marginTop: 3,
+                            fontFamily: 'JetBrains Mono, Menlo, monospace',
+                            letterSpacing: '0.02em',
+                          }}
+                        >
+                          {t.mint.slice(0, 4)}…{t.mint.slice(-4)}
+                        </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <div
@@ -399,6 +447,23 @@ const SPLSelector: React.FC<Props> = ({
                         </div>
                         <div style={{ fontSize: 11, color: '#71717a', marginTop: 2 }}>
                           {t.name}
+                          {formatUsdPrice(t.usdPrice) && (
+                            <span style={{ color: '#a1a1aa', marginLeft: 6, fontVariantNumeric: 'tabular-nums' }}>
+                              · {formatUsdPrice(t.usdPrice)}
+                            </span>
+                          )}
+                        </div>
+                        {/* Mint CA — truncated for legit verification at a glance. */}
+                        <div
+                          style={{
+                            fontSize: 9,
+                            color: '#52525b',
+                            marginTop: 3,
+                            fontFamily: 'JetBrains Mono, Menlo, monospace',
+                            letterSpacing: '0.02em',
+                          }}
+                        >
+                          {t.mint.slice(0, 4)}…{t.mint.slice(-4)}
                         </div>
                       </div>
                       {onBuy && (

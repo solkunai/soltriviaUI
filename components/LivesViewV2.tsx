@@ -1,6 +1,6 @@
 /**
  * LivesViewV2 — web Lives store page. Lives inside WebShell. Three tier
- * cards (STARTER red / VALUE PACK green / GRINDER gold) + sticky bottom
+ * cards (STARTER red / VALUE PACK green / BIG BRAINED gold) + sticky bottom
  * CTA. When wallet is NOT connected, viewable; CTA flips to
  * "Connect Wallet to Buy Lives" instead of the price.
  */
@@ -25,7 +25,7 @@ const TOKEN_CHIPS: PaymentToken[] = ['SOL', 'USDC', 'SKR', 'NERD'];
 const TIER_META: Record<TierId, { name: string; badge: string | null; color: string }> = {
   basic: { name: 'STARTER',    badge: null,         color: '#FF3131' },
   value: { name: 'VALUE PACK', badge: 'POPULAR',    color: '#14F195' },
-  bulk:  { name: 'GRINDER',    badge: 'BEST VALUE', color: '#FFD700' },
+  bulk:  { name: 'BIG BRAINED', badge: 'BEST VALUE', color: '#FFD700' },
 };
 
 type DisplayTier = {
@@ -91,6 +91,48 @@ const LivesViewV2: React.FC<Props> = ({
             ? '— LIVES IN WALLET'
             : `${livesCount} LIVES IN WALLET`}
           {isSeekerVerified ? ' · SEEKER DISCOUNT APPLIED' : ''}
+        </div>
+
+        {/* What lives are for. Two-line copy so users know exactly why
+            they'd spend on lives instead of treating them as decorative.
+            Kyle 2026-06-06 — clarify the two use cases (re-entry + retry). */}
+        <div
+          className="mt-4 rounded-xl border"
+          style={{
+            background: 'rgba(255,49,49,0.04)',
+            borderColor: 'rgba(255,49,49,0.20)',
+            padding: '10px 14px',
+          }}
+        >
+          <div
+            className="font-black italic uppercase"
+            style={{
+              fontSize: 9,
+              color: '#FF3131',
+              letterSpacing: '0.16em',
+              marginBottom: 4,
+            }}
+          >
+            WHAT LIVES ARE FOR
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: '#d4d4d8',
+              lineHeight: 1.5,
+            }}
+          >
+            <div>
+              <span style={{ color: '#FF3131', fontWeight: 900 }}>1.</span>{' '}
+              <span style={{ fontWeight: 700 }}>Re-enter a daily round</span>{' '}
+              you&apos;ve already played (1 life per extra attempt, up to 5/round, 20/24h)
+            </div>
+            <div style={{ marginTop: 2 }}>
+              <span style={{ color: '#FF3131', fontWeight: 900 }}>2.</span>{' '}
+              <span style={{ fontWeight: 700 }}>Retry a wrong answer</span>{' '}
+              during a daily round (1 life per retry, max 2 retries per game)
+            </div>
+          </div>
         </div>
       </div>
 

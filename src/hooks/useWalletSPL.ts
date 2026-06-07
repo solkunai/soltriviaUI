@@ -33,6 +33,8 @@ export interface TokenAsset {
   isVerified?: boolean;
   /** Jupiter organic score label — 'low' suggests possible wash trading. */
   organicScoreLabel?: 'low' | 'medium' | 'high' | string;
+  /** Per-token USD price from Jupiter (for display on catalog rows). */
+  usdPrice?: number;
   /** Raw UI amount, for upstream sizing math (held tokens only). */
   uiAmount?: number;
 }

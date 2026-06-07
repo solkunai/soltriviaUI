@@ -903,7 +903,7 @@ export function WebShell({
                     cursor: 'pointer',
                   }}
                 >
-                  ? FAQ
+                  FAQ
                 </button>
               ) : null}
             </div>

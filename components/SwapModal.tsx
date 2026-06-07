@@ -30,6 +30,7 @@ import {
   getRiskSignals,
   type JupiterToken,
 } from '../src/utils/jupiterTokens';
+import { JupiterVerifiedBadge } from './JupiterVerifiedBadge';
 
 interface Props {
   /** Optional back/close handler. Web routes here render this as a regular
@@ -893,12 +894,7 @@ function TokenRow({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <span className="st-display" style={{ fontSize: 18, color: '#fff', fontStyle: 'italic' }}>{t.symbol}</span>
           {risk.verified && (
-            <img
-              src="/jup_vrfd_nobg.png"
-              alt="Jupiter Verified"
-              title="Jupiter Verified"
-              style={{ height: 14, width: 'auto', display: 'block' }}
-            />
+            <JupiterVerifiedBadge verified size={14} style={{ marginLeft: 0 }} />
           )}
           {isAppWhitelisted(t.symbol) && !risk.verified && (
             <span className="st-uplabel" style={{

@@ -75,10 +75,14 @@ export const LIVES_USD_PRICING = {
   bulk:   { lives: 50, standard: 20, seeker: 13   },
 } as const;
 
-// Monthly + annual Game Pass pricing (USD). Seeker 35% off → $6.50/mo + $55/yr ($85 * 0.65 rounded).
+// Monthly + annual Game Pass pricing (USD).
+// Math (Kyle 2026-06-07): annual = 25% off the 12× monthly rate.
+//   Regular: 12 × $10 = $120 full → 25% off = $90
+//   Seeker:  12 × $6.50 = $78 full → 25% off = $58.50
+// Earlier: $85 / $55 (29% off) — rebalanced to 25% per Kyle.
 export const GAME_PASS_USD_PRICING = {
   monthly: { standard: 10, seeker: 6.5 },
-  annual:  { standard: 85, seeker: 55  },
+  annual:  { standard: 90, seeker: 58.5 },
 } as const;
 
 export type GamePassPlan = 'monthly' | 'annual';
