@@ -134,37 +134,104 @@ export function useWallet() {
     }
   }, [usePhantomConnect, useNative, phantomDisconnect, nativeWallet, privy]);
 
-  // Unified sendTransaction — routes to whichever wallet is active
+  // Unified sendTransaction — routes to whichever wallet is active.
+  //
+  // 2026-06-09 (Kyle): "Tap-outside the wallet popup doesn't reject the
+  // signing promise; the UI hangs forever with loading dots." Two-layer
+  // recovery so the user always lands back on an interactive page:
+  //
+  //   1. Visibility-change detection (instant for mobile / Phantom Connect).
+  //      When document goes hidden ≥1s (user left to wallet) and then becomes
+  //      visible again, wait 3s for a late-arriving signature; if still
+  //      pending, reject as cancelled.
+  //   2. 25s hard timeout (desktop fallback — Phantom browser extension
+  //      runs in a separate OS window so visibility doesn't change). Most
+  //      real signs complete in <15s so this is safe.
+  //
+  // Each call site already has try/catch/finally; the rejection propagates
+  // and their existing finally blocks reset isLoading state. No call site
+  // changes needed — central fix.
   const sendTransaction = useCallback(async (
     transaction: VersionedTransaction,
     connection: Connection,
   ): Promise<string> => {
-    if (usePhantomConnect && phantomSolanaAvailable && phantomSolana) {
-      // Phantom Connect: sign and send via SDK
-      const result = await phantomSolana.signAndSendTransaction(transaction);
-      return result.signature;
+    const SIGN_TIMEOUT_MS = 25_000;
+    const VISIBILITY_RETURN_GRACE_MS = 3_000;
+    const VISIBILITY_HIDDEN_MIN_MS = 1_000;
+
+    const signPromise: Promise<string> = (async () => {
+      if (usePhantomConnect && phantomSolanaAvailable && phantomSolana) {
+        const result = await phantomSolana.signAndSendTransaction(transaction);
+        return result.signature;
+      }
+
+      if (useNative) {
+        return nativeWallet.sendTransaction(transaction, connection);
+      }
+
+      if (privySolanaWallet && privySignAndSend) {
+        const serialized = transaction.serialize();
+        const result = await privySignAndSend({
+          transaction: serialized,
+          wallet: privySolanaWallet,
+        });
+        const sig = result.signature;
+        if (sig instanceof Uint8Array) return bs58.encode(sig);
+        if (typeof sig === 'string') return sig;
+        throw new Error('Could not extract transaction signature from Privy response');
+      }
+
+      throw new Error('No wallet connected');
+    })();
+
+    // The rejecter shared by timeout + visibility-change. Resolved exactly
+    // once via Promise.race below.
+    let rejectCancel: ((err: Error) => void) | null = null;
+    const cancelPromise = new Promise<string>((_, reject) => {
+      rejectCancel = reject;
+    });
+
+    const hardTimeout = setTimeout(() => {
+      rejectCancel?.(
+        new Error(
+          'Transaction cancelled — did you close the wallet popup? Tap to try again.',
+        ),
+      );
+    }, SIGN_TIMEOUT_MS);
+
+    // Visibility-change-based instant cancel (mobile + Phantom Connect).
+    let hiddenSince = 0;
+    let graceTimeout: ReturnType<typeof setTimeout> | null = null;
+    const onVisibility = () => {
+      if (typeof document === 'undefined') return;
+      if (document.hidden) {
+        hiddenSince = Date.now();
+      } else if (hiddenSince && Date.now() - hiddenSince >= VISIBILITY_HIDDEN_MIN_MS) {
+        // User left the tab (probably to wallet) and came back. Give a short
+        // grace period for the signature to arrive; if still pending after
+        // that, treat as cancelled.
+        graceTimeout = setTimeout(() => {
+          rejectCancel?.(
+            new Error('Transaction cancelled — you returned without approving.'),
+          );
+        }, VISIBILITY_RETURN_GRACE_MS);
+        hiddenSince = 0;
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
     }
 
-    if (useNative) {
-      // Native wallet adapter handles signing + sending
-      return nativeWallet.sendTransaction(transaction, connection);
+    try {
+      const result = await Promise.race([signPromise, cancelPromise]);
+      return result;
+    } finally {
+      clearTimeout(hardTimeout);
+      if (graceTimeout) clearTimeout(graceTimeout);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
     }
-
-    if (privySolanaWallet && privySignAndSend) {
-      // Privy: sign and send in one call
-      const serialized = transaction.serialize();
-      const result = await privySignAndSend({
-        transaction: serialized,
-        wallet: privySolanaWallet,
-      });
-      // Privy React SDK returns { signature: Uint8Array } — encode to base58
-      const sig = result.signature;
-      if (sig instanceof Uint8Array) return bs58.encode(sig);
-      if (typeof sig === 'string') return sig;
-      throw new Error('Could not extract transaction signature from Privy response');
-    }
-
-    throw new Error('No wallet connected');
   }, [usePhantomConnect, phantomSolanaAvailable, phantomSolana, useNative, nativeWallet, privySolanaWallet, privySignAndSend]);
 
   // Unified signMessage
