@@ -262,7 +262,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
             <div className="font-black italic uppercase text-center" style={{ fontSize: 8, color: '#a1a1aa', letterSpacing: '0.12em', marginTop: 9, lineHeight: 1.5 }}>
               {!mintLive && (
                 <>
-                  {eligible === false ? 'PLAY A LIVE ROUND TO LOCK IN ELIGIBILITY · ' : 'ELIGIBILITY LOCKED IN · '}
+                  {eligible === false ? 'PLAY 3 PRACTICE GAMES OR 1 PAID GAME TO UNLOCK · ' : 'ELIGIBILITY LOCKED IN · '}
                 </>
               )}
               ONE-PER-MINT · STORED AS COMPRESSED NFT · REVEAL IS RANDOM, ASSIGNED ON-CHAIN

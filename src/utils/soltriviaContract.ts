@@ -1022,13 +1022,20 @@ export async function fetchMinterRecord(
 export function buildMintCommemorativeIx(args: {
   player: PublicKey;
   revenueWallet: PublicKey;
-  eligibilityProof: PublicKey;
   merkleTree: PublicKey;
   coreCollection: PublicKey;
   sgtTokenAccount?: PublicKey | null;
   sgtMint?: PublicKey | null;
   programId?: PublicKey;
 }): TransactionInstruction {
+  // Kyle 2026-06-08: dropped `eligibilityProof` account from this account
+  // list because the on-chain MintCommemorative struct no longer accepts
+  // it (verify_eligibility was removed from the contract). The account
+  // order below must match the new Rust struct exactly:
+  //   player, nft_config, minter_record, mint_authority, revenue_wallet,
+  //   sgt_token_account (opt), sgt_mint (opt), tree_config, merkle_tree,
+  //   core_collection, mpl_core_cpi_signer, log_wrapper, compression,
+  //   mpl_core, bubblegum, system_program
   const programId = args.programId ?? SOLTRIVIA_PROGRAM_ID;
   const sgtTa = args.sgtTokenAccount ?? programId;
   const sgtMi = args.sgtMint ?? programId;
@@ -1043,7 +1050,6 @@ export function buildMintCommemorativeIx(args: {
       { pubkey: getMinterRecordPda(args.player, programId), isSigner: false, isWritable: true  },
       { pubkey: getMintAuthorityPda(programId),             isSigner: false, isWritable: false },
       { pubkey: args.revenueWallet,                         isSigner: false, isWritable: true  },
-      { pubkey: args.eligibilityProof,                      isSigner: false, isWritable: false },
       { pubkey: sgtTa,                                      isSigner: false, isWritable: false },
       { pubkey: sgtMi,                                      isSigner: false, isWritable: false },
       { pubkey: getBubblegumTreeConfigPda(args.merkleTree), isSigner: false, isWritable: true  },

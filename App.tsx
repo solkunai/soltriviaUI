@@ -116,6 +116,14 @@ import DuelResultsView from './components/DuelResultsView';
 import CompeteLobbyView from './components/CompeteLobbyView';
 import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, buildRoundEntryTx, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, updateDuelStatus, getOnboardingStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type ActiveDuel } from './src/utils/api';
 import OnboardingModal from './components/OnboardingModal';
+import RoundRecoveryModal from './components/RoundRecoveryModal';
+import {
+  savePendingRoundEntry,
+  clearPendingRoundEntry,
+  listAllPendingRoundEntries,
+  pruneStalePendingEntries,
+  type PendingRoundEntry,
+} from './src/utils/pendingRoundEntry';
 import { fetchUnpaidRoundPayouts, fetchUnclaimedCustomWins, fetchClaimableRefundEntries, fetchClaimableRefundCustoms } from './src/utils/claims';
 import { REVENUE_WALLET, DEFAULT_AVATAR, SOLANA_NETWORK, PAID_TRIVIA_ENABLED, CUSTOM_GAME_MAX_ATTEMPTS, getReEntryFeeLamports } from './src/utils/constants';
 import {
@@ -277,6 +285,15 @@ const App: React.FC = () => {
   const [refundableEntries, setRefundableEntries] = useState<RefundableEntry[]>([]);
   const [refundableCustomGames, setRefundableCustomGames] = useState<RefundableCustomGame[]>([]);
   const [claimingId, setClaimingId] = useState<string | null>(null);
+
+  // Round-entry recovery (Kyle 2026-06-07). Mirror of native RoundRecoveryProvider.
+  // When a pending entry sits in localStorage AND the corresponding round is still
+  // active, offer the player a resume modal. No SOL is re-spent — start-game v73
+  // verifies the saved tx and either resumes the existing session or creates one.
+  const [pendingRecoveryEntry, setPendingRecoveryEntry] = useState<PendingRoundEntry | null>(null);
+  const [pendingRecoveryEndsAt, setPendingRecoveryEndsAt] = useState<number | null>(null);
+  const [pendingRecoveryBusy, setPendingRecoveryBusy] = useState(false);
+  const recoveryDismissedRef = useRef<Set<string>>(new Set());
   const [showFundingDisclaimer, setShowFundingDisclaimer] = useState(false);
   const [fundingGameData, setFundingGameData] = useState<CustomGameData | null>(null);
   const [funding, setFunding] = useState(false);
@@ -542,6 +559,95 @@ const App: React.FC = () => {
       if (currentWalletRef.current === walletAddr) setRefundableCustomGames(c);
     }).catch(() => {});
   }, [connected, publicKey]);
+
+  // Round-entry recovery scan (Kyle 2026-06-07). Runs whenever the wallet
+  // becomes available (initial connect, reconnect, page refresh) AND on
+  // every page visibility change (so tab-switch back triggers a re-check).
+  // Mirror of native RoundRecoveryProvider, scoped to soltrivia.app.
+  useEffect(() => {
+    if (!connected || !publicKey) return;
+    let cancelled = false;
+
+    const checkForPending = async () => {
+      pruneStalePendingEntries();
+      const all = listAllPendingRoundEntries();
+      if (all.length === 0) return;
+      for (const entry of all) {
+        const key = `${entry.date}:${entry.roundNumber}`;
+        if (recoveryDismissedRef.current.has(key)) continue;
+        try {
+          // Use supabase REST to check the round is still active. Skip
+          // if not (refund cron will handle).
+          const { data: round } = await import('./src/utils/supabase').then(m =>
+            m.supabase
+              .from('daily_rounds')
+              .select('status')
+              .eq('date', entry.date)
+              .eq('round_number', entry.roundNumber)
+              .maybeSingle()
+          );
+          if (!round || (round as any).status !== 'active') {
+            clearPendingRoundEntry(entry.date, entry.roundNumber);
+            continue;
+          }
+        } catch {
+          continue; // DB unreachable — try next focus
+        }
+        if (cancelled) return;
+        const [y, m, d] = entry.date.split('-').map(Number);
+        const startUtc = Date.UTC(y, m - 1, d) + entry.roundNumber * 6 * 3600 * 1000;
+        setPendingRecoveryEntry(entry);
+        setPendingRecoveryEndsAt(startUtc + 6 * 3600 * 1000);
+        return;
+      }
+    };
+
+    checkForPending();
+    const onVis = () => {
+      if (document.visibilityState === 'visible') checkForPending();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [connected, publicKey]);
+
+  const handlePendingRecoveryResume = async () => {
+    if (!pendingRecoveryEntry || !publicKey) return;
+    setPendingRecoveryBusy(true);
+    try {
+      const session = await startGame(
+        publicKey.toBase58(),
+        pendingRecoveryEntry.txSignature,
+        pendingRecoveryEntry.tierIndex,
+      );
+      clearPendingRoundEntry(
+        pendingRecoveryEntry.date,
+        pendingRecoveryEntry.roundNumber,
+      );
+      setCurrentSessionId(session.sessionId);
+      try {
+        sessionStorage.setItem('quiz_session_id', session.sessionId);
+      } catch (_) { /* non-fatal */ }
+      setPendingRecoveryEntry(null);
+      setCurrentView(View.QUIZ);
+    } catch {
+      // Leave the entry in localStorage — next visibility change will
+      // re-offer. Most likely cause: round flipped to refund status in
+      // the few seconds between the modal opening and Resume click.
+    } finally {
+      setPendingRecoveryBusy(false);
+    }
+  };
+
+  const handlePendingRecoveryDismiss = () => {
+    if (!pendingRecoveryEntry) return;
+    recoveryDismissedRef.current.add(
+      `${pendingRecoveryEntry.date}:${pendingRecoveryEntry.roundNumber}`,
+    );
+    setPendingRecoveryEntry(null);
+  };
 
   // Referral: capture ?ref=CODE from URL on mount → store in localStorage → clean URL
   useEffect(() => {
@@ -1012,8 +1118,25 @@ const App: React.FC = () => {
       
       await Promise.race([confirmationPromise, timeoutPromise]);
 
+      // RECOVERY: persist the paid-but-unstarted entry to localStorage so the
+      // RoundRecoveryModal can offer resume if the next step (start-game)
+      // dies for any reason (network blip, tab close, JS crash). Saved
+      // BEFORE the EF call — we'd rather have a stale entry than miss a
+      // real recovery (clearPendingRoundEntry below is idempotent).
+      // Kyle 2026-06-07.
+      savePendingRoundEntry({
+        txSignature: signature,
+        date: today,
+        roundNumber,
+        tierIndex,
+        paidAt: Date.now(),
+      });
+
       // Call backend to start game session
       const gameResult = await startGame(publicKey.toBase58(), signature, tierIndex);
+
+      // Session created → drop the pending entry.
+      clearPendingRoundEntry(today, roundNumber);
 
       console.log('🎮 startGame result:', JSON.stringify(gameResult));
 
@@ -3137,6 +3260,17 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#050505] overflow-hidden text-white selection:bg-[#00FFA3] selection:text-black">
+      {/* Round-entry recovery modal (Kyle 2026-06-07). Detects paid-but-
+          unstarted entries in localStorage + offers resume. start-game v73
+          re-uses the existing on-chain tx — no SOL re-spent. */}
+      <RoundRecoveryModal
+        visible={pendingRecoveryEntry !== null}
+        entry={pendingRecoveryEntry}
+        roundEndsAtMs={pendingRecoveryEndsAt}
+        busy={pendingRecoveryBusy}
+        onResume={handlePendingRecoveryResume}
+        onDismiss={handlePendingRecoveryDismiss}
+      />
       {/* First-connect onboarding modal — gates new wallets until age + ToS
           + username are confirmed. Pre-fills the referral input from any
           ?ref=X code we caught. Renders above EVERYTHING (z-index 400). */}

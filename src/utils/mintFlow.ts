@@ -45,18 +45,40 @@ export type CollectionState = {
 };
 
 // ── Mint eligibility (GATE STEP 1) ────────────────────────────────────────────
-// Must have completed a live trivia game. Client check drives button state; the
-// on-chain program ENFORCES the rule by reading the V2 game accounts.
+// Two paths to qualify (Kyle 2026-06-08):
+//   A. ANY paid play — round, custom game, or duel session in game_sessions
+//      with completed_at set. One play = eligible forever.
+//   B. Practice-only path — 3+ practice_runs entries AND username + onboarded
+//      timestamp set on player_profiles.
+// On-chain eligibility check was REMOVED from the contract; the contract only
+// enforces the per-wallet cap (max 15). Bypassing this client gate just means
+// the user paid 0.02/0.01 SOL to mint without "earning" it through gameplay.
 export async function fetchMintEligibility(walletAddress: string): Promise<boolean> {
   const wallet = walletAddress?.trim();
   if (!wallet) return false;
-  const { count } = await supabase
+
+  // Path A: any completed paid game session.
+  const { count: paidCount } = await supabase
     .from('game_sessions')
-    .select('*', { count: 'exact', head: true })
+    .select('id', { count: 'exact', head: true })
     .eq('wallet_address', wallet)
     .not('completed_at', 'is', null)
     .limit(1);
-  return (count ?? 0) > 0;
+  if ((paidCount ?? 0) > 0) return true;
+
+  // Path B: profile + 3+ practice runs.
+  const { data: profile } = await supabase
+    .from('player_profiles')
+    .select('username, onboarded_at')
+    .eq('wallet_address', wallet)
+    .maybeSingle();
+  if (!profile?.username || !profile?.onboarded_at) return false;
+
+  const { count: practiceCount } = await supabase
+    .from('practice_runs')
+    .select('id', { count: 'exact', head: true })
+    .eq('wallet_address', wallet);
+  return (practiceCount ?? 0) >= 3;
 }
 
 // ── Collection counts (Set Completion / Your Collection / Legend) ─────────────
@@ -273,20 +295,16 @@ export async function executeMintCommemorative(args: {
     // non-fatal — let the on-chain check decide
   }
 
-  // 3. eligibility proof
-  const proof = await findEligibilityProof(args.player, args.connection, programId);
-  if (!proof) {
-    throw new MintExecutionError(
-      'not_eligible',
-      'Play a paid round first to unlock the mint.',
-    );
-  }
+  // 3. Eligibility check REMOVED (Kyle 2026-06-08). The on-chain
+  //    eligibility proof was dropped from the contract; the only on-chain
+  //    enforcement is the per-wallet cap (Step 2 above). The CLIENT-side
+  //    check in fetchMintEligibility() gates the UI button so users who
+  //    haven't played 3 practice OR a paid game can't reach this code path.
 
   // 4. build ix
   const ix = buildMintCommemorativeIx({
     player: args.player,
     revenueWallet: new PublicKey(cfg.revenueWallet),
-    eligibilityProof: proof,
     merkleTree: new PublicKey(cfg.merkleTree),
     coreCollection: new PublicKey(cfg.collection),
     sgtTokenAccount: args.sgtTokenAccount,

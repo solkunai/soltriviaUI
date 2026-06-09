@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:devnet": "vite --mode devnet",
     "build": "vite build --mode production",
     "preview": "vite preview",
     "start": "node server.js"

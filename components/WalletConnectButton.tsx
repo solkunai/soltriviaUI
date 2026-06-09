@@ -51,13 +51,13 @@ const WalletConnectButton: React.FC<{ inline?: boolean }> = ({ inline = false })
   // Privy OAuth login
   const { initOAuth } = useLoginWithOAuth({
     onComplete: () => { setShowLoginMenu(false); setShowEmailInput(false); },
-    onError: (err) => { setConnectError(err?.message || 'Login failed'); },
+    onError: (err) => { setConnectError(typeof err === 'string' ? err : 'Login failed'); },
   });
 
   // Privy email login
   const { sendCode, loginWithCode, state: emailState } = useLoginWithEmail({
     onComplete: () => { setShowLoginMenu(false); setShowEmailInput(false); setEmailStep('email'); setEmail(''); setOtp(''); },
-    onError: (err) => { setConnectError(err?.message || 'Email login failed'); },
+    onError: (err) => { setConnectError(typeof err === 'string' ? err : 'Email login failed'); },
   });
 
   // Fetch username from player_profiles when connected
