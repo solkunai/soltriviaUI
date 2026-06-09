@@ -2145,12 +2145,13 @@ const ProfileViewV2: React.FC<Props> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#fff',
-                fontSize: 11,
-                fontWeight: 800,
               }}
               aria-label="Discord"
             >
-              𝓓
+              {/* Proper Discord controller-shaped logo. Kyle 2026-06-09 (was an ugly 𝓓 glyph). */}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M19.3 5.34A18.5 18.5 0 0 0 15.13 4l-.21.42a17.5 17.5 0 0 0-5.85 0L8.87 4A18.5 18.5 0 0 0 4.7 5.34C2.2 9.09 1.52 12.74 1.86 16.35a18.7 18.7 0 0 0 5.7 2.92l.46-.66a13.4 13.4 0 0 1-2.16-1.07l.53-.43a13.5 13.5 0 0 0 11.21 0l.53.43a13.5 13.5 0 0 1-2.16 1.07l.46.66a18.7 18.7 0 0 0 5.7-2.92c.4-4.16-.66-7.78-2.83-11.01zM9 14.5c-1.05 0-1.91-1-1.91-2.24 0-1.23.85-2.24 1.91-2.24s1.92 1.01 1.91 2.24c0 1.24-.85 2.24-1.91 2.24zm6 0c-1.05 0-1.91-1-1.91-2.24 0-1.23.85-2.24 1.91-2.24s1.92 1.01 1.91 2.24c0 1.24-.85 2.24-1.91 2.24z" />
+              </svg>
             </a>
             <a
               href="https://t.me/Sol_Trivia"
@@ -2165,11 +2166,13 @@ const ProfileViewV2: React.FC<Props> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#fff',
-                fontSize: 11,
               }}
               aria-label="Telegram"
             >
-              ✈
+              {/* Proper Telegram paper-plane SVG. Kyle 2026-06-09 (was a ✈ unicode glyph). */}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M21.71 3.27a1.07 1.07 0 0 0-1.18-.18L2.79 10.39a1 1 0 0 0 .07 1.86l4.86 1.62 2.21 6.69a1 1 0 0 0 .73.66 1 1 0 0 0 .95-.27l2.76-2.76 4.84 3.55a1 1 0 0 0 .59.19 1.07 1.07 0 0 0 .42-.09 1 1 0 0 0 .58-.78l2-16a1 1 0 0 0-.34-.79zm-9.36 11l-2.41 2.42-.93-2.83zm-1.83-.65L17 9.31 9.62 12.78z" />
+              </svg>
             </a>
           </div>
         </div>

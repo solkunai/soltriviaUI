@@ -1006,7 +1006,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
               className="font-black italic uppercase"
               style={{
                 fontSize: 9,
-                color: '#a1a1aa',
+                color: '#FF3131', // red to match arena/duels accent. Kyle 2026-06-09.
                 letterSpacing: '0.14em',
                 fontVariantNumeric: 'tabular-nums',
                 textAlign: isMobile ? 'center' : 'left',
@@ -1177,7 +1177,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             className="font-black italic uppercase"
             style={{
               fontSize: 8,
-              color: '#71717a',
+              color: '#14F195', // green to match free play accent. Kyle 2026-06-09.
               letterSpacing: '0.14em',
             }}
           >
