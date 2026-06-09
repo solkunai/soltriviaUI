@@ -482,11 +482,12 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
     let mounted = true;
     (async () => {
       try {
-        // Last 3 finalized rounds, top finishers per round.
+        // Last 3 paid rounds, top finishers per round. (Status is 'paid' after
+        // winners are posted on-chain, not 'finalized' — Kyle 2026-06-09.)
         const { data: rounds } = await supabase
           .from('daily_rounds')
           .select('id, date, round_number')
-          .eq('status', 'finalized')
+          .in('status', ['paid', 'finalized'])
           .order('date', { ascending: false })
           .order('round_number', { ascending: false })
           .limit(3);
@@ -587,21 +588,52 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
         </div>
       </div>
 
-      {/* Prize hero card */}
+      {/* Prize hero card — mobile: ENTER pill absolute-positioned top-right
+          so the huge pot amount has full width. Desktop: side-by-side flex. */}
       <button
         onClick={onEnterTrivia}
-        className="block w-full text-left rounded-2xl mb-5 active:opacity-95"
+        className="block w-full text-left rounded-2xl mb-5 active:opacity-95 relative"
         style={{
           background:
             'linear-gradient(110deg, #14F195 0%, #00FFA3 60%, #7CD9FF 100%)',
-          padding: '20px 24px',
+          padding: isMobile ? '18px 20px' : '20px 24px',
           color: '#000',
           boxShadow: '0 22px 50px -22px rgba(20,241,149,0.6)',
           border: 'none',
           cursor: 'pointer',
         }}
       >
-        <div className="flex items-end justify-between gap-6">
+        {/* Mobile: ENTER pill in top-right corner (compact) */}
+        {isMobile && (
+          <div
+            className="absolute"
+            style={{ top: 14, right: 14, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}
+          >
+            <span
+              className="font-black italic uppercase"
+              style={{
+                background: '#000',
+                color: '#14F195',
+                borderRadius: 999,
+                padding: '8px 14px',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                display: 'inline-block',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              ENTER · 0.02 SOL
+            </span>
+            <span
+              className="font-black italic uppercase"
+              style={{ fontSize: 7, color: 'rgba(0,0,0,0.6)', letterSpacing: '0.12em', whiteSpace: 'nowrap' }}
+            >
+              + 0.0025 FEE
+            </span>
+          </div>
+        )}
+        <div className={isMobile ? '' : 'flex items-end justify-between gap-6'}>
           <div className="min-w-0">
             <div
               className="font-black italic uppercase"
@@ -612,18 +644,18 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             <div
               className="font-black italic mt-1 flex items-end gap-2"
               style={{
-                fontSize: 72,
+                fontSize: isMobile ? 48 : 72,
                 lineHeight: 0.85,
                 letterSpacing: '-0.04em',
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
               <span>{poolDisplay}</span>
-              <span style={{ fontSize: 32, letterSpacing: '-0.02em', lineHeight: 0.95, paddingBottom: 5 }}>SOL</span>
+              <span style={{ fontSize: isMobile ? 22 : 32, letterSpacing: '-0.02em', lineHeight: 0.95, paddingBottom: isMobile ? 3 : 5 }}>SOL</span>
             </div>
             <div
               className="font-black italic uppercase mt-2"
-              style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
+              style={{ fontSize: isMobile ? 9 : 10, opacity: 0.7, letterSpacing: '0.14em' }}
             >
               {playersEntered} ENTRIES · CLOSES IN{' '}
               <span
@@ -638,29 +670,32 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
               </span>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-            <span
-              className="font-black italic uppercase"
-              style={{
-                background: '#000',
-                color: '#14F195',
-                borderRadius: 999,
-                padding: '14px 28px',
-                fontSize: 13,
-                letterSpacing: '0.14em',
-                boxShadow: '0 8px 18px rgba(0,0,0,0.4)',
-                display: 'inline-block',
-              }}
-            >
-              ENTER · 0.02 SOL →
-            </span>
-            <span
-              className="font-black italic uppercase"
-              style={{ fontSize: 9, color: 'rgba(0,0,0,0.6)', letterSpacing: '0.14em' }}
-            >
-              + 0.0025 PLATFORM FEE
-            </span>
-          </div>
+          {/* Desktop only — ENTER pill on right side */}
+          {!isMobile && (
+            <div className="flex flex-col items-end gap-1.5 shrink-0">
+              <span
+                className="font-black italic uppercase"
+                style={{
+                  background: '#000',
+                  color: '#14F195',
+                  borderRadius: 999,
+                  padding: '14px 28px',
+                  fontSize: 13,
+                  letterSpacing: '0.14em',
+                  boxShadow: '0 8px 18px rgba(0,0,0,0.4)',
+                  display: 'inline-block',
+                }}
+              >
+                ENTER · 0.02 SOL →
+              </span>
+              <span
+                className="font-black italic uppercase"
+                style={{ fontSize: 9, color: 'rgba(0,0,0,0.6)', letterSpacing: '0.14em' }}
+              >
+                + 0.0025 PLATFORM FEE
+              </span>
+            </div>
+          )}
         </div>
       </button>
 

@@ -2755,12 +2755,16 @@ export interface RefundableDuel {
 /** Fetch duels created by this wallet that are refundable (expired or waiting past expiry, no opponent). */
 export async function fetchMyRefundableDuels(walletAddress: string): Promise<RefundableDuel[]> {
   if (!isSupabaseConfigured) return [];
+  // 7-day cutoff (Kyle 2026-06-09): old duels that the cron has already cleaned
+  // shouldn't pollute the refund UI. forfeit-locked-duels cron settles old ones.
+  const cutoffIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await supabase
     .from('duels')
     .select('id, duel_id, entry_fee_lamports, status, share_code, created_at, expires_at')
     .eq('player1_wallet', walletAddress)
     .is('player2_wallet', null)
     .in('status', ['waiting', 'expired', 'cancelled'])
+    .gte('created_at', cutoffIso)
     .order('created_at', { ascending: false })
     .limit(20);
   if (error || !data?.length) return [];
@@ -3021,12 +3025,18 @@ export async function fetchRefundableEntries(walletAddress: string): Promise<Ref
   // Get rounds that may be refundable (status 'refund' or 'closed' — on-chain verification is the real gate).
   // auto-end-rounds sets refundMode on-chain then immediately transitions status to 'closed',
   // so we must check both. Only V2 rounds (>= 2026-02-22) can have on-chain tier PDAs.
+  //
+  // 7-day cutoff added Kyle 2026-06-09: old refundable rounds that the cron has already
+  // processed (or the PDA has been swept) shouldn't pollute the UI. The on-chain check
+  // SHOULD handle these but the V1→V2 transition + ancient rounds cause ghost entries.
+  // Anything older than 7 days has had ample time for cron to settle.
+  const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const { data: rounds, error: roundErr } = await supabase
     .from('daily_rounds')
     .select('id, date, round_number')
     .in('id', roundIds)
     .in('status', ['refund', 'closed'])
-    .gte('date', '2026-02-22');
+    .gte('date', cutoffDate);
   if (roundErr || !rounds?.length) return [];
 
   const byId = Object.fromEntries(
@@ -3086,12 +3096,15 @@ export async function fetchRefundableCustomGames(walletAddress: string): Promise
 
   const gameIds = [...new Set(entries.map((e: { game_id: string }) => e.game_id))];
 
-  // Find expired games among those
+  // Find expired games among those — 7-day cutoff (Kyle 2026-06-09): old expired
+  // games that auto-finalize already processed shouldn't pollute refund UI.
+  const cutoffIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: games, error: gameErr } = await supabase
     .from('custom_games')
     .select('id, name, slug, on_chain_game_id, entry_fee_lamports, finalized_at')
     .in('id', gameIds)
-    .eq('status', 'expired');
+    .eq('status', 'expired')
+    .gte('finalized_at', cutoffIso);
 
   if (gameErr || !games?.length) return [];
 

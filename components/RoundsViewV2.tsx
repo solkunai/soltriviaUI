@@ -172,7 +172,7 @@ const RoundsViewV2: React.FC<Props> = ({
         </div>
         <h1
           className="font-black italic uppercase mt-1 text-white"
-          style={{ fontSize: 54, lineHeight: 0.9, letterSpacing: '-0.02em' }}
+          style={{ fontSize: isMobile ? 36 : 54, lineHeight: 0.9, letterSpacing: '-0.02em' }}
         >
           COMPETE FOR{' '}
           <span
@@ -188,61 +188,67 @@ const RoundsViewV2: React.FC<Props> = ({
         </h1>
       </div>
 
-      {/* Hero pool */}
+      {/* Hero pool — mobile: pot full width on top, timer below in slim row */}
       <div
-        className="rounded-2xl mb-5 flex items-end justify-between gap-6"
+        className="rounded-2xl mb-5"
         style={{
           background: 'linear-gradient(110deg,#14F195 0%,#00FFA3 60%,#7CD9FF 100%)',
           color: '#000',
-          padding: '28px 32px',
+          padding: isMobile ? '20px 22px' : '28px 32px',
           boxShadow: '0 26px 60px -22px rgba(20,241,149,0.6)',
         }}
       >
-        <div>
-          <div
-            className="font-black italic uppercase"
-            style={{ fontSize: 10, opacity: 0.6, letterSpacing: '0.14em' }}
-          >
-            PRIZE POOL · GROWING
+        <div className={isMobile ? '' : 'flex items-end justify-between gap-6'}>
+          <div>
+            <div
+              className="font-black italic uppercase"
+              style={{ fontSize: 10, opacity: 0.6, letterSpacing: '0.14em' }}
+            >
+              PRIZE POOL · GROWING
+            </div>
+            <div
+              className="font-black italic mt-1 flex items-end gap-2"
+              style={{
+                fontSize: isMobile ? 56 : 88,
+                lineHeight: 0.85,
+                letterSpacing: '-0.04em',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              <span>{poolDisplay}</span>
+              <span style={{ fontSize: isMobile ? 24 : 38, letterSpacing: '-0.02em', lineHeight: 0.95, paddingBottom: isMobile ? 4 : 6 }}>SOL</span>
+            </div>
+            <div
+              className="font-black italic uppercase mt-2"
+              style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
+            >
+              {players} ENTRIES
+            </div>
           </div>
           <div
-            className="font-black italic mt-1 flex items-end gap-2"
+            className={isMobile ? 'mt-3 flex items-center justify-between' : 'text-center'}
             style={{
-              fontSize: 88,
-              lineHeight: 0.85,
-              letterSpacing: '-0.04em',
-              fontVariantNumeric: 'tabular-nums',
+              background: 'rgba(0,0,0,0.16)',
+              padding: isMobile ? '10px 14px' : '14px 18px',
+              borderRadius: 10,
             }}
           >
-            <span>{poolDisplay}</span>
-            <span style={{ fontSize: 38, letterSpacing: '-0.02em', lineHeight: 0.95, paddingBottom: 6 }}>SOL</span>
-          </div>
-          <div
-            className="font-black italic uppercase mt-2"
-            style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
-          >
-            {players} ENTRIES
-          </div>
-        </div>
-        <div
-          className="text-center"
-          style={{ background: 'rgba(0,0,0,0.16)', padding: '14px 18px', borderRadius: 10 }}
-        >
-          <div
-            className="font-black italic uppercase"
-            style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
-          >
-            ENDS IN
-          </div>
-          <div
-            className="font-black italic mt-1"
-            style={{
-              fontSize: 30,
-              fontVariantNumeric: 'tabular-nums',
-              letterSpacing: '-0.02em',
-            }}
-          >
-            {countdown}
+            <div
+              className="font-black italic uppercase"
+              style={{ fontSize: 10, opacity: 0.7, letterSpacing: '0.14em' }}
+            >
+              ENDS IN
+            </div>
+            <div
+              className={isMobile ? 'font-black italic' : 'font-black italic mt-1'}
+              style={{
+                fontSize: isMobile ? 18 : 30,
+                fontVariantNumeric: 'tabular-nums',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              {countdown}
+            </div>
           </div>
         </div>
       </div>

@@ -333,10 +333,10 @@ const DuelResultsView: React.FC<DuelResultsViewProps> = ({
             aria-hidden
             style={{
               position: 'fixed',
-              left: -10000,
+              left: -20000,
               top: 0,
-              width: 480,
-              height: 600,
+              width: 1200,
+              height: 630,
               pointerEvents: 'none',
               opacity: 0,
             }}

@@ -87,10 +87,12 @@ const BANKS: Record<ShareMoment, string[]> = {
   // ── ROUNDS ──────────────────────────────────────────
 
   daily_round_wagmi: [
-    "just placed #{rank} in the @SolTrivia_app daily round.\n{correct}/10 in {time}. unreal.\nothers are still reading whitepapers. i'm getting paid.\n\nsoltrivia.app",
-    "top {rank} in today's @SolTrivia_app round. wagmi.\n{correct}/10. learning real things, banking real sol.\n\nsoltrivia.app",
-    "{rank} on @SolTrivia_app today. on-chain payout incoming.\ntrivia is the alpha you weren't ready for.\n\nsoltrivia.app",
-    "podium hit on @SolTrivia_app. {correct}/10 questions slammed.\nplay daily. learn daily. earn daily.\n\nsoltrivia.app",
+    // No rank references — when only one player enters they're rank 1, which made
+    // the old "placed #1" tweets read weird. Score + time carry the brag on their own.
+    "{correct}/10 in {time} on today's @SolTrivia_app round.\nlearning real things, banking real sol. wagmi.\n\nsoltrivia.app",
+    "{correct}/10 on @SolTrivia_app today. clean.\non-chain payout incoming.\ntrivia is the alpha you weren't ready for.\n\nsoltrivia.app",
+    "cooked today's @SolTrivia_app round.\n{correct}/10 in {time}. others are still reading whitepapers.\ni'm getting paid.\n\nsoltrivia.app",
+    "WAGMI moment on @SolTrivia_app.\n{correct}/10 in {time}. play daily. learn daily. earn daily.\n\nsoltrivia.app",
   ],
 
   daily_round_almost: [

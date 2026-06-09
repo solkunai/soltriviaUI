@@ -807,12 +807,12 @@ const ProfileViewV2: React.FC<Props> = ({
           marginBottom: 64,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20 }}>
-          <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: isMobile ? 8 : 20, flexDirection: isMobile ? 'column' : 'row' }}>
+          <div style={{ minWidth: 0, flex: 1, width: isMobile ? '100%' : 'auto' }}>
             <div style={{ ...baseLabel, fontSize: 10, opacity: 0.7 }}>
               PLAYER {level != null ? `· LVL ${level}` : ''}
             </div>
-            <div style={{ ...display, fontSize: 54, marginTop: 4 }}>
+            <div style={{ ...display, fontSize: isMobile ? 32 : 54, marginTop: 4, wordBreak: 'break-word' }}>
               {username || '@YOU'}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>

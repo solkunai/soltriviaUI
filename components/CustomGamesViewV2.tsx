@@ -436,18 +436,21 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
           {tab !== 'ENDED' ? (
             <button
               onClick={onCreate}
-              className="font-black italic uppercase rounded-full mt-4 active:opacity-90"
+              className="font-black italic uppercase rounded-2xl mt-6 active:scale-95 transition-transform"
               style={{
                 background: '#38BDF8',
                 color: '#000',
-                padding: '10px 22px',
-                fontSize: 11,
-                letterSpacing: '0.14em',
+                padding: isMobile ? '20px 32px' : '24px 48px',
+                fontSize: isMobile ? 22 : 32,
+                letterSpacing: '-0.02em',
                 border: 'none',
                 cursor: 'pointer',
+                boxShadow: '0 8px 24px rgba(56, 189, 248, 0.4)',
+                width: isMobile ? '100%' : 'auto',
+                maxWidth: 360,
               }}
             >
-              HOST A ROOM →
+              CREATE A GAME →
             </button>
           ) : null}
         </div>

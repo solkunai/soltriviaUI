@@ -349,16 +349,19 @@ const LeaderboardViewV2: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* Olympic podium — adaptive width centers low-count podiums cleanly. */}
+          {/* Olympic podium — adaptive width centers low-count podiums cleanly.
+              Mobile: 68px per column (5 cols ≈ 340px) fits in 375px viewport,
+              no horizontal scroll. Desktop: 130px per column. Kyle 2026-06-09. */}
           {podiumOrdered.length > 0 && (
             <div
               className="mb-5 mx-auto"
               style={{
                 display: 'grid',
                 gridTemplateColumns: `repeat(${podiumOrdered.length}, 1fr)`,
-                gap: 8,
+                gap: isMobile ? 4 : 8,
                 alignItems: 'flex-end',
-                maxWidth: `${podiumOrdered.length * 130}px`,
+                maxWidth: `${podiumOrdered.length * (isMobile ? 68 : 130)}px`,
+                width: '100%',
               }}
             >
               {podiumOrdered.map((p) => (

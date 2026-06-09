@@ -507,13 +507,22 @@ export function WebShell({
   ];
 
   // ─── MOBILE LAYOUT ─── full-width content + fixed bottom tab bar, no sidebar.
+  // Mobile drawer (burger menu) state. Drawer surfaces sidebar items that
+  // the bottom tab bar can't fit: DAILY ROUND, DUELS, CUSTOM, FREE PLAY,
+  // REFERRALS, GAME PASS, MINT, LIVES. Kyle 2026-06-09.
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+  // Play action sheet: tapping center Play button on mobile opens a quick
+  // picker (DAILY ROUND · DUELS · CUSTOM GAMES · FREE PLAY) instead of
+  // navigating to a sub-page. Mirrors native UX. Kyle 2026-06-09.
+  const [playSheetOpen, setPlaySheetOpen] = React.useState(false);
+
   if (isMobile) {
     return (
       <div
         className="min-h-screen flex flex-col"
         style={{ background: '#020202', color: '#fff' }}
       >
-        {/* Slim mobile topbar: brand + lives + connect */}
+        {/* Slim mobile topbar: burger + brand + lives + connect */}
         <div
           className="sticky top-0 z-20 flex items-center gap-2 px-4 py-2.5"
           style={{
@@ -522,6 +531,25 @@ export function WebShell({
             borderBottom: '1px solid rgba(255,255,255,0.1)',
           }}
         >
+          {/* Burger menu button — opens slide-out drawer with extra nav items */}
+          <button
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open menu"
+            className="flex items-center justify-center"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 4,
+              marginRight: 2,
+            }}
+          >
+            <svg width="22" height="18" viewBox="0 0 24 18" fill="none">
+              <rect x="0" y="0" width="24" height="2.5" rx="1.25" fill="#fff" />
+              <rect x="0" y="7.75" width="24" height="2.5" rx="1.25" fill="#fff" />
+              <rect x="0" y="15.5" width="24" height="2.5" rx="1.25" fill="#fff" />
+            </svg>
+          </button>
           <button
             onClick={() => onNav(View.HOME)}
             className="flex items-center gap-1.5"
@@ -606,7 +634,11 @@ export function WebShell({
             return (
               <button
                 key={it.id}
-                onClick={() => handleNav(it)}
+                onClick={() => {
+                  // Play opens action sheet (4 game types). Other tabs nav directly.
+                  if (isPlay) setPlaySheetOpen(true);
+                  else handleNav(it);
+                }}
                 className="flex-1 flex flex-col items-center justify-center gap-1"
                 style={{
                   background: 'none',
@@ -651,6 +683,262 @@ export function WebShell({
             );
           })}
         </nav>
+
+        {/* ── Mobile burger drawer ── slide-out from left with full nav. */}
+        {drawerOpen && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setDrawerOpen(false)}
+              className="fixed inset-0 z-40"
+              style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)' }}
+            />
+            {/* Drawer panel */}
+            <aside
+              className="fixed top-0 bottom-0 left-0 z-50 flex flex-col"
+              style={{
+                width: 'min(82vw, 320px)',
+                background: '#0A0A0A',
+                borderRight: '1px solid rgba(255,255,255,0.08)',
+                boxShadow: '8px 0 32px rgba(0,0,0,0.6)',
+                overflowY: 'auto',
+              }}
+            >
+              {/* Drawer header */}
+              <div
+                className="flex items-center justify-between px-5 py-4"
+                style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+              >
+                <span
+                  className="font-black italic"
+                  style={{ fontSize: 18, letterSpacing: '-0.02em' }}
+                >
+                  <span style={{ color: '#fff' }}>SOL </span>
+                  <span
+                    style={{
+                      background:
+                        'linear-gradient(90deg, #14F195 0%, #7C8DFF 50%, #9945FF 100%)',
+                      WebkitBackgroundClip: 'text',
+                      backgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      color: 'transparent',
+                    }}
+                  >
+                    TRIVIA
+                  </span>
+                </span>
+                <button
+                  onClick={() => setDrawerOpen(false)}
+                  aria-label="Close menu"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#a1a1aa',
+                    fontSize: 22,
+                    lineHeight: 1,
+                    padding: 4,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* PLAY items */}
+              <div className="px-3 py-3">
+                <div
+                  className="px-3 mb-2 font-black italic uppercase"
+                  style={{ fontSize: 9, letterSpacing: '0.18em', color: '#52525b' }}
+                >
+                  PLAY
+                </div>
+                {playItems.map((it) => (
+                  <button
+                    key={it.id}
+                    onClick={() => {
+                      handleNav(it);
+                      setDrawerOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between rounded-lg active:opacity-70"
+                    style={{
+                      background: isActive(it) ? 'rgba(20,241,149,0.08)' : 'transparent',
+                      border: 'none',
+                      padding: '11px 12px',
+                      marginBottom: 2,
+                      color: isActive(it) ? accent : '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span
+                      className="font-black italic uppercase"
+                      style={{ fontSize: 13, letterSpacing: '0.06em' }}
+                    >
+                      {it.label}
+                    </span>
+                    {it.sub && (
+                      <span
+                        className="font-black italic uppercase"
+                        style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.1em' }}
+                      >
+                        {it.sub}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* ACCOUNT items */}
+              <div className="px-3 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                <div
+                  className="px-3 mb-2 font-black italic uppercase"
+                  style={{ fontSize: 9, letterSpacing: '0.18em', color: '#52525b' }}
+                >
+                  ACCOUNT
+                </div>
+                {accountItems.map((it) => (
+                  <button
+                    key={it.id}
+                    onClick={() => {
+                      handleNav(it);
+                      setDrawerOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between rounded-lg active:opacity-70"
+                    style={{
+                      background: isActive(it) ? 'rgba(20,241,149,0.08)' : 'transparent',
+                      border: 'none',
+                      padding: '11px 12px',
+                      marginBottom: 2,
+                      color: isActive(it) ? accent : '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span
+                      className="font-black italic uppercase"
+                      style={{ fontSize: 13, letterSpacing: '0.06em' }}
+                    >
+                      {it.label}
+                    </span>
+                    {it.sub && (
+                      <span
+                        className="font-black italic uppercase"
+                        style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.1em' }}
+                      >
+                        {it.sub}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Footer disconnect */}
+              {walletShort && (
+                <div className="mt-auto px-5 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  <button
+                    onClick={() => {
+                      handleDisconnect();
+                      setDrawerOpen(false);
+                    }}
+                    className="w-full font-black italic uppercase rounded-lg active:opacity-90"
+                    style={{
+                      background: 'transparent',
+                      color: '#FF3131',
+                      border: '1px solid rgba(255,49,49,0.3)',
+                      padding: '11px 0',
+                      fontSize: 11,
+                      letterSpacing: '0.14em',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    DISCONNECT WALLET
+                  </button>
+                </div>
+              )}
+            </aside>
+          </>
+        )}
+
+        {/* ── Mobile PLAY action sheet ── 4 game types as big bottom-sheet buttons */}
+        {playSheetOpen && (
+          <>
+            <div
+              onClick={() => setPlaySheetOpen(false)}
+              className="fixed inset-0 z-40"
+              style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)' }}
+            />
+            <div
+              className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl"
+              style={{
+                background: '#0A0A0A',
+                borderTop: '1px solid rgba(255,255,255,0.08)',
+                padding: '20px 18px calc(env(safe-area-inset-bottom) + 24px)',
+                boxShadow: '0 -8px 32px rgba(0,0,0,0.6)',
+              }}
+            >
+              <div
+                className="font-black italic uppercase mb-4 text-center"
+                style={{ fontSize: 11, letterSpacing: '0.18em', color: '#52525b' }}
+              >
+                CHOOSE A GAME MODE
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: 'DAILY ROUND', sub: liveRoundNumber != null ? `#${liveRoundNumber} · LIVE` : 'LIVE', view: View.COMPETE_LOBBY, color: '#14F195', icon: 'trophy' },
+                  { label: 'DUELS', sub: activeDuelCount != null ? `${activeDuelCount} OPEN` : '1v1 BATTLES', view: View.DUEL_LOBBY, color: '#FF3131', icon: 'swords' },
+                  { label: 'CUSTOM', sub: activeCustomGameCount != null ? `${activeCustomGameCount} ROOMS` : 'COMMUNITY', view: View.CUSTOM_GAMES_HUB, color: '#38BDF8', icon: 'wand-sparkles' },
+                  { label: 'FREE PLAY', sub: 'PRACTICE', view: View.PLAY, color: '#FBBF24', icon: 'gamepad-2' },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    onClick={() => {
+                      onNav(item.view);
+                      setPlaySheetOpen(false);
+                    }}
+                    className="rounded-2xl flex flex-col items-start justify-between active:scale-95 transition-transform"
+                    style={{
+                      background: '#0d0d0d',
+                      border: `1.5px solid ${item.color}55`,
+                      padding: '18px 16px',
+                      minHeight: 110,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <Icon name={item.icon as keyof typeof ICON_PATHS} size={26} color={item.color} />
+                    <div className="w-full">
+                      <div
+                        className="font-black italic uppercase text-white"
+                        style={{ fontSize: 14, letterSpacing: '-0.01em' }}
+                      >
+                        {item.label}
+                      </div>
+                      <div
+                        className="font-black italic uppercase mt-1"
+                        style={{ fontSize: 9, color: item.color, letterSpacing: '0.14em' }}
+                      >
+                        {item.sub}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setPlaySheetOpen(false)}
+                className="w-full mt-4 font-black italic uppercase rounded-xl active:opacity-90"
+                style={{
+                  background: 'transparent',
+                  color: '#a1a1aa',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  padding: '12px 0',
+                  fontSize: 11,
+                  letterSpacing: '0.14em',
+                  cursor: 'pointer',
+                }}
+              >
+                CANCEL
+              </button>
+            </div>
+          </>
+        )}
       </div>
     );
   }

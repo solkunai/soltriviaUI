@@ -5,7 +5,7 @@ import RoundShareCard, { getRoundTier } from './RoundShareCard';
 import { pickTweet, xIntentUrl } from '../src/utils/tweetVariants';
 
 interface ResultsViewProps {
-  results: { score: number, points: number, time: number, rank?: number; scoreSaveFailed?: boolean };
+  results: { score: number, points: number, time: number, rank?: number; scoreSaveFailed?: boolean; totalPlayers?: number; prizeSol?: number };
   lives: number | null;
   roundEntriesLeft: number;
   roundEntriesMax: number;
@@ -291,10 +291,10 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
         aria-hidden
         style={{
           position: 'fixed',
-          left: -10000,
+          left: -20000,
           top: 0,
-          width: 480,
-          height: 600,
+          width: 1200,
+          height: 630,
           pointerEvents: 'none',
           opacity: 0,
         }}
@@ -306,6 +306,8 @@ const ResultsView: React.FC<ResultsViewProps> = ({ results, lives, roundEntriesL
           points={results.points}
           timeSec={results.time}
           rank={results.rank ?? null}
+          totalPlayers={results.totalPlayers}
+          prizeSol={results.prizeSol}
         />
       </div>
     </div>
