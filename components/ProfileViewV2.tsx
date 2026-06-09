@@ -465,7 +465,9 @@ const ProfileViewV2: React.FC<Props> = ({
             key: `duel-${d.duel_id}`,
             txt: iWon ? `Duel vs ${oppShort}` : `Duel vs ${oppShort}`,
             meta: iWon ? `Won · +${sol.toFixed(3)} SOL` : `Lost · −${sol.toFixed(3)} SOL`,
-            col: iWon ? C.primary : C.red,
+            // Duels always RED to match the Arena tile (game-mode accent,
+            // not outcome). Kyle 2026-06-09.
+            col: C.red,
             icon: 'swords',
             at: new Date(d.resolved_at).getTime(),
           });

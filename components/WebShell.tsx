@@ -666,7 +666,9 @@ export function WebShell({
             </span>
           </button>
           <div className="flex-1" />
-          {/* Lives chip — now tappable to navigate to LIVES page. Kyle 2026-06-09. */}
+          {/* Lives chip — tappable to navigate to LIVES page. Heart is FILLED
+              red to match the desktop topbar (was outline-only on mobile
+              before — Kyle 2026-06-09). */}
           <button
             onClick={() => onNav(View.LIVES)}
             aria-label="Lives — tap to buy more"
@@ -674,14 +676,14 @@ export function WebShell({
             style={{
               background: '#0a0a0a',
               border: '1px solid rgba(255,255,255,0.1)',
-              padding: '5px 10px',
+              padding: '6px 11px',
               cursor: 'pointer',
             }}
           >
-            <Icon name="heart" size={11} color="#FF3131" />
+            <Icon name="heart" size={12} color="#FF3131" filled />
             <span
               className="font-black italic"
-              style={{ fontSize: 10, fontVariantNumeric: 'tabular-nums' }}
+              style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums' }}
             >
               {lives == null ? '—' : String(lives)}
             </span>
