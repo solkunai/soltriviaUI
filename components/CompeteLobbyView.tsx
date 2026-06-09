@@ -122,9 +122,9 @@ export default function CompeteLobbyView({
     fetchRecent();
   }, [fetchTierData, fetchRecent]);
 
-  // Poll tier data every 15s
+  // Poll tier data every 30s (was 15s — cost-reduction, Kyle 2026-06-09).
   useEffect(() => {
-    const id = setInterval(fetchTierData, 15_000);
+    const id = setInterval(fetchTierData, 30_000);
     return () => clearInterval(id);
   }, [fetchTierData]);
 
@@ -156,7 +156,7 @@ export default function CompeteLobbyView({
       setActiveCustomGameCount(cg.count ?? 0);
     };
     fetchCounts();
-    const interval = setInterval(fetchCounts, 30_000);
+    const interval = setInterval(fetchCounts, 60_000); // 30s → 60s cost-reduction Kyle 2026-06-09
     return () => clearInterval(interval);
   }, []);
 

@@ -40,7 +40,9 @@ const FirstTimeDepositModal: React.FC<FirstTimeDepositModalProps> = ({
 
   useEffect(() => {
     refreshBalance();
-    const interval = setInterval(refreshBalance, 10000);
+    // 10s → 15s. Still responsive for users waiting for their first deposit
+    // but lighter on Cloudflare/Helius bill. Kyle 2026-06-09.
+    const interval = setInterval(refreshBalance, 15000);
     return () => clearInterval(interval);
   }, [refreshBalance]);
 

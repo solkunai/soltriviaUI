@@ -84,7 +84,7 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     loadPrices();
-    const interval = setInterval(loadPrices, 15000);
+    const interval = setInterval(loadPrices, 45000); // 15s → 45s, Kyle 2026-06-09
     return () => clearInterval(interval);
   }, [isOpen, loadPrices]);
 

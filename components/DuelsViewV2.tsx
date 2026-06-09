@@ -306,7 +306,8 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel, onViewOwnDuel 
       }
     };
     load();
-    const id = window.setInterval(load, 10000);
+    // 10s → 60s to reduce Helius/Cloudflare RPC bill at current player count.
+    const id = window.setInterval(load, 20000);
     return () => {
       mounted = false;
       window.clearInterval(id);

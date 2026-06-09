@@ -150,8 +150,9 @@ const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenGuide, profileC
 
     fetchLeaderboard(true);
 
-    // Refresh every 2 seconds so rankings update as users earn XP (silent refresh, no loading flash)
-    const interval = setInterval(() => fetchLeaderboard(false), 2000);
+    // Refresh every 60 seconds (was 2s — overkill until we have significant
+    // daily traffic + funding to back the RPC + Cloudflare bills). Kyle 2026-06-09.
+    const interval = setInterval(() => fetchLeaderboard(false), 30000);
 
     return () => clearInterval(interval);
   }, [publicKey, period, periodApi, leaderboardPage]);

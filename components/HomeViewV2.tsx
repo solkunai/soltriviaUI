@@ -398,7 +398,9 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
         .catch(() => {});
     };
     load();
-    const interval = setInterval(load, 30000);
+    // 30s → 60s. Live feed doesn't need sub-minute freshness at current
+    // player count. Cost-reduction Kyle 2026-06-09.
+    const interval = setInterval(load, 60000);
     return () => {
       cancelled = true;
       clearInterval(interval);

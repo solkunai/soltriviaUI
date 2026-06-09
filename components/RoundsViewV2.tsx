@@ -112,7 +112,7 @@ const RoundsViewV2: React.FC<Props> = ({
       }
     };
     refresh();
-    const interval = setInterval(refresh, 15_000);
+    const interval = setInterval(refresh, 20_000); // 15s → 20s, Kyle 2026-06-09
     return () => {
       mounted = false;
       clearInterval(interval);

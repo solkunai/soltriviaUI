@@ -291,7 +291,7 @@ const QuestsViewV2: React.FC = () => {
   // Light polling so progress + claim state stay fresh while the tab is open.
   useEffect(() => {
     if (!connected || !wallet) return;
-    const id = setInterval(loadData, 15000);
+    const id = setInterval(loadData, 45000); // 15s → 45s cost-reduction Kyle 2026-06-09
     return () => clearInterval(id);
   }, [connected, wallet, loadData]);
 

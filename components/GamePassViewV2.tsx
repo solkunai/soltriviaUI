@@ -73,7 +73,7 @@ const GamePassViewV2: React.FC<Props> = ({ hasGamePass, isSeekerVerified, onPurc
   useEffect(() => {
     if (hasGamePass) return;
     loadPrices();
-    const id = setInterval(loadPrices, 15000);
+    const id = setInterval(loadPrices, 45000); // 15s → 45s, Kyle 2026-06-09
     return () => clearInterval(id);
   }, [hasGamePass, loadPrices]);
 

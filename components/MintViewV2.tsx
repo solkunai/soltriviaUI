@@ -105,7 +105,8 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
         .then((n) => { if (!cancel) setMinted(n); })
         .catch(() => {});
     load();
-    const id = setInterval(load, 30000);
+    // 30s → 90s (mint isn't live yet, counter doesn't need to be fast). Kyle 2026-06-09.
+    const id = setInterval(load, 90000);
     return () => { cancel = true; clearInterval(id); };
   }, []);
 
