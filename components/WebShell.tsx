@@ -77,6 +77,9 @@ const ICON_PATHS = {
     'M21 21l-4.34-4.34M11 17a6 6 0 1 0 0-12 6 6 0 0 0 0 12z',
   sparkles:
     'M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .963L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0Z',
+  // Bidirectional arrows for the SWAP nav item. Kyle 2026-06-09.
+  swap:
+    'M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l-4-4M17 20l4-4',
 } as const;
 
 const PNG_ICON: Record<string, string> = {
@@ -443,6 +446,8 @@ export function WebShell({
       iconPath: 'heart',
       sub: lives == null ? '—' : String(lives),
     },
+    // SWAP added Kyle 2026-06-09 — was missing from mobile burger menu.
+    { id: 'swap', label: 'SWAP', view: View.SWAP, iconPath: 'swap' },
     { id: 'profile', label: 'PROFILE', view: View.PROFILE, iconPath: 'user-circle' },
   ];
 
@@ -575,12 +580,16 @@ export function WebShell({
             </span>
           </button>
           <div className="flex-1" />
-          <span
-            className="inline-flex items-center gap-1 rounded-full"
+          {/* Lives chip — now tappable to navigate to LIVES page. Kyle 2026-06-09. */}
+          <button
+            onClick={() => onNav(View.LIVES)}
+            aria-label="Lives — tap to buy more"
+            className="inline-flex items-center gap-1 rounded-full active:opacity-80"
             style={{
               background: '#0a0a0a',
               border: '1px solid rgba(255,255,255,0.1)',
               padding: '5px 10px',
+              cursor: 'pointer',
             }}
           >
             <Icon name="heart" size={11} color="#FF3131" />
@@ -590,7 +599,7 @@ export function WebShell({
             >
               {lives == null ? '—' : String(lives)}
             </span>
-          </span>
+          </button>
           {walletShort ? (
             <WalletPill handle={walletHandle} avatarUrl={avatarUrl} accent={accent} variant="mobile" onDisconnect={handleDisconnect} />
           ) : (

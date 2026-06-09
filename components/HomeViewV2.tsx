@@ -829,8 +829,22 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
               1 of 4 random archetypes · <span style={{ color: '#FBBF24', fontWeight: 900 }}>0.02 SOL</span>
             </div>
           </div>
-          {/* Arrow chip */}
-          <div className="rounded-full flex items-center justify-center flex-shrink-0 font-black" style={{ width: 36, height: 36, background: 'linear-gradient(135deg,#FBBF24,#E89F0F)', color: '#070F26', fontSize: 22, lineHeight: 1 }}>→</div>
+          {/* Arrow chip — gold circle with crisp bolded SVG arrow centered. Kyle 2026-06-09. */}
+          <div
+            className="rounded-full shrink-0"
+            style={{
+              width: 36,
+              height: 36,
+              background: 'linear-gradient(135deg,#FBBF24,#E89F0F)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#070F26" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M13 5l7 7-7 7" />
+            </svg>
+          </div>
         </button>
       )}
 
@@ -939,7 +953,11 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             minHeight: isMobile ? 168 : 108, // mobile: 2 rows × 80px tile + 8px gap
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'space-between',
+            // Mobile: ARENA spans 2 rows — center content vertically instead
+            // of pushing it to top/bottom edges. Desktop: keep space-between.
+            // Kyle 2026-06-09.
+            justifyContent: isMobile ? 'center' : 'space-between',
+            alignItems: isMobile ? 'center' : 'flex-start',
             position: 'relative',
             cursor: 'pointer',
             ...(isMobile ? { gridRow: '1 / span 2' } : {}),
@@ -959,7 +977,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           >
             <path d="M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5L18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2" />
           </svg>
-          <div>
+          <div style={{ textAlign: isMobile ? 'center' : 'left' }}>
             <div
               className="font-black italic uppercase"
               style={{ fontSize: 9, color: '#FF3131', letterSpacing: '0.18em' }}
@@ -973,7 +991,17 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
               ENTER <span style={{ color: '#FF3131' }}>ARENA</span>
             </div>
           </div>
-          <div className="flex items-center gap-2 mt-2">
+          {/* Mobile: stack centered. Desktop: spread between with arrow on right. */}
+          <div
+            className="mt-2"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              ...(isMobile ? { flexDirection: 'column', justifyContent: 'center' } : { flexDirection: 'row' }),
+              width: '100%',
+            }}
+          >
             <span
               className="font-black italic uppercase"
               style={{
@@ -981,12 +1009,13 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
                 color: '#a1a1aa',
                 letterSpacing: '0.14em',
                 fontVariantNumeric: 'tabular-nums',
+                textAlign: isMobile ? 'center' : 'left',
               }}
             >
               {activeDuelCount > 0 ? `${activeDuelCount} OPEN` : 'HOST OR JOIN'} ·
               0.01–1 SOL
             </span>
-            <div className="flex-1" />
+            {!isMobile && <div className="flex-1" />}
             <span
               className="font-black italic"
               style={{ fontSize: 14, color: '#FF3131' }}

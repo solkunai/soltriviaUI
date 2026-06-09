@@ -24,7 +24,40 @@ type Player = {
   avatarUrl?: string;
   col: string;
   badge?: string;
+  /** Seeker Genesis Token holder — drives the SKR badge next to username. */
+  isSeeker?: boolean;
 };
+
+// SKR "S" badge — gold superscript-style mask of /seeker-badge.png. Inline so
+// the parent's `truncate`/overflow doesn't clip the top. Slightly raised via
+// margin-top trick. Kyle 2026-06-09 (gold + no-clip after the first attempt).
+function SeekerBadge({ size = 11 }: { size?: number }) {
+  return (
+    <span
+      title="Seeker Genesis Token Holder"
+      style={{
+        display: 'inline-block',
+        width: size,
+        height: size,
+        backgroundColor: '#FFD700',
+        WebkitMaskImage: 'url(/seeker-badge.png)',
+        WebkitMaskSize: 'contain',
+        WebkitMaskRepeat: 'no-repeat',
+        WebkitMaskPosition: 'center',
+        maskImage: 'url(/seeker-badge.png)',
+        maskSize: 'contain',
+        maskRepeat: 'no-repeat',
+        maskPosition: 'center',
+        marginLeft: 3,
+        marginRight: 2,
+        verticalAlign: 'super',
+        // Slight scale-down to feel like a true superscript
+        transform: 'scale(0.85)',
+        flexShrink: 0,
+      }}
+    />
+  );
+}
 
 const PAGE_SIZE = 50;
 const POLL_INTERVAL_MS = 15_000;
@@ -94,8 +127,9 @@ function PodiumColumn({ player, isMode, isMobile = false }: { player: Player; is
             />
           ) : null}
         </div>
-        <div className="font-black italic uppercase mt-2 truncate" style={{ fontSize: isMobile ? 7 : 9, color: '#fff', letterSpacing: '0.1em' }}>
+        <div className="font-black italic uppercase mt-2 truncate" style={{ fontSize: isMobile ? 7 : 9, color: '#fff', letterSpacing: '0.1em', lineHeight: 1.4, overflow: 'visible' }}>
           {player.user}
+          {player.isSeeker && <SeekerBadge size={isMobile ? 6 : 8} />}
         </div>
         <div
           className="font-black italic mt-1"
@@ -191,6 +225,7 @@ const LeaderboardViewV2: React.FC = () => {
               avatarUrl: isUrl ? e.avatar : undefined,
               col: rank <= 5 ? PODIUM_COLS[rank - 1] : '#a1a1aa',
               badge: rank <= 3 ? BADGES[rank - 1] : undefined,
+              isSeeker: e.is_seeker_verified ?? false,
             };
           });
           totalForTab = resp.total_count ?? null;
@@ -214,6 +249,7 @@ const LeaderboardViewV2: React.FC = () => {
               avatar: colorFor(r.wallet_address),
               col: rank <= 5 ? PODIUM_COLS[rank - 1] : '#a1a1aa',
               badge: rank <= 3 ? BADGES[rank - 1] : undefined,
+              isSeeker: r.is_seeker_verified ?? false,
             };
           });
           nextAvailable = (page * PAGE_SIZE) < rows.length;
@@ -441,8 +477,9 @@ const LeaderboardViewV2: React.FC = () => {
                       />
                     ) : null}
                   </span>
-                  <span className="font-black italic uppercase truncate text-white" style={{ fontSize: 13, letterSpacing: '-0.01em' }}>
+                  <span className="font-black italic uppercase truncate text-white" style={{ fontSize: 13, letterSpacing: '-0.01em', lineHeight: 1.5, overflow: 'visible' }}>
                     {r.user}
+                    {r.isSeeker && <SeekerBadge size={11} />}
                   </span>
                   <span
                     className="font-black italic"

@@ -1281,6 +1281,7 @@ export interface ModeLeaderboardRow {
   avatar_url: string | null;
   sol_lamports: number;
   wins: number;
+  is_seeker_verified?: boolean;
 }
 
 /**
@@ -1343,7 +1344,7 @@ export async function getModeLeaderboard(
   const wallets = sorted.map((s) => s.wallet_address);
   const { data: profs } = await supabase
     .from('player_profiles')
-    .select('wallet_address, username, avatar_url')
+    .select('wallet_address, username, avatar_url, is_seeker_verified')
     .in('wallet_address', wallets);
   const byWallet = Object.fromEntries((profs ?? []).map((p: any) => [p.wallet_address, p]));
 
@@ -1353,6 +1354,7 @@ export async function getModeLeaderboard(
     avatar_url: byWallet[s.wallet_address]?.avatar_url ?? null,
     sol_lamports: s.sol_lamports,
     wins: s.wins,
+    is_seeker_verified: byWallet[s.wallet_address]?.is_seeker_verified ?? false,
   }));
 }
 

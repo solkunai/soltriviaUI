@@ -480,7 +480,8 @@ const ProfileViewV2: React.FC<Props> = ({
             txt: label,
             meta: c.score != null ? `${c.score.toLocaleString()} pts` : 'Finished',
             col: C.blue,
-            icon: 'bolt',
+            // Match the Custom Games tile icon on Home (wand-sparkles). Kyle 2026-06-09.
+            icon: 'sparkles',
             at: new Date(c.completed_at).getTime(),
           });
         }
@@ -815,8 +816,33 @@ const ProfileViewV2: React.FC<Props> = ({
             <div style={{ ...baseLabel, fontSize: 10, opacity: 0.7 }}>
               PLAYER {level != null ? `· LVL ${level}` : ''}
             </div>
-            <div style={{ ...display, fontSize: isMobile ? 32 : 54, marginTop: 4, wordBreak: 'break-word' }}>
+            <div style={{ ...display, fontSize: isMobile ? 32 : 54, marginTop: 4, wordBreak: 'break-word', lineHeight: 1.2, overflow: 'visible' }}>
               {username || '@YOU'}
+              {/* SKR "S" badge — gold, inline superscript at end of username.
+                  Inline-block + vertical-align:super so it never gets clipped
+                  by parent overflow. Kyle 2026-06-09. */}
+              {seekerProfile?.is_seeker_verified && (
+                <span
+                  title="Seeker Genesis Token Holder"
+                  style={{
+                    display: 'inline-block',
+                    width: isMobile ? 18 : 30,
+                    height: isMobile ? 18 : 30,
+                    backgroundColor: '#FFD700',
+                    WebkitMaskImage: 'url(/seeker-badge.png)',
+                    WebkitMaskSize: 'contain',
+                    WebkitMaskRepeat: 'no-repeat',
+                    WebkitMaskPosition: 'center',
+                    maskImage: 'url(/seeker-badge.png)',
+                    maskSize: 'contain',
+                    maskRepeat: 'no-repeat',
+                    maskPosition: 'center',
+                    marginLeft: 6,
+                    verticalAlign: 'super',
+                    transform: 'scale(0.85)',
+                  }}
+                />
+              )}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
               <button
@@ -1855,9 +1881,31 @@ const ProfileViewV2: React.FC<Props> = ({
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
                 {[
-                  { v: '+25%', l: 'XP BOOST' },
-                  { v: '50%', l: 'OFF LIVES + PASS' },
-                  { v: '★', l: 'LEADERBOARD BADGE' },
+                  { v: '+25%' as React.ReactNode, l: 'XP BOOST' },
+                  { v: '50%' as React.ReactNode, l: 'OFF LIVES + PASS' },
+                  {
+                    // Real SKR logo replaces the ugly star. Kyle 2026-06-09.
+                    v: (
+                      <span
+                        title="Seeker leaderboard badge"
+                        style={{
+                          display: 'inline-block',
+                          width: 22,
+                          height: 22,
+                          backgroundColor: '#14F195',
+                          WebkitMaskImage: 'url(/seeker-badge.png)',
+                          WebkitMaskSize: 'contain',
+                          WebkitMaskRepeat: 'no-repeat',
+                          WebkitMaskPosition: 'center',
+                          maskImage: 'url(/seeker-badge.png)',
+                          maskSize: 'contain',
+                          maskRepeat: 'no-repeat',
+                          maskPosition: 'center',
+                        }}
+                      />
+                    ) as React.ReactNode,
+                    l: 'LEADERBOARD BADGE',
+                  },
                 ].map((p) => (
                   <div
                     key={p.l}
@@ -1869,7 +1917,7 @@ const ProfileViewV2: React.FC<Props> = ({
                       textAlign: 'center',
                     }}
                   >
-                    <div style={{ ...display, fontSize: 18, color: C.primary }}>{p.v}</div>
+                    <div style={{ ...display, fontSize: 18, color: C.primary, lineHeight: 1.1 }}>{p.v}</div>
                     <div style={{ ...baseLabel, fontSize: 8, color: '#a1a1aa', marginTop: 4 }}>
                       {p.l}
                     </div>
