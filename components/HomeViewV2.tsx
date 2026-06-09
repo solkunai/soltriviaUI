@@ -911,16 +911,20 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
         QUICK PLAY
       </div>
 
-      {/* 3-tile mosaic — stacks to single column on mobile */}
+      {/* Tile mosaic — on mobile: 2-col grid with ARENA tall on left spanning
+          both rows, CUSTOM + FREE PLAY stacked on the right (mirrors native
+          SolTriviaNative/src/screens/HomeScreen.tsx flex-row mosaic).
+          On desktop: 3-col side-by-side. Kyle 2026-06-09. */}
       <div
         className="mb-3"
         style={{
           display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr 1fr',
+          gridTemplateColumns: isMobile ? '1.15fr 1fr' : '1.4fr 1fr 1fr',
+          gridTemplateRows: isMobile ? '1fr 1fr' : 'auto',
           gap: 10,
         }}
       >
-        {/* ARENA — wide red tile */}
+        {/* ARENA — wide red tile (left col on mobile, spans both rows) */}
         <button
           onClick={onEnterDuels}
           className="text-left rounded-xl active:opacity-90"
@@ -929,12 +933,13 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             border: '1.5px solid #FF3131',
             padding: '14px 16px',
             color: '#fff',
-            minHeight: 108,
+            minHeight: isMobile ? 224 : 108, // taller on mobile to span 2 rows visually
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
             position: 'relative',
             cursor: 'pointer',
+            ...(isMobile ? { gridRow: '1 / span 2' } : {}),
           }}
         >
           {/* Swords icon top-right */}
