@@ -5,7 +5,11 @@ import type { PaymentToken } from './constants';
 import { TOKEN_DECIMALS } from './constants';
 
 const JUPITER_API_URL = 'https://api.jup.ag/price/v3';
-const JUPITER_API_KEY = import.meta.env.VITE_JUPITER_API_KEY || '';
+// NOTE: Jupiter's price endpoint works without an API key on the free tier; the
+// rate limit is plenty for this app's traffic. The previous `VITE_JUPITER_API_KEY`
+// was being inlined into the production bundle by Vite, leaking the paid key
+// to anyone with DevTools. If higher rate limits are needed later, proxy the
+// call through a Supabase EF so the key stays server-side.
 
 // Solana native SOL mint (wrapped SOL)
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
@@ -35,12 +39,7 @@ export async function fetchTokenPrices(): Promise<TokenPrices> {
   }
 
   const url = `${JUPITER_API_URL}?ids=${SOL_MINT},${SKR_MINT},${NERD_MINT}`;
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (JUPITER_API_KEY) {
-    headers['x-api-key'] = JUPITER_API_KEY;
-  }
-
-  const response = await fetch(url, { headers });
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!response.ok) {
     throw new Error(`Jupiter API error: ${response.status}`);
   }

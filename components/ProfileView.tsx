@@ -11,7 +11,8 @@ function claimExplorerUrl(signature: string): string {
   const cluster = SOLANA_NETWORK === 'devnet' ? '?cluster=devnet' : '';
   return `${base}/tx/${signature}${cluster}`;
 }
-import { fetchClaimableRoundPayouts, fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, fetchMyDuelWins, fetchMyCustomGameWins, fetchRefundableEntries, fetchRefundableCustomGames, fetchMyRefundableDuels, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame, type MyDuelWin, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel } from '../src/utils/api';
+import { fetchClaimedRoundPayouts, initializeProgram, markPayoutClaimed, postWinnersOnChain, getReferralCode, getReferralStats, verifySeekerStatus, getSeekerProfile, toggleSkrDisplay, getMyCustomGames, type ClaimablePayout, type ClaimedPayout, type ReferralStatsResponse, type SeekerProfile, type MyCustomGame, type MyDuelWin, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type RefundableDuel } from '../src/utils/api';
+import { fetchUnpaidRoundPayouts, fetchUnclaimedDuelWins, fetchUnclaimedCustomWins, fetchClaimableRefundEntries, fetchClaimableRefundCustoms, fetchClaimableRefundDuels } from '../src/utils/claims';
 import { buildClaimTierPrizeIx, buildClaimTierRefundIx, buildClaimCustomRefundIx, fetchDuel, fetchCustomGame, fetchTierRound, getTierVaultPda } from '../src/utils/soltriviaContract';
 import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import AvatarUpload from './AvatarUpload';
@@ -28,8 +29,10 @@ interface ProfileViewProps {
   onSeekerVerified?: (verified: boolean) => void;
   onViewCustomGame?: (slug: string) => void;
   onClaimDuelPrize?: (duelId: number) => Promise<void>;
+  onClaimDuelSplPrize?: (duelId: number, tokenMint: string) => Promise<void>;
   onClaimDuelRefund?: (duelId: number, player1Wallet: string) => Promise<void>;
   onClaimCustomPrize?: (onChainGameId: number) => Promise<void>;
+  onClaimCustomSplPrize?: (onChainGameId: number, tokenMint: string) => Promise<void>;
   onOpenSwap?: () => void;
 }
 
@@ -64,7 +67,7 @@ interface PlayedCustomGame {
   completed_at: string;
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize, onClaimDuelRefund, onClaimCustomPrize, onOpenSwap }) => {
+const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCacheBuster = 0, onEdit, onOpenGuide, onAvatarUpdated, onSeekerVerified, onViewCustomGame, onClaimDuelPrize, onClaimDuelSplPrize, onClaimDuelRefund, onClaimCustomPrize, onClaimCustomSplPrize, onOpenSwap }) => {
   const { t } = useTranslation();
   const { publicKey, sendTransaction, signMessage, isPrivyUser, isPhantomConnectUser } = useWallet();
   const { exportWallet } = useExportWallet();
@@ -300,95 +303,36 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
           setHistory([]);
         }
 
-        // Round wins eligible for on-chain claim — verify not already claimed on-chain
-        const claimableRaw = await fetchClaimableRoundPayouts(walletAddress);
-        const claimableVerified: ClaimablePayout[] = [];
-        for (const p of claimableRaw) {
-          try {
-            const onChain = await fetchTierRound(connection, p.contract_round_id, p.tier_index);
-            // Only show if round exists on-chain AND this rank's prize isn't already claimed
-            if (onChain && p.rank >= 1 && p.rank <= 5 && !onChain.claimed[p.rank - 1]) {
-              claimableVerified.push(p);
-            }
-          } catch { /* skip — round may not exist on-chain */ }
-        }
-        setClaimablePayouts(claimableVerified);
+        // Round / duel / custom prize claims + refunds — all on-chain filtered
+        // via shared wrappers in claims.ts. Refunds check per-player receipt PDA
+        // existence (which the contract closes on claim) rather than fragile
+        // vault-balance / game-status heuristics that produced ghost rows.
+        try {
+          const [
+            roundPayouts,
+            duelWinList,
+            customWinList,
+            refundRoundList,
+            refundCustomList,
+            refundDuelList,
+          ] = await Promise.all([
+            fetchUnpaidRoundPayouts(connection, walletAddress),
+            fetchUnclaimedDuelWins(connection, walletAddress),
+            fetchUnclaimedCustomWins(connection, walletAddress),
+            fetchClaimableRefundEntries(connection, walletAddress),
+            fetchClaimableRefundCustoms(connection, walletAddress),
+            fetchClaimableRefundDuels(connection, walletAddress),
+          ]);
+          setClaimablePayouts(roundPayouts);
+          setClaimableDuels(duelWinList);
+          setClaimableCustomGames(customWinList);
+          setRefundableEntries(refundRoundList);
+          setRefundableCustomGames(refundCustomList);
+          setRefundableDuels(refundDuelList);
+        } catch { /* silently skip — claim cards will just be empty */ }
+
         const claimed = await fetchClaimedRoundPayouts(walletAddress);
         setClaimedPayouts(claimed);
-
-        // Duel wins — check on-chain which are unclaimed
-        try {
-          const duelWins = await fetchMyDuelWins(walletAddress);
-          const unclaimed: MyDuelWin[] = [];
-          for (const dw of duelWins) {
-            try {
-              const onChain = await fetchDuel(connection, dw.duel_id);
-              if (onChain && !onChain.winnerClaimed) unclaimed.push(dw);
-            } catch { /* duel not on-chain or RPC error — skip */ }
-          }
-          setClaimableDuels(unclaimed);
-        } catch { /* silently skip duel wins fetch */ }
-
-        // Custom game wins — check on-chain claimed[]
-        try {
-          const cgWins = await fetchMyCustomGameWins(walletAddress);
-          const unclaimedCG: ClaimableCustomGameWin[] = [];
-          for (const cg of cgWins) {
-            try {
-              const onChain = await fetchCustomGame(connection, cg.on_chain_game_id);
-              if (onChain && !onChain.claimed[cg.winner_index]) unclaimedCG.push(cg);
-            } catch { /* skip */ }
-          }
-          setClaimableCustomGames(unclaimedCG);
-        } catch { /* silently skip */ }
-
-        // Refundable entries — check on-chain refundMode AND vault has enough SOL
-        try {
-          const refundable = await fetchRefundableEntries(walletAddress);
-          const verified: RefundableEntry[] = [];
-          for (const re of refundable) {
-            try {
-              const onChain = await fetchTierRound(connection, re.contract_round_id, re.tier_index);
-              if (onChain && onChain.refundMode) {
-                // Also check vault has enough SOL to pay the refund (filters out already-claimed)
-                const vaultPda = getTierVaultPda(re.contract_round_id, re.tier_index);
-                const vaultBalance = await connection.getBalance(vaultPda);
-                if (vaultBalance > onChain.entryFeeLamports) verified.push(re);
-              }
-            } catch { /* skip — round may not exist on-chain */ }
-          }
-          setRefundableEntries(verified);
-        } catch { /* silently skip */ }
-
-        // Refundable custom games — expired games where player has an entry
-        try {
-          const cgRefunds = await fetchRefundableCustomGames(walletAddress);
-          // Verify on-chain: custom game status must be expired (status byte = 3)
-          const verifiedCG: RefundableCustomGame[] = [];
-          for (const cg of cgRefunds) {
-            try {
-              const onChain = await fetchCustomGame(connection, cg.on_chain_game_id);
-              // Status 3 = expired on-chain (refundable)
-              if (onChain && onChain.status === 3) verifiedCG.push(cg);
-            } catch { /* skip */ }
-          }
-          setRefundableCustomGames(verifiedCG);
-        } catch { /* silently skip */ }
-
-        // Refundable duels — expired duels where user was creator and no opponent joined
-        try {
-          const duelRefunds = await fetchMyRefundableDuels(walletAddress);
-          // Verify on-chain: duel PDA must exist and not be resolved
-          const verifiedDuelRefunds: RefundableDuel[] = [];
-          for (const dr of duelRefunds) {
-            try {
-              const onChain = await fetchDuel(connection, dr.duel_id);
-              // If duel exists on-chain and winner hasn't claimed, it's refundable
-              if (onChain && !onChain.winnerClaimed) verifiedDuelRefunds.push(dr);
-            } catch { verifiedDuelRefunds.push(dr); /* if on-chain check fails, still show it */ }
-          }
-          setRefundableDuels(verifiedDuelRefunds);
-        } catch { /* silently skip */ }
       } catch (error) {
         console.error('Error fetching profile data:', error);
       } finally {
@@ -1337,6 +1281,20 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                         type="button"
                         disabled={claimingDuelId === dw.duel_id}
                         onClick={async () => {
+                          // Branch SOL vs SPL based on token_mint on the win row.
+                          const splMint = (dw as any).token_mint as string | null | undefined;
+                          if (splMint && onClaimDuelSplPrize) {
+                            setClaimingDuelId(dw.duel_id);
+                            try {
+                              await onClaimDuelSplPrize(dw.duel_id, splMint);
+                              setClaimableDuels(prev => prev.filter(d => d.duel_id !== dw.duel_id));
+                            } catch {
+                              /* claim failed — button re-enables */
+                            } finally {
+                              setClaimingDuelId(null);
+                            }
+                            return;
+                          }
                           if (!onClaimDuelPrize) return;
                           setClaimingDuelId(dw.duel_id);
                           try {
@@ -1376,11 +1334,36 @@ const ProfileView: React.FC<ProfileViewProps> = ({ username, avatar, profileCach
                     <span className="text-zinc-500 text-xs ml-2">#{cg.winner_index + 1}</span>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="text-white font-bold">{(cg.prize_lamports / 1_000_000_000).toFixed(4)} SOL</span>
+                    <span className="text-white font-bold">
+                      {(() => {
+                        // Display in the actual token's units when SPL, else SOL.
+                        const splMint = (cg as any).token_mint as string | null | undefined;
+                        const splDecimals = (cg as any).token_decimals as number | null | undefined;
+                        const splSymbol = (cg as any).token_symbol as string | null | undefined;
+                        if (splMint && splDecimals != null) {
+                          return `${(cg.prize_lamports / Math.pow(10, splDecimals)).toFixed(splDecimals <= 2 ? 2 : 4)} ${splSymbol || 'SPL'}`;
+                        }
+                        return `${(cg.prize_lamports / 1_000_000_000).toFixed(4)} SOL`;
+                      })()}
+                    </span>
                     <button
                       type="button"
                       disabled={claimingCustomGameId === cg.on_chain_game_id}
                       onClick={async () => {
+                        // Branch SOL vs SPL based on token_mint on the win row.
+                        const splMint = (cg as any).token_mint as string | null | undefined;
+                        if (splMint && onClaimCustomSplPrize) {
+                          setClaimingCustomGameId(cg.on_chain_game_id);
+                          try {
+                            await onClaimCustomSplPrize(cg.on_chain_game_id, splMint);
+                            setClaimableCustomGames(prev => prev.filter(g => g.on_chain_game_id !== cg.on_chain_game_id));
+                          } catch {
+                            /* claim failed — button re-enables */
+                          } finally {
+                            setClaimingCustomGameId(null);
+                          }
+                          return;
+                        }
                         if (!onClaimCustomPrize) return;
                         setClaimingCustomGameId(cg.on_chain_game_id);
                         try {

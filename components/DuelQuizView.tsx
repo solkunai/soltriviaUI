@@ -12,6 +12,14 @@ interface DuelQuizViewProps {
   opponentUsername: string | null;
   opponentAvatar: string | null;
   isPlayer1: boolean;
+  /**
+   * v2.1 hybrid: when true, the player is answering questions BEFORE an
+   * opponent has joined (creator pre-play). Skip the realtime opponent
+   * subscription, hide the opponent live-score panel, and finish by
+   * returning to DUEL_WAITING instead of DUEL_RESULTS (the result waits
+   * until the opponent joins + finishes).
+   */
+  soloMode?: boolean;
   onFinish: (results: {
     myScore: number;
     myCorrect: number;
@@ -33,7 +41,7 @@ interface QuizQuestion {
   correctAnswer: number;
 }
 
-const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAddress, opponentWallet, opponentUsername, opponentAvatar, isPlayer1, onFinish, onQuit }) => {
+const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAddress, opponentWallet, opponentUsername, opponentAvatar, isPlayer1, soloMode = false, onFinish, onQuit }) => {
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -80,8 +88,10 @@ const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAdd
     })();
   }, [dbDuelId, walletAddress]);
 
-  // Subscribe to opponent score updates via Realtime
+  // Subscribe to opponent score updates via Realtime. SKIPPED in soloMode
+  // (creator pre-play) because there's no opponent yet.
   useEffect(() => {
+    if (soloMode) return;
     subRef.current = subscribeDuelUpdates(dbDuelId, (duel) => {
       const oppScore = isPlayer1 ? (duel.player2_score as number ?? 0) : (duel.player1_score as number ?? 0);
       const oppCorrect = isPlayer1 ? (duel.player2_correct as number ?? 0) : (duel.player1_correct as number ?? 0);
@@ -89,7 +99,7 @@ const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAdd
       setOpponentCorrect(oppCorrect);
     });
     return () => { subRef.current?.unsubscribe(); };
-  }, [dbDuelId, isPlayer1]);
+  }, [dbDuelId, isPlayer1, soloMode]);
 
   // Session timer
   useEffect(() => {
@@ -321,16 +331,26 @@ const DuelQuizView: React.FC<DuelQuizViewProps> = ({ dbDuelId, duelId, walletAdd
           </h3>
         </div>
 
-        {/* Opponent Score Overlay */}
-        <div className="flex items-center gap-3 px-4 py-2 bg-[#FF3131]/10 border border-[#FF3131]/20 rounded-xl">
-          <div className="w-8 h-8 bg-[#FF3131]/30 rounded-full flex items-center justify-center text-[#FF3131] text-[10px] font-black">
-            {opponentAvatar ? <img src={opponentAvatar} alt="" className="w-8 h-8 rounded-full" /> : 'VS'}
+        {/* Opponent Score Overlay — hidden in soloMode (creator pre-play
+            before any opponent has joined). */}
+        {!soloMode && (
+          <div className="flex items-center gap-3 px-4 py-2 bg-[#FF3131]/10 border border-[#FF3131]/20 rounded-xl">
+            <div className="w-8 h-8 bg-[#FF3131]/30 rounded-full flex items-center justify-center text-[#FF3131] text-[10px] font-black">
+              {opponentAvatar ? <img src={opponentAvatar} alt="" className="w-8 h-8 rounded-full" /> : 'VS'}
+            </div>
+            <div className="text-right">
+              <p className="text-zinc-500 text-[8px] font-black uppercase truncate max-w-[80px]">{oppDisplayName}</p>
+              <p className="text-[#FF3131] text-lg font-[1000] italic tabular-nums leading-none">{opponentScore}</p>
+            </div>
           </div>
-          <div className="text-right">
-            <p className="text-zinc-500 text-[8px] font-black uppercase truncate max-w-[80px]">{oppDisplayName}</p>
-            <p className="text-[#FF3131] text-lg font-[1000] italic tabular-nums leading-none">{opponentScore}</p>
+        )}
+        {soloMode && (
+          <div className="flex items-center gap-3 px-4 py-2 bg-[#FFD700]/10 border border-[#FFD700]/30 rounded-xl">
+            <span className="text-[#FFD700] text-[8px] font-black uppercase tracking-[0.2em] italic">
+              PRE-PLAY · BANKING SCORE
+            </span>
           </div>
-        </div>
+        )}
 
         <div className="flex gap-4 md:gap-8 items-center">
           <div className="text-right">

@@ -91,8 +91,10 @@ export default function ContractTestView() {
   const devnet = forceDevnet;
   const devnetConn = useMemo(() => new Connection(clusterApiUrl('devnet')), []);
   const mainnetConn = useMemo(() => {
-    const helius = import.meta.env.VITE_HELIUS_API_KEY;
-    const rpc = helius ? `https://mainnet.helius-rpc.com/?api-key=${helius}` : 'https://api.mainnet-beta.solana.com';
+    // Use the Helius proxy (API key stays server-side). The previous raw-key
+    // URL fallback was removed — Vite would inline the key into the bundle.
+    const proxy = import.meta.env.VITE_HELIUS_RPC_PROXY_URL;
+    const rpc = proxy || 'https://api.mainnet-beta.solana.com';
     return new Connection(rpc, 'confirmed');
   }, []);
   const conn = devnet ? devnetConn : mainnetConn;

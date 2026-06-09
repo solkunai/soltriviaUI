@@ -1,6 +1,6 @@
 // API utility functions for Supabase Edge Functions
 import { supabase, isSupabaseConfigured } from './supabase';
-import { SUPABASE_FUNCTIONS_URL } from './constants';
+import { SUPABASE_FUNCTIONS_URL, SOLANA_NETWORK } from './constants';
 
 const FUNCTIONS_URL = SUPABASE_FUNCTIONS_URL;
 
@@ -28,6 +28,54 @@ export const getAdminHeaders = (): Record<string, string> => {
     'x-admin-secret': adminSecret,
   };
 };
+
+/**
+ * Thrown when an Edge Function returns a non-2xx response. The error message
+ * is the parsed body's `error` field (or generic fallback). The full HTTP
+ * status + raw body are attached as properties for callers that want to
+ * branch on specific failure modes (e.g. 409 = duel already exists).
+ */
+export class EdgeFunctionError extends Error {
+  status: number;
+  body: any;
+  constructor(slug: string, status: number, body: any) {
+    const msg = body?.error || body?.message || `${slug} HTTP ${status}`;
+    super(msg);
+    this.name = 'EdgeFunctionError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
+/**
+ * Shared POST-to-Edge-Function helper. Mirrors the native repo's `efPost<T>`
+ * convention so error handling is consistent across both apps. PREFER this
+ * over `supabase.functions.invoke()` — the supabase-js wrapper hides the
+ * response body inside an opaque `FunctionsHttpError`, which makes 500
+ * debugging painful (we hit this with create-custom-game v37/v38 tonight).
+ *
+ * Throws EdgeFunctionError on non-2xx so callers can `try {} catch (err)` and
+ * read `err.message` to get the EF's actual error string. Pass `{admin: true}`
+ * for EFs that need x-admin-secret.
+ */
+export async function efPost<T = any>(
+  slug: string,
+  body: Record<string, any>,
+  options?: { admin?: boolean; signal?: AbortSignal },
+): Promise<T> {
+  const headers = options?.admin ? getAdminHeaders() : getAuthHeaders();
+  const res = await fetch(`${FUNCTIONS_URL}/${slug}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal: options?.signal,
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new EdgeFunctionError(slug, res.status, errBody);
+  }
+  return res.json() as Promise<T>;
+}
 
 // Authenticate admin via server-side edge function (returns admin_secret on success)
 export const adminLogin = async (username: string, password: string): Promise<{ admin_secret: string }> => {
@@ -67,6 +115,10 @@ export interface SubmitAnswerParams {
   selected_index?: number;
   time_taken_ms: number;
   time_expired?: boolean; // When true, no selection; backend records wrong and advances
+  /** v2.1 LIVES retry mechanic. 0 / omitted = first attempt (original flow).
+   *  1 or 2 = re-answer via lives (server validates against question_attempts_used
+   *  cap on game_sessions and player_lives.lives_count). Backend EF v52+ required. */
+  attempt_idx?: number;
 }
 
 export interface SubmitAnswerResponse {
@@ -78,6 +130,10 @@ export interface SubmitAnswerResponse {
   timeMs?: number;
   timedOut?: boolean;
   isLastQuestion?: boolean;
+  /** v52 retry response fields , present only when the request sent attempt_idx > 0. */
+  retryUsed?: boolean;
+  livesRemaining?: number;
+  questionAttemptsUsed?: number;
 }
 
 export interface Question {
@@ -412,13 +468,18 @@ export async function purchaseLives(
   txSignature: string,
   tier?: string,
   paymentToken?: string,
-  amountUsd?: number
+  amountUsd?: number,
+  opts?: { usd_price_cents?: number; token_mint?: string },
 ): Promise<PurchaseLivesResponse> {
   const url = `${FUNCTIONS_URL}/purchase-lives`;
   const response = await fetch(url, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ walletAddress, txSignature, tier, paymentToken, amountUsd }),
+    body: JSON.stringify({
+      walletAddress, txSignature, tier, paymentToken, amountUsd,
+      ...(opts?.usd_price_cents != null && { usd_price_cents: opts.usd_price_cents }),
+      ...(opts?.token_mint && { token_mint: opts.token_mint }),
+    }),
   });
 
   const body = await response.json().catch(() => ({}));
@@ -429,6 +490,53 @@ export async function purchaseLives(
     throw new Error(msg);
   }
   return body as PurchaseLivesResponse;
+}
+
+// NEW (2026-05-30): build the multi-token, multi-recipient Lives purchase tx server-side.
+// Returns base64 v0 tx for the client to sign + submit. Then the client calls purchaseLives
+// with the new opts (usd_price_cents + token_mint) to trigger the new 2-leg verify path.
+export interface BuildLivesPurchaseTxRequest {
+  walletAddress: string;
+  tier: 'basic' | 'value' | 'bulk';
+  paymentToken: 'SOL' | 'USDC' | 'SKR' | 'NERD';
+  token_mint?: string;
+  usd_price_cents?: number;
+}
+
+export interface BuildLivesPurchaseTxResponse {
+  ok: boolean;
+  tx_base64: string;
+  blockhash: string;
+  last_valid_block_height: number;
+  tier: string;
+  lives: number;
+  paymentToken: string;
+  token_mint: string;
+  usd_price_cents: number;
+  total_token_amount: string;
+  revenue_amount: string;
+  referrer_amount: string;
+  referrer_wallet: string | null;
+  is_seeker: boolean;
+  jupiter_price_usd: number;
+  platform_fee_lamports: number;
+}
+
+export async function buildLivesPurchaseTx(
+  params: BuildLivesPurchaseTxRequest,
+): Promise<BuildLivesPurchaseTxResponse> {
+  const url = `${FUNCTIONS_URL}/build-lives-purchase-tx`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = body.details ? `${body.error || 'Failed to build lives purchase tx'}: ${body.details}` : (body.error || 'Failed to build lives purchase tx');
+    throw new Error(msg);
+  }
+  return body as BuildLivesPurchaseTxResponse;
 }
 
 // Register or update player profile when wallet connects
@@ -542,6 +650,182 @@ export async function updateProfile(
     throw new Error(err.error || 'Failed to update profile');
   }
   return response.json();
+}
+
+/** Live username availability check. Case-insensitive. Returns true if the
+ *  name is free (no other wallet currently holds it). Empty / too short / too
+ *  long usernames are treated as "not available" so callers don't have to
+ *  duplicate the format check. Optionally excludes a wallet from the search
+ *  so the user can keep their own current name without it being flagged. */
+export async function checkUsernameAvailable(
+  username: string,
+  excludeWallet?: string,
+): Promise<boolean> {
+  if (!isSupabaseConfigured) return true; // fail-open in dev so UI isn't gated
+  const trimmed = (username || '').trim();
+  if (trimmed.length < 2 || trimmed.length > 24) return false;
+  let query = supabase
+    .from('player_profiles')
+    .select('wallet_address', { count: 'exact', head: true })
+    .ilike('username', trimmed);
+  if (excludeWallet) {
+    query = query.neq('wallet_address', excludeWallet);
+  }
+  const { count, error } = await query;
+  if (error) return true; // fail-open on RPC blip; EF will reject if actually taken
+  return (count ?? 0) === 0;
+}
+
+// ─── Onboarding flow (v2.1, 2026-06-05) ─────────────────────────────────────
+// First-connect modal stamps three timestamps on player_profiles:
+//   age_verified_at, tos_accepted_at, onboarded_at.
+// Pre-existing players are auto-grandfathered via the migration so they
+// don't see the modal on next visit. Defensive: also auto-grandfather if
+// the row exists but row.created_at is older than 24h (joined long ago).
+
+export interface OnboardingStatus {
+  needsOnboarding: boolean;
+  seekerDomain: string | null;
+}
+
+export async function getOnboardingStatus(walletAddress: string): Promise<OnboardingStatus> {
+  if (!isSupabaseConfigured || !walletAddress?.trim()) {
+    return { needsOnboarding: false, seekerDomain: null };
+  }
+  const { data, error } = await supabase
+    .from('player_profiles')
+    .select('onboarded_at, created_at, skr_domain')
+    .eq('wallet_address', walletAddress)
+    .maybeSingle();
+  if (error) {
+    // Defensive: pre-migration or RLS hiccup. Skip the modal rather than
+    // gate the whole app behind it.
+    return { needsOnboarding: false, seekerDomain: null };
+  }
+  // No row = first-ever connection for this wallet. Show onboarding.
+  if (!data) return { needsOnboarding: true, seekerDomain: null };
+  const row = data as { onboarded_at?: string | null; created_at?: string | null; skr_domain?: string | null };
+  return {
+    needsOnboarding: !row.onboarded_at,
+    seekerDomain: row.skr_domain ?? null,
+  };
+}
+
+export interface CompleteOnboardingPayload {
+  username: string;
+  referralCode?: string | null;
+  useSkrAsDisplay?: boolean;
+  skrDomain?: string | null;
+}
+
+export interface CompleteOnboardingResult {
+  success: boolean;
+  username?: string;
+  referralRegistered?: boolean;
+  referralError?: string;
+  error?: string;
+}
+
+/** Final submit of the onboarding modal. Creates/updates player_profiles
+ *  with the username + onboarding timestamps, then (optionally) registers a
+ *  referral. Referral failure does NOT roll back onboarding — the user is
+ *  still onboarded, we just surface the error so they can retry the link. */
+export async function completeOnboarding(
+  walletAddress: string,
+  payload: CompleteOnboardingPayload,
+): Promise<CompleteOnboardingResult> {
+  if (!isSupabaseConfigured) return { success: false, error: 'Supabase not configured' };
+  const wallet = walletAddress.trim();
+  const username = payload.username.trim();
+  if (!wallet) return { success: false, error: 'Missing wallet' };
+  if (!username) return { success: false, error: 'Username required' };
+
+  // Calls the `complete-onboarding` Edge Function (v1, Kyle 2026-06-07)
+  // instead of upserting directly — `player_profiles` RLS only allows
+  // service-role writes, so a client upsert returns "new row violates
+  // row-level security policy". The EF performs the upsert + optional
+  // referral registration server-side.
+  try {
+    const res = await fetch(`${FUNCTIONS_URL}/complete-onboarding`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        wallet_address: wallet,
+        username,
+        referral_code: payload.referralCode ?? null,
+        use_skr_as_display: payload.useSkrAsDisplay,
+        skr_domain: payload.skrDomain ?? null,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || `complete-onboarding failed (${res.status})` };
+    }
+    return {
+      success: true,
+      username: data.username || username,
+      referralRegistered: data.referralRegistered === true,
+      referralError: data.referralError,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Network error',
+    };
+  }
+}
+
+// Legacy fallback path kept for reference — not executed (the function
+// returns above). The old client-upsert flow was blocked by RLS.
+async function _completeOnboarding_legacy_disabled(
+  _walletAddress: string,
+  _payload: CompleteOnboardingPayload,
+): Promise<CompleteOnboardingResult> {
+  const wallet = _walletAddress.trim();
+  const username = _payload.username.trim();
+  const now = new Date().toISOString();
+  // Upsert: existing rows get the timestamps; new rows get full profile.
+  const { error: upsertError } = await supabase
+    .from('player_profiles')
+    .upsert(
+      {
+        wallet_address: wallet,
+        username,
+        age_verified_at: now,
+        tos_accepted_at: now,
+        onboarded_at: now,
+        last_activity_date: now.split('T')[0],
+        ...(_payload.useSkrAsDisplay !== undefined && { use_skr_as_display: _payload.useSkrAsDisplay }),
+        ...(_payload.skrDomain !== undefined && _payload.skrDomain !== null && { skr_domain: _payload.skrDomain }),
+      },
+      { onConflict: 'wallet_address' },
+    );
+
+  if (upsertError) {
+    const msg = (upsertError.message || '').toLowerCase();
+    // Friendly translation for the case-insensitive username unique index.
+    if (msg.includes('unique') && msg.includes('username')) {
+      return { success: false, error: 'That username is taken. Try another one.' };
+    }
+    return { success: false, error: upsertError.message || 'Failed to save profile' };
+  }
+
+  // Referral is optional. If provided, register it via the existing EF.
+  let referralRegistered = false;
+  let referralError: string | undefined;
+  const refCode = _payload.referralCode?.trim();
+  if (refCode) {
+    try {
+      await registerReferral(wallet, refCode);
+      referralRegistered = true;
+    } catch (err) {
+      // Self-referral / already-referred / invalid code: surface but don't
+      // block onboarding completion.
+      referralError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  return { success: true, username, referralRegistered, referralError };
 }
 
 // Quests: fetch definitions and user progress
@@ -990,6 +1274,218 @@ export async function getTotalSolWonByWallets(walletAddresses: string[]): Promis
   return out;
 }
 
+/** A single row in a mode-specific (rounds/duels/custom) SOL-won leaderboard. */
+export interface ModeLeaderboardRow {
+  wallet_address: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  sol_lamports: number;
+  wins: number;
+}
+
+/**
+ * Real SOL-won leaderboard for the ROUNDS / DUELS / CUSTOM tabs, aggregated
+ * client-side from the source tables and joined to player_profiles. No EF —
+ * these mode leaderboards don't exist server-side yet.
+ */
+export async function getModeLeaderboard(
+  mode: 'rounds' | 'duels' | 'custom',
+  limit = 25,
+): Promise<ModeLeaderboardRow[]> {
+  if (!isSupabaseConfigured) return [];
+  const tally = new Map<string, { lamports: number; wins: number }>();
+  const add = (w: string | null | undefined, lamports: number) => {
+    if (!w) return;
+    const cur = tally.get(w) ?? { lamports: 0, wins: 0 };
+    cur.lamports += lamports;
+    cur.wins += 1;
+    tally.set(w, cur);
+  };
+
+  if (mode === 'rounds') {
+    const { data } = await supabase
+      .from('round_payouts')
+      .select('wallet_address, prize_lamports, paid_lamports')
+      .limit(5000);
+    for (const r of (data ?? []) as any[]) {
+      add(r.wallet_address, Number(r.paid_lamports ?? r.prize_lamports ?? 0) || 0);
+    }
+  } else if (mode === 'duels') {
+    const { data } = await supabase
+      .from('duels')
+      .select('winner_wallet, total_pot_lamports, entry_fee_lamports')
+      .in('status', ['completed', 'resolved'])
+      .not('winner_wallet', 'is', null)
+      .limit(5000);
+    for (const d of (data ?? []) as any[]) {
+      const pot = Number(d.total_pot_lamports ?? 0) || Number(d.entry_fee_lamports ?? 0) * 2;
+      add(d.winner_wallet, pot);
+    }
+  } else {
+    const { data } = await supabase
+      .from('custom_games')
+      .select('winner_wallets, winner_amounts')
+      .eq('status', 'finalized')
+      .limit(5000);
+    for (const g of (data ?? []) as any[]) {
+      const wallets: string[] = g.winner_wallets ?? [];
+      const amounts: number[] = g.winner_amounts ?? [];
+      wallets.forEach((w, i) => add(w, Number(amounts[i] ?? 0) || 0));
+    }
+  }
+
+  const sorted = [...tally.entries()]
+    .map(([wallet_address, v]) => ({ wallet_address, sol_lamports: v.lamports, wins: v.wins }))
+    .sort((a, b) => b.sol_lamports - a.sol_lamports)
+    .slice(0, limit);
+  if (sorted.length === 0) return [];
+
+  const wallets = sorted.map((s) => s.wallet_address);
+  const { data: profs } = await supabase
+    .from('player_profiles')
+    .select('wallet_address, username, avatar_url')
+    .in('wallet_address', wallets);
+  const byWallet = Object.fromEntries((profs ?? []).map((p: any) => [p.wallet_address, p]));
+
+  return sorted.map((s) => ({
+    wallet_address: s.wallet_address,
+    display_name: byWallet[s.wallet_address]?.username ?? null,
+    avatar_url: byWallet[s.wallet_address]?.avatar_url ?? null,
+    sol_lamports: s.sol_lamports,
+    wins: s.wins,
+  }));
+}
+
+// ─── Global Live Feed ─────────────────────────────────────────────────────
+
+export type LiveFeedKind = 'win' | 'place' | 'xp' | 'duel_win' | 'duel_new' | 'streak';
+
+export interface LiveFeedItem {
+  id: string;
+  text: string;
+  kind: LiveFeedKind;
+  highlight: boolean;
+  at: number;
+}
+
+const STREAK_MILESTONES = [5, 10, 25, 50, 100];
+
+/**
+ * Aggregate recent global activity for the Home live feed: round XP + SOL
+ * payouts, duel wins, freshly opened duels, and active streaks. Reads public
+ * tables and joins player_profiles for display names. Poll it for "real-time".
+ */
+export async function getLiveFeed(limit = 14): Promise<LiveFeedItem[]> {
+  if (!isSupabaseConfigured) return [];
+
+  const [gsRes, duelWonRes, duelNewRes, customRes, streakRes] = await Promise.all([
+    supabase
+      .from('game_sessions')
+      .select('wallet_address, score, rank, payout_lamports, finished_at, daily_rounds(round_number)')
+      .not('finished_at', 'is', null)
+      .order('finished_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('duels')
+      .select('duel_id, winner_wallet, total_pot_lamports, resolved_at')
+      .in('status', ['completed', 'resolved'])
+      .not('winner_wallet', 'is', null)
+      .not('resolved_at', 'is', null)
+      .order('resolved_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('duels')
+      .select('duel_id, player1_wallet, entry_fee_lamports, created_at')
+      .eq('status', 'waiting')
+      .order('created_at', { ascending: false })
+      .limit(8),
+    supabase
+      .from('custom_game_sessions')
+      .select('wallet_address, score, finished_at, custom_games(name)')
+      .not('finished_at', 'is', null)
+      .order('finished_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('player_profiles')
+      .select('wallet_address, current_streak, last_activity_date')
+      .gte('current_streak', 5)
+      .order('last_activity_date', { ascending: false })
+      .limit(10),
+  ]);
+
+  // Collect every wallet that appears, fetch display names in one query.
+  const wallets = new Set<string>();
+  for (const g of (gsRes.data ?? []) as any[]) if (g.wallet_address) wallets.add(g.wallet_address);
+  for (const d of (duelWonRes.data ?? []) as any[]) if (d.winner_wallet) wallets.add(d.winner_wallet);
+  for (const d of (duelNewRes.data ?? []) as any[]) if (d.player1_wallet) wallets.add(d.player1_wallet);
+  for (const c of (customRes.data ?? []) as any[]) if (c.wallet_address) wallets.add(c.wallet_address);
+  for (const p of (streakRes.data ?? []) as any[]) if (p.wallet_address) wallets.add(p.wallet_address);
+
+  let nameByWallet: Record<string, string> = {};
+  if (wallets.size > 0) {
+    const { data: profs } = await supabase
+      .from('player_profiles')
+      .select('wallet_address, username')
+      .in('wallet_address', [...wallets]);
+    nameByWallet = Object.fromEntries(
+      (profs ?? []).map((p: any) => [p.wallet_address, p.username || null]),
+    );
+  }
+  const name = (w: string) =>
+    nameByWallet[w] ? `@${String(nameByWallet[w]).replace(/^@/, '')}` : `${w.slice(0, 4)}…${w.slice(-4)}`;
+
+  const items: LiveFeedItem[] = [];
+
+  for (const g of (gsRes.data ?? []) as any[]) {
+    if (!g.finished_at) continue;
+    const at = new Date(g.finished_at).getTime();
+    const roundNum = g.daily_rounds ? (g.daily_rounds.round_number ?? 0) + 1 : null;
+    const roundTag = roundNum ? ` · Round #${roundNum}` : '';
+    const sol = (g.payout_lamports ?? 0) / 1_000_000_000;
+    if (sol > 0) {
+      items.push({ id: `gs-win-${g.wallet_address}-${at}`, text: `${name(g.wallet_address)} won ${sol.toFixed(3)} SOL${roundTag}`, kind: 'win', highlight: true, at });
+    } else if (g.rank != null && g.rank <= 5) {
+      items.push({ id: `gs-place-${g.wallet_address}-${at}`, text: `${name(g.wallet_address)} placed #${g.rank}${roundTag}`, kind: 'place', highlight: false, at });
+    } else if (g.score != null) {
+      items.push({ id: `gs-xp-${g.wallet_address}-${at}`, text: `${name(g.wallet_address)} earned ${Number(g.score).toLocaleString()} XP${roundTag}`, kind: 'xp', highlight: false, at });
+    }
+  }
+
+  for (const d of (duelWonRes.data ?? []) as any[]) {
+    if (!d.resolved_at) continue;
+    const at = new Date(d.resolved_at).getTime();
+    const sol = (d.total_pot_lamports ?? 0) / 1_000_000_000;
+    items.push({ id: `duel-win-${d.duel_id}`, text: `${name(d.winner_wallet)} won a duel · +${sol.toFixed(3)} SOL`, kind: 'duel_win', highlight: true, at });
+  }
+
+  for (const d of (duelNewRes.data ?? []) as any[]) {
+    if (!d.created_at) continue;
+    const at = new Date(d.created_at).getTime();
+    const sol = (d.entry_fee_lamports ?? 0) / 1_000_000_000;
+    items.push({ id: `duel-new-${d.duel_id}`, text: `${name(d.player1_wallet)} opened a ${sol.toFixed(2)} SOL duel`, kind: 'duel_new', highlight: false, at });
+  }
+
+  for (const c of (customRes.data ?? []) as any[]) {
+    if (!c.finished_at) continue;
+    const at = new Date(c.finished_at).getTime();
+    const game = c.custom_games?.name ?? 'a custom game';
+    if (c.score != null) {
+      items.push({ id: `custom-${c.wallet_address}-${at}`, text: `${name(c.wallet_address)} scored ${Number(c.score).toLocaleString()} in ${game}`, kind: 'xp', highlight: false, at });
+    }
+  }
+
+  for (const p of (streakRes.data ?? []) as any[]) {
+    const streak = Number(p.current_streak) || 0;
+    if (streak < 5) continue;
+    const isMilestone = STREAK_MILESTONES.includes(streak);
+    const at = p.last_activity_date ? new Date(p.last_activity_date).getTime() : 0;
+    items.push({ id: `streak-${p.wallet_address}`, text: `${name(p.wallet_address)} on a ${streak}-day streak`, kind: 'streak', highlight: isMilestone, at });
+  }
+
+  items.sort((a, b) => b.at - a.at);
+  return items.slice(0, limit);
+}
+
 /** Round payout for a wallet with date/round_number for on-chain claim (contract round_id). */
 export interface ClaimablePayout {
   round_id: string;
@@ -1188,6 +1684,12 @@ export async function startPracticeGame(options?: { category?: string; wallet_ad
     const err = new Error(error.error || 'Failed to start practice game');
     (err as any).requires_pass = error.requires_pass ?? false;
     (err as any).category = error.category ?? null;
+    // v29 EF: 429 PRACTICE_CAP_REACHED when at 5/24h cap. Surface the code
+    // so callers can show a "buy Game Pass" CTA instead of a generic error.
+    (err as any).code = error.code ?? null;
+    (err as any).cap = error.cap ?? null;
+    (err as any).remaining = error.remaining ?? null;
+    (err as any).status = response.status;
     throw err;
   }
 
@@ -1210,6 +1712,59 @@ export async function getPracticeQuestions(question_ids: string[]): Promise<GetP
   return response.json();
 }
 
+// ─── Practice mode , v2.1 server-side scoring + 5/24h cap ───────────────
+
+/**
+ * Server-side scoring for practice mode. Mirrors submit-answer v52 formula
+ * (100 base + 900 speed bonus over 15s). Closes the dev-tools answer leak:
+ * the client no longer reads correct_index from get-practice-questions for
+ * scoring , it sends the picked index to this EF and gets the verdict back.
+ *
+ * Stateless: no session row, no persisted answer. Practice has no rewards.
+ */
+export interface SubmitPracticeAnswerParams {
+  question_id: string;
+  selected_index?: number;
+  time_taken_ms: number;
+  time_expired?: boolean;
+}
+export interface SubmitPracticeAnswerResponse {
+  correct: boolean;
+  correctIndex: number;
+  pointsEarned: number;
+  timeMs: number;
+  timedOut: boolean;
+}
+export async function submitPracticeAnswer(params: SubmitPracticeAnswerParams): Promise<SubmitPracticeAnswerResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/submit-practice-answer`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to submit practice answer');
+  }
+  return response.json();
+}
+
+/**
+ * Get remaining practice plays in the current 24h rolling window for this
+ * wallet. Returns 0-5. Game Pass holders should bypass this RPC on the
+ * frontend and treat as Infinity (the RPC itself doesn't special-case GP).
+ */
+export async function getFreePlaysRemaining(wallet_address: string): Promise<number> {
+  if (!isSupabaseConfigured) return 5;
+  const { data, error } = await supabase.rpc('get_free_plays_remaining', { p_wallet: wallet_address });
+  if (error) {
+    console.warn('[practice] get_free_plays_remaining RPC failed:', error);
+    // Soft fail: assume 5 remaining if RPC is down. Client gates secondary
+    // via the cap check on the next practice-game call.
+    return 5;
+  }
+  return Math.max(0, Math.min(5, Number(data ?? 0)));
+}
+
 // ─── Game Pass (Category Unlock) ──────────────────────────────────────────
 
 export interface GamePassResponse {
@@ -1223,19 +1778,28 @@ export interface GamePassStatus {
   has_pass: boolean;
   is_active: boolean;
   purchased_at: string | null;
+  expires_at?: string | null;
 }
+
+export type GamePassPlan = 'monthly' | 'annual';
 
 /** Purchase a game pass (unlocks premium categories + unlimited practice). */
 export async function purchaseGamePass(
   walletAddress: string,
   txSignature: string,
   paymentToken?: string,
-  amountUsd?: number
+  amountUsd?: number,
+  plan: GamePassPlan = 'monthly',
+  opts?: { usd_price_cents?: number; token_mint?: string },
 ): Promise<GamePassResponse> {
   const response = await fetch(`${FUNCTIONS_URL}/purchase-game-pass`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({ walletAddress, txSignature, paymentToken, amountUsd }),
+    body: JSON.stringify({
+      walletAddress, txSignature, paymentToken, amountUsd, plan,
+      ...(opts?.usd_price_cents != null && { usd_price_cents: opts.usd_price_cents }),
+      ...(opts?.token_mint && { token_mint: opts.token_mint }),
+    }),
   });
 
   const body = await response.json().catch(() => ({}));
@@ -1246,22 +1810,89 @@ export async function purchaseGamePass(
   return body as GamePassResponse;
 }
 
-/** Check if a wallet has an active game pass. Direct Supabase read. */
-export async function checkGamePass(walletAddress: string): Promise<GamePassStatus> {
-  const empty: GamePassStatus = { has_pass: false, is_active: false, purchased_at: null };
-  if (!isSupabaseConfigured || !walletAddress?.trim()) return empty;
+// NEW (2026-05-30): build the multi-token + multi-recipient Game Pass purchase tx server-side.
+// Returns base64 v0 tx for the client to sign + submit. Then the client calls purchaseGamePass
+// with the new opts (usd_price_cents + token_mint) to trigger the new 2-leg verify path.
+export interface BuildGamePassTxRequest {
+  walletAddress: string;
+  plan: GamePassPlan;
+  paymentToken: 'SOL' | 'USDC' | 'SKR' | 'NERD';
+  token_mint?: string;
+  usd_price_cents?: number;
+}
 
-  const { data, error } = await supabase
+export interface BuildGamePassTxResponse {
+  ok: boolean;
+  tx_base64: string;
+  blockhash: string;
+  last_valid_block_height: number;
+  plan: string;
+  days: number;
+  paymentToken: string;
+  token_mint: string;
+  usd_price_cents: number;
+  total_token_amount: string;
+  revenue_amount: string;
+  referrer_amount: string;
+  referrer_wallet: string | null;
+  is_seeker: boolean;
+  jupiter_price_usd: number;
+  platform_fee_lamports: number;
+}
+
+export async function buildGamePassTx(
+  params: BuildGamePassTxRequest,
+): Promise<BuildGamePassTxResponse> {
+  const url = `${FUNCTIONS_URL}/build-game-pass-tx`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = body.details ? `${body.error || 'Failed to build game pass tx'}: ${body.details}` : (body.error || 'Failed to build game pass tx');
+    throw new Error(msg);
+  }
+  return body as BuildGamePassTxResponse;
+}
+
+/**
+ * Check if a wallet has an active game pass. Direct Supabase read.
+ * Monthly model: a pass is active only if not expired. `expires_at` NULL means
+ * a grandfathered lifetime (one-time) pass. Falls back to the legacy select if
+ * the expires_at column doesn't exist yet (pre-migration), so it never breaks.
+ */
+export async function checkGamePass(walletAddress: string): Promise<GamePassStatus> {
+  const empty: GamePassStatus = { has_pass: false, is_active: false, purchased_at: null, expires_at: null };
+  if (!isSupabaseConfigured || !walletAddress?.trim()) return empty;
+  const wallet = walletAddress.trim();
+
+  let { data, error } = await supabase
     .from('game_passes')
-    .select('is_active, purchased_at')
-    .eq('wallet_address', walletAddress.trim())
+    .select('is_active, purchased_at, expires_at')
+    .eq('wallet_address', wallet)
     .maybeSingle();
 
+  // Pre-migration fallback: column missing -> retry without expires_at.
+  if (error) {
+    const legacy = await supabase
+      .from('game_passes')
+      .select('is_active, purchased_at')
+      .eq('wallet_address', wallet)
+      .maybeSingle();
+    data = legacy.data as typeof data;
+    error = legacy.error;
+  }
+
   if (error || !data) return empty;
+  const expiresAt = (data as { expires_at?: string | null }).expires_at ?? null;
+  const expired = expiresAt != null && new Date(expiresAt).getTime() <= Date.now();
   return {
     has_pass: true,
-    is_active: data.is_active === true,
+    is_active: data.is_active === true && !expired,
     purchased_at: data.purchased_at ?? null,
+    expires_at: expiresAt,
   };
 }
 
@@ -1304,6 +1935,31 @@ export async function getReferralCode(walletAddress: string): Promise<ReferralCo
   }
 
   return response.json();
+}
+
+/** v2.1 — one-time custom referral code picker. Validates length (4-20) +
+ *  alphanumeric on the EF; returns { success, code } on accept, or { success
+ *  false, error } on reject. Resolves to a discriminated result so callers
+ *  branch without try/catch. */
+export type SetReferralCodeResult =
+  | { success: true; code: string }
+  | { success: false; error: string };
+
+export async function setReferralCode(walletAddress: string, code: string): Promise<SetReferralCodeResult> {
+  try {
+    const response = await fetch(`${FUNCTIONS_URL}/set-referral-code`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ walletAddress, code }),
+    });
+    const data = await response.json().catch(() => ({} as { error?: string; success?: boolean; code?: string }));
+    if (!response.ok || !data.success) {
+      return { success: false, error: data.error || 'Failed to set code' };
+    }
+    return { success: true, code: data.code || code };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' };
+  }
 }
 
 /** Register a referral when a new wallet connects with a stored referral code. */
@@ -1409,13 +2065,24 @@ export interface CreateCustomGameParams {
   }>;
   contentDisclaimerAccepted: boolean;
   // Prize pool fields
-  prizeModel?: 'free' | 'player_funded' | 'creator_funded';
+  prizeModel?: 'free' | 'player_funded' | 'creator_funded' | 'nft';
   entryFeeLamports?: number;
   maxPlayers?: number;
   gameDurationMinutes?: number;
   maxWinners?: number;
   creatorDepositLamports?: number;
   bannerUrl?: string;
+  // v2.1 multi-token SPL custom games. When tokenMint is provided AND prizeModel
+  // is player_funded or creator_funded, the EF dispatches an SPL create ix
+  // instead of SOL. entryFeeLamports/creatorDepositLamports now carry the
+  // token's base units (column name kept for back-compat across the API).
+  tokenMint?: string;
+  tokenDecimals?: number;
+  tokenSymbol?: string;
+  tokenProgram?: string;
+  // v2.1 admin-only: marks game as "Featured by Sol Trivia". EF v41+ verifies
+  // walletAddress is in the admin allowlist before honoring this flag.
+  isFeatured?: boolean;
 }
 
 export interface CreateCustomGameResponse {
@@ -1457,8 +2124,12 @@ export interface CustomGameData {
   player_best_score: number | null;
   player_attempts: number;
   player_has_in_progress: boolean;
-  // Prize pool fields (paid games)
-  prize_model: 'free' | 'player_funded' | 'creator_funded';
+  // Prize pool fields (paid games) + v2.1 NFT prize support
+  prize_model: 'free' | 'player_funded' | 'creator_funded' | 'nft';
+  /** v2.1: when prize_model === 'nft', the on-chain asset address (Core asset or pNFT mint). */
+  nft_mint?: string | null;
+  /** v2.1: when prize_model === 'nft', the asset standard. */
+  nft_standard?: 'core' | 'pnft' | null;
   on_chain_game_id: number | null;
   creator_deposit_lamports: number;
   fund_tx_signature: string | null;
@@ -1478,6 +2149,19 @@ export interface CustomGameData {
   winner_amounts: number[] | null;
   player_has_entered: boolean;
   banner_url: string | null;
+  // v2.1 multi-token SPL custom games. NULL across all three = SOL game.
+  token_mint?: string | null;
+  token_decimals?: number | null;
+  token_symbol?: string | null;
+  // v2.1 RECENT PLAYERS strip (added in get-custom-game v30)
+  recent_entries?: Array<{
+    wallet_address: string;
+    username: string;
+    avatar_url: string | null;
+    score: number | null;
+    joined_at: string;
+    finished_at: string | null;
+  }>;
   leaderboard: Array<{
     rank: number;
     wallet_address: string;
@@ -1772,6 +2456,15 @@ export interface DuelInfo {
   created_at: string;
   resolved_at: string | null;
   my_session?: { current_question_index: number; score: number; correct_count: number; finished: boolean };
+  /** v2.1 SPL duel fields. Set when the duel is an SPL-token wager, undefined for SOL.
+   *  Column names match the duels table canonical schema (token_mint /
+   *  entry_token_amount) — NOT the earlier shipped-but-mismatched names. */
+  token_mint?: string;
+  token_symbol?: string;
+  token_decimals?: number;
+  /** Raw u64 amount in token smallest units. Returned as a number from
+   *  Postgres bigint column; cast via BigInt() on the client when reading. */
+  entry_token_amount?: number;
 }
 
 export interface CreateDuelResponse {
@@ -1829,6 +2522,18 @@ export async function createDuel(params: {
   duel_id: number;
   entry_fee_lamports: number;
   is_public: boolean;
+  /** v2.1 cluster scope. EF v28+ filters existing-row lookup by cluster so
+   *  mainnet duel_id=N and devnet duel_id=N don't collide. Defaults
+   *  server-side to 'mainnet' (and accepts 'mainnet-beta' as alias). */
+  cluster?: 'mainnet' | 'devnet' | 'mainnet-beta';
+  /** v2.1 SPL duel fields — pass these when the duel is an SPL wager. Column
+   *  names match the create-duel EF v27+ expected request shape. */
+  token_mint?: string;
+  /** Raw u64 amount as a number (must be <= Number.MAX_SAFE_INTEGER); for
+   *  amounts beyond that, send a stringified bigint and let the EF parse. */
+  entry_token_amount?: number | string;
+  token_symbol?: string;
+  token_decimals?: number;
 }): Promise<CreateDuelResponse> {
   const res = await fetch(`${FUNCTIONS_URL}/create-duel`, {
     method: 'POST',
@@ -1844,6 +2549,9 @@ export async function joinDuel(params: {
   wallet_address: string;
   tx_signature: string;
   duel_id: number;
+  /** v2.1 cluster scope. EF v23+ filters duel lookup by cluster AND
+   *  uses cluster-correct RPC URL for tx_signature verification. */
+  cluster?: 'mainnet' | 'devnet' | 'mainnet-beta';
 }): Promise<JoinDuelResponse> {
   const res = await fetch(`${FUNCTIONS_URL}/join-duel`, {
     method: 'POST',
@@ -1859,6 +2567,9 @@ export async function getDuel(params: {
   duel_id?: number;
   share_code?: string;
   wallet_address?: string;
+  /** v2.1 cluster scope. EF v22+ scopes duel_id lookups by cluster.
+   *  share_code lookups are not cluster-filtered (globally unique). */
+  cluster?: 'mainnet' | 'devnet' | 'mainnet-beta';
 }): Promise<DuelInfo> {
   const res = await fetch(`${FUNCTIONS_URL}/get-duel`, {
     method: 'POST',
@@ -1892,13 +2603,34 @@ export async function submitDuelAnswer(params: SubmitDuelAnswerParams): Promise<
   return data;
 }
 
-export async function getOpenDuels(): Promise<Array<{ id: string; duel_id: number; player1_wallet: string; entry_fee_lamports: number; is_public: boolean; share_code: string; created_at: string; expires_at: string }>> {
+export async function getOpenDuels(): Promise<Array<{
+  id: string;
+  duel_id: number;
+  player1_wallet: string;
+  entry_fee_lamports: number;
+  is_public: boolean;
+  share_code: string;
+  created_at: string;
+  expires_at: string;
+  /** v2.1 SPL duel fields. Null/undefined for SOL duels. Column names match
+   *  the canonical schema (token_mint / entry_token_amount). */
+  token_mint?: string | null;
+  token_symbol?: string | null;
+  token_decimals?: number | null;
+  entry_token_amount?: number | null;
+}>> {
   if (!isSupabaseConfigured) return [];
+  // Cluster scope: localhost on devnet sees only devnet duels; production
+  // mainnet sees only mainnet duels. SOLANA_NETWORK comes from
+  // VITE_SOLANA_NETWORK env (defaults to 'mainnet-beta' which the EF +
+  // schema treat as 'mainnet').
+  const clusterFilter = SOLANA_NETWORK === 'devnet' ? 'devnet' : 'mainnet';
   const { data, error } = await supabase
     .from('duels')
-    .select('id, duel_id, player1_wallet, entry_fee_lamports, is_public, share_code, created_at, expires_at')
+    .select('id, duel_id, player1_wallet, entry_fee_lamports, is_public, share_code, created_at, expires_at, token_mint, token_symbol, token_decimals, entry_token_amount')
     .eq('status', 'waiting')
     .eq('is_public', true)
+    .eq('cluster', clusterFilter)
     .gt('expires_at', new Date().toISOString())
     .order('created_at', { ascending: false })
     .limit(20);
@@ -1974,13 +2706,17 @@ export interface MyDuelWin {
   resolved_at: string | null;
   opponent_wallet: string;
   opponent_username: string | null;
+  /** SPL mint when this duel was a token-denominated wager (USDC, NERD, etc.).
+   *  null means SOL. Used to route to SPL claim handler vs SOL claim handler. */
+  token_mint: string | null;
+  token_symbol: string | null;
 }
 
 export async function fetchMyDuelWins(walletAddress: string): Promise<MyDuelWin[]> {
   if (!isSupabaseConfigured) return [];
   const { data, error } = await supabase
     .from('duels')
-    .select('duel_id, total_pot_lamports, entry_fee_lamports, player1_wallet, player2_wallet, player1_score, player2_score, status, created_at, resolved_at')
+    .select('duel_id, total_pot_lamports, entry_fee_lamports, player1_wallet, player2_wallet, player1_score, player2_score, status, created_at, resolved_at, token_mint, token_symbol')
     .eq('winner_wallet', walletAddress)
     .in('status', ['completed', 'resolved'])
     .order('created_at', { ascending: false })
@@ -2206,6 +2942,11 @@ export interface ClaimableCustomGameWin {
   winner_index: number;
   prize_lamports: number;
   finalized_at: string;
+  /** SPL mint when this custom game used a token-denominated prize. null = SOL.
+   *  Used to route to SPL claim handler vs SOL claim handler. */
+  token_mint: string | null;
+  token_symbol: string | null;
+  token_decimals: number | null;
 }
 
 /** Fetch custom games the wallet won (finalized, player_funded). */
@@ -2213,7 +2954,7 @@ export async function fetchMyCustomGameWins(walletAddress: string): Promise<Clai
   if (!isSupabaseConfigured || !walletAddress?.trim()) return [];
   const { data, error } = await supabase
     .from('custom_games')
-    .select('id, name, slug, on_chain_game_id, winner_wallets, winner_amounts, finalized_at')
+    .select('id, name, slug, on_chain_game_id, winner_wallets, winner_amounts, finalized_at, token_mint, token_symbol, token_decimals')
     .eq('status', 'finalized')
     .in('prize_model', ['player_funded', 'creator_funded'])
     .order('finalized_at', { ascending: false })
@@ -2234,6 +2975,9 @@ export async function fetchMyCustomGameWins(walletAddress: string): Promise<Clai
         winner_index: idx,
         prize_lamports: amounts[idx] ?? 0,
         finalized_at: g.finalized_at,
+        token_mint: g.token_mint ?? null,
+        token_symbol: g.token_symbol ?? null,
+        token_decimals: g.token_decimals ?? null,
       });
     }
   }
@@ -2361,6 +3105,53 @@ export async function fetchRefundableCustomGames(walletAddress: string): Promise
   }));
 }
 
+// ─── Referrals claim audit (Kyle 2026-06-05 Item 2) ─────────────────────────
+// claim-referral-payout EF v1 LIVE per Kyle 2026-06-05. Idempotent (UNIQUE on
+// tx_signature). Flow: client signs + sends claim_referral_balance ix via
+// wallet → call this EF with {wallet_address, tx_signature} → EF verifies the
+// tx drained the PDA + writes an audit row to referral_claims.
+
+export type ClaimReferralPayoutResponse = {
+  success: boolean;
+  claimed_lamports: number;
+  claimed_at: string;
+};
+
+export async function claimReferralPayout(params: {
+  wallet_address: string;
+  tx_signature: string;
+}): Promise<ClaimReferralPayoutResponse> {
+  const response = await fetch(`${FUNCTIONS_URL}/claim-referral-payout`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error || 'claim-referral-payout failed');
+  }
+  return response.json();
+}
+
+/** Lifetime claimed = SUM(claimed_lamports) over all the wallet's audit rows.
+ *  Returns 0 on missing rows / table errors. Used to derive the "claimed so
+ *  far" stat on ReferralsViewV2. */
+export async function fetchLifetimeReferralClaimed(
+  walletAddress: string | null,
+): Promise<number> {
+  if (!walletAddress || !isSupabaseConfigured) return 0;
+  const { data } = await supabase
+    .from('referral_claims')
+    .select('claimed_lamports')
+    .eq('wallet_address', walletAddress);
+  if (!Array.isArray(data)) return 0;
+  let sum = 0;
+  for (const r of data) {
+    sum += Number((r as { claimed_lamports?: number }).claimed_lamports) || 0;
+  }
+  return sum;
+}
+
 // ─── Announcements ───────────────────────────────────────────────────────────
 
 export interface Announcement {
@@ -2374,11 +3165,22 @@ export interface Announcement {
 
 export async function fetchAnnouncements(walletAddress?: string): Promise<Announcement[]> {
   if (!isSupabaseConfigured) return [];
-  const { data: announcements, error } = await supabase
+
+  // Filter: every user sees GLOBAL announcements (target_wallet IS NULL). When
+  // we have a wallet, we ALSO include rows targeted specifically at this wallet
+  // (per-wallet notifications like referral commission earned).
+  let query = supabase
     .from('announcements')
-    .select('id, title, body, link_url, created_at')
+    .select('id, title, body, link_url, created_at, target_wallet')
     .order('created_at', { ascending: false })
     .limit(20);
+  if (walletAddress) {
+    query = query.or(`target_wallet.is.null,target_wallet.eq.${walletAddress}`);
+  } else {
+    query = query.is('target_wallet', null);
+  }
+
+  const { data: announcements, error } = await query;
   if (error || !announcements) return [];
 
   if (!walletAddress) return announcements.map(a => ({ ...a, is_read: false }));

@@ -1,20 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
-import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
-import { purchaseLives } from '../src/utils/api';
-import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
+import { VersionedTransaction } from '@solana/web3.js';
+import { purchaseLives, buildLivesPurchaseTx } from '../src/utils/api';
 import {
-  REVENUE_WALLET,
-  LIVES_TIERS,
-  SEEKER_LIVES_TIERS,
   LIVES_USD_PRICING,
   NERD_PAYMENT_DISCOUNT,
+  getTokenMint,
   type LivesTierId,
   type PaymentToken,
 } from '@/src/utils/constants';
 import { fetchTokenPrices, calculateTokenAmount, formatTokenAmount, type TokenPrices } from '@/src/utils/tokenPrices';
-import { buildSplTransferInstructions, getSplTokenBalance } from '@/src/utils/splTransfer';
+import { getSplTokenBalance } from '@/src/utils/splTransfer';
 
 interface BuyLivesModalProps {
   isOpen: boolean;
@@ -80,10 +77,6 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
   // Calculate token amount if prices are loaded
   const tokenAmount = prices ? calculateTokenAmount(usdPrice, selectedToken, prices) : null;
 
-  // Legacy SOL tiers (fallback for SOL payments — use fixed lamport amounts)
-  const legacySolTiers = isSeekerVerified ? SEEKER_LIVES_TIERS : LIVES_TIERS;
-  const legacySolTier = legacySolTiers.find(t => t.id === selectedTier) || legacySolTiers[0];
-
   const handlePurchase = async () => {
     if (!connected || !publicKey) {
       setError(t('buyLives.walletNotConnected'));
@@ -99,7 +92,17 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
     setError(null);
 
     try {
-      // Pre-check: verify the user has enough balance
+      // SOL native balance pre-check: every purchase pays 0.0025 SOL platform fee + tx fee.
+      // Need at least ~0.005 SOL native to avoid cryptic execution failures (esp. for SPL buyers).
+      const nativeBalance = await connection.getBalance(publicKey);
+      const MIN_NATIVE_LAMPORTS = 5_000_000; // 0.005 SOL
+      if (nativeBalance < MIN_NATIVE_LAMPORTS) {
+        setError(t('buyLives.insufficientNativeSol') || 'Need at least 0.005 SOL native (covers the 0.0025 SOL platform fee + tx fee)');
+        setPurchasing(false);
+        return;
+      }
+
+      // SPL pre-check: verify the user has enough token balance for the chosen token.
       if (selectedToken !== 'SOL') {
         const balance = await getSplTokenBalance(connection, publicKey, selectedToken);
         if (balance < tokenAmount!) {
@@ -110,30 +113,20 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         }
       }
 
-      const { blockhash } = await getRecentBlockhashWithRetry(connection);
+      // Build the multi-token, multi-recipient tx server-side (EF returns base64 v0 tx).
+      const usdPriceCents = Math.round(usdPrice * 100);
+      const tokenMint = getTokenMint(selectedToken);
+      const builtTx = await buildLivesPurchaseTx({
+        walletAddress: publicKey.toBase58(),
+        tier: selectedTier,
+        paymentToken: selectedToken,
+        token_mint: tokenMint,
+        usd_price_cents: usdPriceCents,
+      });
 
-      let instructions;
-      if (selectedToken === 'SOL') {
-        // Use legacy fixed lamport amounts for SOL (exact match on EF)
-        instructions = [
-          SystemProgram.transfer({
-            fromPubkey: publicKey,
-            toPubkey: new PublicKey(REVENUE_WALLET),
-            lamports: legacySolTier.lamports,
-          }),
-        ];
-      } else {
-        // USDC or SKR — SPL token transfer
-        instructions = buildSplTransferInstructions(publicKey, selectedToken, tokenAmount!);
-      }
-
-      const messageV0 = new TransactionMessage({
-        payerKey: publicKey,
-        recentBlockhash: blockhash,
-        instructions,
-      }).compileToV0Message();
-
-      const transaction = new VersionedTransaction(messageV0);
+      // Deserialize, sign, send
+      const txBytes = Uint8Array.from(atob(builtTx.tx_base64), c => c.charCodeAt(0));
+      const transaction = VersionedTransaction.deserialize(txBytes);
       const signature = await sendTransaction(transaction, connection);
 
       // Wait for on-chain confirmation
@@ -142,13 +135,14 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
         new Promise((_, reject) => setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)),
       ]);
 
-      // Call Edge Function with payment token info
+      // Verify + credit via the existing purchase-lives EF (new payload triggers the 2-leg path).
       const result = await purchaseLives(
         publicKey.toBase58(),
         signature,
         selectedTier,
         selectedToken,
-        usdPrice
+        usdPrice,
+        { usd_price_cents: usdPriceCents, token_mint: tokenMint },
       );
 
       if (result.success) {
@@ -190,10 +184,7 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
 
   // Format the display price for the current selection
   const displayPrice = (): string => {
-    if (selectedToken === 'SOL' && !prices) {
-      return `${legacySolTier.sol} SOL`;
-    }
-    if (!prices || !tokenAmount) return '...';
+    if (!prices || !tokenAmount) return `$${usdPrice}`;
     return `${formatTokenAmount(tokenAmount, selectedToken)} ${selectedToken}`;
   };
 
@@ -287,9 +278,6 @@ const BuyLivesModal: React.FC<BuyLivesModalProps> = ({ isOpen, onClose, onBuySuc
               if (prices) {
                 const amt = calculateTokenAmount(tierUsd, selectedToken, prices);
                 tierDisplayPrice = `${formatTokenAmount(amt, selectedToken)} ${selectedToken}`;
-              } else if (selectedToken === 'SOL') {
-                const legacy = legacySolTiers.find(t => t.id === tierId);
-                if (legacy) tierDisplayPrice = `${legacy.sol} SOL`;
               }
 
               return (

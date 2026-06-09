@@ -4,25 +4,21 @@ import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 const getMainnetEndpoints = (): string[] => {
   const endpoints: string[] = [];
 
-  // Priority 1: Helius via Cloudflare Worker proxy (API key NEVER exposed to browser)
+  // Priority 1: Helius via Cloudflare Worker proxy (API key stays server-side).
+  // The raw VITE_HELIUS_API_KEY fallback was removed — Vite would inline the
+  // key into the client bundle, leaking it to anyone with DevTools.
   const heliusProxy = import.meta.env.VITE_HELIUS_RPC_PROXY_URL;
   if (heliusProxy) {
     endpoints.push(heliusProxy);
   }
 
-  // Priority 2: Legacy direct Helius (kept for transition; remove once proxy verified)
-  const heliusKey = import.meta.env.VITE_HELIUS_API_KEY;
-  if (!heliusProxy && heliusKey) {
-    endpoints.push(`https://mainnet.helius-rpc.com/?api-key=${heliusKey}`);
-  }
-
-  // Priority 3: Alchemy (if API key available)
+  // Priority 2: Alchemy (if API key available) — opt-in; key is bundled if set.
   const alchemyKey = import.meta.env.VITE_ALCHEMY_API_KEY;
   if (alchemyKey) {
     endpoints.push(`https://solana-mainnet.g.alchemy.com/v2/${alchemyKey}`);
   }
 
-  // Priority 4: Public endpoints (fallback)
+  // Priority 3: Public endpoints (no keys, never leak)
   endpoints.push(
     'https://api.mainnet-beta.solana.com',
     'https://rpc.ankr.com/solana'

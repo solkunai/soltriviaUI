@@ -23,7 +23,12 @@ export enum View {
   DUEL_WAITING = 'DUEL_WAITING',
   DUEL_PLAY = 'DUEL_PLAY',
   DUEL_RESULTS = 'DUEL_RESULTS',
-  COMPETE_LOBBY = 'COMPETE_LOBBY'
+  COMPETE_LOBBY = 'COMPETE_LOBBY',
+  REFERRALS = 'REFERRALS',
+  GAME_PASS = 'GAME_PASS',
+  LIVES = 'LIVES',
+  MINT = 'MINT',
+  SWAP = 'SWAP'
 }
 
 export interface Player {
@@ -52,4 +57,8 @@ export interface Question {
   text: string;
   options: string[];
   correctAnswer: number;
+  /** Lowercase category slug from `questions.category` column. Drives the
+   *  category pill color in QuizView via CATEGORY_COLORS map. Empty string
+   *  when unknown , pill falls back to neutral zinc. */
+  category?: string;
 }

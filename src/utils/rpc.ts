@@ -4,26 +4,25 @@ import { Connection } from '@solana/web3.js';
 const getMainnetEndpoints = (): string[] => {
   const endpoints: string[] = [];
 
-  // Priority 1: Helius via Cloudflare Worker proxy (API key NEVER exposed to browser)
+  // Priority 1: Helius via Cloudflare Worker proxy (API key stays server-side).
+  // NEVER fall through to a direct Helius URL with the raw API key — Vite would
+  // inline the key into the production bundle, leaking it to anyone with
+  // DevTools.
   const heliusProxy = import.meta.env.VITE_HELIUS_RPC_PROXY_URL;
   if (heliusProxy) {
     endpoints.push(heliusProxy);
   }
 
-  // Priority 2: Legacy direct Helius (if proxy not set, falls back to api-key URL)
-  // Deprecated — keep only for transition period, remove once proxy is verified in prod.
-  const heliusKey = import.meta.env.VITE_HELIUS_API_KEY;
-  if (!heliusProxy && heliusKey) {
-    endpoints.push(`https://mainnet.helius-rpc.com/?api-key=${heliusKey}`);
-  }
-
-  // Priority 3: Alchemy (if API key available) - generous free tier
+  // Priority 2: Alchemy (if API key available) — generous free tier. NOTE:
+  // shipping `VITE_ALCHEMY_API_KEY` in client env also bakes it into the
+  // bundle. Either remove this fallback or also proxy it. For now we leave it
+  // since most installs don't set the var; treat it as opt-in-leaky.
   const alchemyKey = import.meta.env.VITE_ALCHEMY_API_KEY;
   if (alchemyKey) {
     endpoints.push(`https://solana-mainnet.g.alchemy.com/v2/${alchemyKey}`);
   }
 
-  // Priority 4: Reliable public endpoints (fallback)
+  // Priority 3: Reliable public endpoints (no keys, never leak).
   endpoints.push(
     'https://api.mainnet-beta.solana.com',
     'https://rpc.ankr.com/solana',
@@ -34,18 +33,14 @@ const getMainnetEndpoints = (): string[] => {
 };
 
 /**
- * Get the primary RPC endpoint (for ConnectionProvider)
- * Uses Helius proxy > legacy Helius > Alchemy > Public endpoints in order of preference
+ * Get the primary RPC endpoint (for ConnectionProvider).
+ * Uses Helius proxy > Alchemy > Public endpoints. The raw Helius API key path
+ * was removed so the key is not inlined into the client bundle.
  */
 export function getSolanaRpcEndpoint(): string {
   const heliusProxy = import.meta.env.VITE_HELIUS_RPC_PROXY_URL;
   if (heliusProxy) {
     return heliusProxy;
-  }
-
-  const heliusKey = import.meta.env.VITE_HELIUS_API_KEY;
-  if (heliusKey) {
-    return `https://mainnet.helius-rpc.com/?api-key=${heliusKey}`;
   }
 
   const alchemyKey = import.meta.env.VITE_ALCHEMY_API_KEY;
@@ -108,5 +103,5 @@ export async function getRecentBlockhashWithRetry(
   }
 
   // If all else fails, throw the last error
-  throw lastError || new Error('Failed to get recent blockhash. All RPC endpoints are unavailable. Please check your API keys in .env.local (VITE_HELIUS_API_KEY or VITE_ALCHEMY_API_KEY)');
+  throw lastError || new Error('Failed to get recent blockhash. All RPC endpoints are unavailable. Verify VITE_HELIUS_RPC_PROXY_URL is configured.');
 }

@@ -1,20 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
-import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
-import { purchaseGamePass } from '../src/utils/api';
-import { getRecentBlockhashWithRetry } from '../src/utils/rpc';
+import { VersionedTransaction } from '@solana/web3.js';
+import { purchaseGamePass, buildGamePassTx } from '../src/utils/api';
 import {
-  REVENUE_WALLET,
   FREE_CATEGORIES,
   ALL_CATEGORIES,
   CATEGORY_LABELS,
   GAME_PASS_USD_PRICING,
   NERD_PAYMENT_DISCOUNT,
+  getTokenMint,
   PracticeCategory,
   type PaymentToken,
+  type GamePassPlan,
 } from '../src/utils/constants';
 import { fetchTokenPrices, calculateTokenAmount, formatTokenAmount, type TokenPrices } from '../src/utils/tokenPrices';
-import { buildSplTransferInstructions, getSplTokenBalance } from '../src/utils/splTransfer';
+import { getSplTokenBalance } from '../src/utils/splTransfer';
 
 interface CategorySelectorModalProps {
   isOpen: boolean;
@@ -59,9 +59,10 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
   // Saved tx signature for retry after backend failure (payment was already sent)
   const [failedTxSignature, setFailedTxSignature] = useState<string | null>(null);
   const [prices, setPrices] = useState<TokenPrices | null>(null);
+  const [plan, setPlan] = useState<GamePassPlan>('monthly');
 
-  // USD-based pricing (NERD payment = 10% discount, stacks with Seeker)
-  let usdPrice: number = isSeekerVerified ? GAME_PASS_USD_PRICING.seeker : GAME_PASS_USD_PRICING.standard;
+  // USD-based pricing by plan (Seeker tier + NERD payment 10% discount stack).
+  let usdPrice: number = GAME_PASS_USD_PRICING[plan][isSeekerVerified ? 'seeker' : 'standard'];
   if (selectedToken === 'NERD') {
     usdPrice = +(usdPrice * (1 - NERD_PAYMENT_DISCOUNT)).toFixed(2);
   }
@@ -105,12 +106,24 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
     setPurchaseError(null);
 
     try {
+      const usdPriceCents = Math.round(usdPrice * 100);
+      const tokenMint = getTokenMint(selectedToken);
+
       let signatureToVerify = failedTxSignature;
 
       // If we have a saved signature from a previous failed attempt, skip payment and just retry verification
       if (!signatureToVerify) {
         if (!prices || !tokenAmount) {
           setPurchaseError('Prices not loaded yet. Please wait a moment.');
+          setPurchasing(false);
+          return;
+        }
+
+        // SOL native balance pre-check: covers 0.0025 SOL platform fee + tx fee.
+        const nativeBalance = await connection.getBalance(publicKey);
+        const MIN_NATIVE_LAMPORTS = 5_000_000; // 0.005 SOL
+        if (nativeBalance < MIN_NATIVE_LAMPORTS) {
+          setPurchaseError('Need at least 0.005 SOL native (covers the 0.0025 SOL platform fee + tx fee)');
           setPurchasing(false);
           return;
         }
@@ -126,29 +139,18 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
           }
         }
 
-        const { blockhash } = await getRecentBlockhashWithRetry(connection);
+        // Build the multi-token, multi-recipient tx server-side (EF returns base64 v0 tx).
+        const builtTx = await buildGamePassTx({
+          walletAddress: publicKey.toBase58(),
+          plan,
+          paymentToken: selectedToken,
+          token_mint: tokenMint,
+          usd_price_cents: usdPriceCents,
+        });
 
-        let instructions;
-        if (selectedToken === 'SOL') {
-          instructions = [
-            SystemProgram.transfer({
-              fromPubkey: publicKey,
-              toPubkey: new PublicKey(REVENUE_WALLET),
-              lamports: Number(tokenAmount),
-            }),
-          ];
-        } else {
-          instructions = buildSplTransferInstructions(publicKey, selectedToken, tokenAmount);
-        }
-
-        const messageV0 = new TransactionMessage({
-          payerKey: publicKey,
-          recentBlockhash: blockhash,
-          instructions,
-        }).compileToV0Message();
-
-        const transaction = new VersionedTransaction(messageV0);
-        signatureToVerify = await sendTransaction(transaction, connection);
+        // Deserialize, sign, send
+        const txBytes = Uint8Array.from(atob(builtTx.tx_base64), c => c.charCodeAt(0));
+        signatureToVerify = await sendTransaction(VersionedTransaction.deserialize(txBytes), connection);
 
         // Wait for confirmation
         await Promise.race([
@@ -157,23 +159,30 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
         ]);
       }
 
-      // Save signature before backend call — if backend fails, we can retry with it
+      // Save signature before backend call. If backend fails, we can retry with it.
       setFailedTxSignature(signatureToVerify);
 
-      // Register with backend (pass token info) — works for both fresh and retry
-      await purchaseGamePass(publicKey.toBase58(), signatureToVerify, selectedToken, usdPrice);
+      // Verify + credit via the existing purchase-game-pass EF (new payload triggers the 2-leg path).
+      await purchaseGamePass(
+        publicKey.toBase58(),
+        signatureToVerify,
+        selectedToken,
+        usdPrice,
+        plan,
+        { usd_price_cents: usdPriceCents, token_mint: tokenMint },
+      );
       setFailedTxSignature(null);
       onGamePassPurchased();
     } catch (err: any) {
       if (err.message?.includes('User rejected')) {
-        // User cancelled — do nothing
+        // User cancelled, do nothing
         setFailedTxSignature(null);
       } else if (err.message?.includes('insufficient funds') || err.message?.includes('Insufficient')) {
         setFailedTxSignature(null);
         setPurchaseError(`Insufficient balance. You need enough ${selectedToken} plus SOL for transaction fees.`);
       } else if (failedTxSignature) {
-        // Payment was already sent but backend failed — keep signature for retry
-        setPurchaseError('Payment sent but activation failed. Tap "Retry Activation" to try again — no extra payment needed.');
+        // Payment was already sent but backend failed, keep signature for retry
+        setPurchaseError('Payment sent but activation failed. Tap "Retry Activation" to try again, no extra payment needed.');
       } else {
         setPurchaseError(err.message || 'Purchase failed. Please try again.');
       }
@@ -296,6 +305,29 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
                 ))}
               </div>
 
+              {/* Plan Selector */}
+              <span className="text-zinc-400 text-[10px] font-black italic uppercase tracking-wider block mb-2">Plan</span>
+              <div className="flex gap-2 mb-3">
+                {(['monthly', 'annual'] as GamePassPlan[]).map((p) => {
+                  const isActive = plan === p;
+                  const price = GAME_PASS_USD_PRICING[p][isSeekerVerified ? 'seeker' : 'standard'];
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => { setPlan(p); setPurchaseError(null); }}
+                      disabled={purchasing}
+                      className={`flex-1 py-2 rounded-lg text-[10px] font-black italic uppercase tracking-wider transition-all border-2 ${
+                        isActive
+                          ? 'border-[#14F195] bg-[#14F195]/10 text-white'
+                          : 'border-white/5 bg-white/[0.02] text-zinc-500 hover:border-white/10 hover:text-zinc-300'
+                      } ${purchasing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {p === 'monthly' ? `Monthly · $${price}/mo` : `Annual · $${price}/yr`}
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* Token Selector */}
               <span className="text-zinc-400 text-[10px] font-black italic uppercase tracking-wider block mb-2">Pay with</span>
               <div className="flex gap-2 mb-3">
@@ -332,7 +364,7 @@ const CategorySelectorModal: React.FC<CategorySelectorModalProps> = ({
                   </div>
                   {isSeekerVerified && (
                     <span className="text-[9px] font-black uppercase tracking-wider text-[#14F195] bg-[#14F195]/10 px-2 py-0.5 rounded-full">
-                      50% Seeker Discount
+                      35% Seeker Discount
                     </span>
                   )}
                   {selectedToken === 'NERD' && (

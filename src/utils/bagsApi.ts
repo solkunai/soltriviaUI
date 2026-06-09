@@ -27,6 +27,14 @@ export interface SwapQuote {
   }>;
   platformFee?: { amount: string; feeBps: number };
   requestId: string;
+  /**
+   * v14 fields, set by swap-quote v14. Older v13 quotes omit these and the
+   * UI falls back to legacy display. Frontend must NOT depend on these
+   * being present until the v14 backend is live for the request path.
+   */
+  platformFeeSolLamports?: string;
+  feeWallet?: string;
+  _provider?: 'jupiter' | 'bags';
   /** Full raw response — passed back to createSwapTransaction */
   _raw: Record<string, unknown>;
 }
@@ -93,6 +101,79 @@ export async function getSwapQuote(
     routePlan: (r.routePlan as SwapQuote['routePlan']) || [],
     platformFee: r.platformFee as SwapQuote['platformFee'] | undefined,
     requestId: r.requestId as string,
+    _raw: r,
+  };
+}
+
+/**
+ * Generic multi-token swap quote via the swap-quote Edge Function.
+ *
+ * Use this for arbitrary token pairs (the v2.1 multi-token swap modal).
+ * Returns null if the EF returns 'no route' (graceful — caller renders the
+ * design's `noroute` state). Throws on hard network/server errors.
+ *
+ * NOTE: the EF currently routes through Bags only. Many pairs (SOL→USDC,
+ * USDC→JUP, etc.) will return no-route until the Jupiter v6 backend
+ * migration ships. That's the designed `noroute` state in the UI.
+ */
+export async function getSwapQuoteFor(
+  inputMint: string,
+  outputMint: string,
+  amount: number | bigint,
+  slippageBps?: number,
+  inputDecimals?: number,
+): Promise<SwapQuote | null> {
+  const amt = typeof amount === 'bigint' ? amount.toString() : String(Math.round(amount));
+  if (!amt || amt === '0' || amt.startsWith('-')) {
+    throw new Error('Amount must be positive');
+  }
+
+  const body: Record<string, unknown> = {
+    inputMint,
+    outputMint,
+    amount: amt,
+    slippageMode: slippageBps !== undefined ? 'manual' : 'auto',
+  };
+  if (slippageBps !== undefined) body.slippageBps = slippageBps;
+  if (inputDecimals !== undefined) body.inputDecimals = inputDecimals;
+
+  const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/swap-quote`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    // Treat 404/422 (route not found) as the designed `noroute` state — return null.
+    // Treat 5xx as a real error worth surfacing.
+    if (res.status === 404 || res.status === 422) return null;
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Swap quote HTTP ${res.status}${txt ? ': ' + txt.slice(0, 200) : ''}`);
+  }
+
+  const data: BagsApiResponse<Record<string, unknown>> = await res.json();
+  if (!data.success) {
+    // EF reports "no route" via { success: false, error: 'no route' }.
+    const errLow = (data.error || '').toLowerCase();
+    if (errLow.includes('no route') || errLow.includes('noroute') || errLow.includes('not found')) {
+      return null;
+    }
+    throw new Error(data.error || 'Failed to get swap quote');
+  }
+
+  const r = data.response;
+  return {
+    inAmount: r.inAmount as string,
+    outAmount: r.outAmount as string,
+    minOutAmount: r.minOutAmount as string,
+    priceImpactPct: r.priceImpactPct as string,
+    slippageBps: r.slippageBps as number,
+    routePlan: (r.routePlan as SwapQuote['routePlan']) || [],
+    platformFee: r.platformFee as SwapQuote['platformFee'] | undefined,
+    requestId: r.requestId as string,
+    platformFeeSolLamports: r.platformFeeSolLamports as string | undefined,
+    feeWallet: r.feeWallet as string | undefined,
+    _provider: r._provider as 'jupiter' | 'bags' | undefined,
     _raw: r,
   };
 }

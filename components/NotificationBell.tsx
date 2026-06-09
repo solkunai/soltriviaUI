@@ -10,11 +10,24 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ walletAddress }) =>
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const unreadCount = announcements.filter(a => !a.is_read).length;
+  // Every item in state is unread (read items are filtered out at load time
+  // and disappear immediately on mark-as-read).
+  const unreadCount = announcements.length;
 
   const loadAnnouncements = useCallback(async () => {
-    const data = await fetchAnnouncements(walletAddress ?? undefined);
-    setAnnouncements(data);
+    // Don't show notifications for disconnected wallets — including global
+    // announcements. The bell stays visible for UI consistency but the
+    // dropdown will show its empty state with a "connect wallet" hint.
+    if (!walletAddress) {
+      setAnnouncements([]);
+      return;
+    }
+    const data = await fetchAnnouncements(walletAddress);
+    // Filter out already-read items at the client so they DISAPPEAR after
+    // mark-as-read and don't reappear on the next 60s poll. Server still
+    // tracks the read state in `announcement_reads`, so this is sticky
+    // across sessions and devices.
+    setAnnouncements(data.filter(a => !a.is_read));
   }, [walletAddress]);
 
   useEffect(() => {
@@ -36,15 +49,17 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ walletAddress }) =>
   const handleMarkRead = async (id: string) => {
     if (!walletAddress) return;
     await markAnnouncementRead(walletAddress, id);
-    setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, is_read: true } : a));
+    // Remove immediately from the dropdown — server has it persisted, so it
+    // won't come back on the next poll. Disappears for this user forever.
+    setAnnouncements(prev => prev.filter(a => a.id !== id));
   };
 
   const handleMarkAllRead = async () => {
     if (!walletAddress) return;
-    const unreadIds = announcements.filter(a => !a.is_read).map(a => a.id);
-    if (unreadIds.length === 0) return;
-    await markAllAnnouncementsRead(walletAddress, unreadIds);
-    setAnnouncements(prev => prev.map(a => ({ ...a, is_read: true })));
+    const ids = announcements.map(a => a.id);
+    if (ids.length === 0) return;
+    await markAllAnnouncementsRead(walletAddress, ids);
+    setAnnouncements([]);
   };
 
   const timeAgo = (dateStr: string) => {
@@ -100,31 +115,29 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ walletAddress }) =>
 
   function renderList() {
     if (announcements.length === 0) {
+      const disconnected = !walletAddress;
       return (
         <div className="px-5 py-12 text-center">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-700 mx-auto mb-3">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M13.73 21a2 2 0 0 1-3.46 0" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <p className="text-zinc-600 text-sm font-bold">No notifications yet</p>
-          <p className="text-zinc-700 text-xs mt-1">Check back later for updates</p>
+          <p className="text-zinc-600 text-sm font-bold">
+            {disconnected ? 'Connect your wallet' : 'You\'re all caught up'}
+          </p>
+          <p className="text-zinc-700 text-xs mt-1">
+            {disconnected ? 'Sign in to see updates from Sol Trivia.' : 'New updates will appear here.'}
+          </p>
         </div>
       );
     }
 
     return announcements.map(a => (
-      <div
-        key={a.id}
-        className={`px-5 py-4 border-b border-white/5 transition-all ${
-          a.is_read ? 'opacity-40' : ''
-        }`}
-      >
+      <div key={a.id} className="px-5 py-4 border-b border-white/5 transition-all">
         <div className="flex items-start gap-3">
-          {/* Unread dot */}
+          {/* Unread dot — all rows are unread now since reads are filtered out. */}
           <div className="pt-1.5 w-3 shrink-0">
-            {!a.is_read && (
-              <span className="block w-2.5 h-2.5 rounded-full bg-[#10b981] shadow-lg shadow-emerald-500/30" />
-            )}
+            <span className="block w-2.5 h-2.5 rounded-full bg-[#10b981] shadow-lg shadow-emerald-500/30" />
           </div>
           <div className="flex-1 min-w-0">
             <span className="text-white font-bold text-[13px] leading-tight">{a.title}</span>
@@ -141,7 +154,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ walletAddress }) =>
                   View
                 </a>
               )}
-              {!a.is_read && walletAddress && (
+              {walletAddress && (
                 <button
                   onClick={() => handleMarkRead(a.id)}
                   className="text-[10px] font-bold text-zinc-500 hover:text-white uppercase tracking-wider transition-colors"

@@ -51,12 +51,7 @@ const PracticeResultsView: React.FC<PracticeResultsViewProps> = ({
   }, []);
 
   return (
-    <div className="h-full flex flex-col items-center justify-start p-4 pt-6 md:p-12 relative overflow-hidden bg-[#050505] overflow-y-auto">
-      {/* Dynamic Background */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="scan-line opacity-10"></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full blur-[150px]" style={{ backgroundColor: `${performanceColor}15` }}></div>
-      </div>
+    <div className="flex flex-col items-center justify-start py-6 relative overflow-hidden">
 
       <div className={`relative z-10 w-full max-w-3xl transition-all duration-700 ${showContent ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
         {/* Header */}
