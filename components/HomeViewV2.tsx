@@ -831,17 +831,22 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
         </button>
       )}
 
-      {/* ── LIVE FEED TICKER ── continuously scrolling marquee.
-          Renders the same `feed` data used by the bottom box, but here it
-          slides left forever. Items are doubled so the loop is seamless.
-          Hidden when feed is empty (avoids the empty marquee box). */}
+      {/* ── LIVE ACTIVITY TICKER ──
+          Edge-to-edge marquee matching SolTriviaNative LiveActivityTicker.
+          Gold dots+text for SOL wins, green dots+text for XP. Thin 28px
+          strip, no LIVE pill — content speaks for itself.
+          Spec mirror: SolTriviaNative/src/components/home/LiveActivityTicker.tsx */}
       {feed.length > 0 && (
         <div
-          className="mb-3 rounded-xl relative overflow-hidden"
+          className="overflow-hidden"
           style={{
-            background: 'linear-gradient(90deg, #0a0a0a, #111111, #0a0a0a)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            padding: '10px 0',
+            background: '#0A0A0A',
+            borderTop: '1px solid rgba(255,255,255,0.05)',
+            borderBottom: '1px solid rgba(255,255,255,0.05)',
+            height: 28,
+            marginBottom: 12,
+            marginLeft: isMobile ? -16 : 0,
+            marginRight: isMobile ? -16 : 0,
           }}
         >
           <style>{`
@@ -851,71 +856,49 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             }
             .st-feed-track {
               display: inline-flex;
-              gap: 28px;
               white-space: nowrap;
               animation: st-feed-marquee 42s linear infinite;
               will-change: transform;
+              height: 28px;
+              align-items: center;
             }
           `}</style>
-          {/* LIVE label (sticky-left) */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              bottom: 0,
-              left: 0,
-              zIndex: 2,
-              display: 'flex',
-              alignItems: 'center',
-              padding: '0 12px',
-              background: 'linear-gradient(90deg, #0a0a0a 70%, transparent)',
-            }}
-          >
-            <span
-              className="font-black italic uppercase"
-              style={{
-                fontSize: 9,
-                color: '#14F195',
-                letterSpacing: '0.18em',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-              }}
-            >
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: '#14F195',
-                  display: 'inline-block',
-                }}
-              />
-              LIVE
-            </span>
-          </div>
-          {/* Scrolling track , items doubled for seamless loop */}
-          <div className="st-feed-track" style={{ paddingLeft: 72 }}>
-            {[...feed, ...feed].map((f, i) => (
-              <span
-                key={`${f.id}-${i}`}
-                style={{
-                  fontSize: 12,
-                  color: f.highlight ? '#fff' : '#a1a1aa',
-                  fontWeight: 600,
-                }}
-              >
+          <div className="st-feed-track">
+            {[...feed, ...feed].map((f, i) => {
+              // Color mapping mirrors native:
+              //   sol_win (gold #FFD700) → 'win' or 'duel_win'
+              //   xp_earned (green #14F195) → everything else
+              const isSolWin = f.kind === 'win' || f.kind === 'duel_win';
+              const accentColor = isSolWin ? '#FFD700' : '#14F195';
+              return (
                 <span
+                  key={`${f.id}-${i}`}
                   style={{
-                    color: f.highlight ? '#14F195' : '#52525b',
-                    marginRight: 8,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '0 12px',
+                    fontSize: 11,
+                    color: '#fff',
+                    fontFamily: '"Saira Condensed", "Bebas Neue", system-ui, sans-serif',
+                    fontStyle: 'italic',
+                    fontWeight: 900,
+                    letterSpacing: '-0.01em',
                   }}
                 >
-                  ●
+                  <span
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: '50%',
+                      background: accentColor,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ color: accentColor }}>{f.text}</span>
                 </span>
-                {f.text}
-              </span>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1051,7 +1034,20 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
               {activeCustomGameCount}
             </div>
           ) : (
-            <div style={{ height: 38 }} />
+            // Empty state: punchy CREATE prompt instead of dead space.
+            // Mirrors the empty-state design on CustomGamesViewV2. Kyle 2026-06-09.
+            <div
+              className="font-black italic uppercase"
+              style={{
+                fontSize: 28,
+                color: '#38BDF8',
+                lineHeight: 0.85,
+                letterSpacing: '-0.04em',
+                textShadow: '0 0 24px rgba(56,189,248,0.4)',
+              }}
+            >
+              CREATE +
+            </div>
           )}
           <div>
             <div
@@ -1064,7 +1060,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
               className="font-black italic uppercase mt-1"
               style={{ fontSize: 8, color: '#38BDF8', letterSpacing: '0.16em' }}
             >
-              OPEN ROOMS · HOST FREE
+              {activeCustomGameCount > 0 ? 'OPEN ROOMS · HOST FREE' : 'BE THE FIRST · HOST FREE'}
             </div>
           </div>
         </button>
