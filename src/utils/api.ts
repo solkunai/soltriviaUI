@@ -1381,7 +1381,10 @@ export async function getLiveFeed(limit = 14): Promise<LiveFeedItem[]> {
   const [gsRes, duelWonRes, duelNewRes, customRes, streakRes] = await Promise.all([
     supabase
       .from('game_sessions')
-      .select('wallet_address, score, rank, payout_lamports, finished_at, daily_rounds(round_number)')
+      // payout_lamports lives on round_payouts, not game_sessions. The live feed
+      // only needs score/rank/finished_at for the ticker — prize amounts come
+      // from the dedicated round-winners carousel that joins round_payouts.
+      .select('wallet_address, score, rank, finished_at, daily_rounds(round_number)')
       .not('finished_at', 'is', null)
       .order('finished_at', { ascending: false })
       .limit(20),
@@ -1401,9 +1404,11 @@ export async function getLiveFeed(limit = 14): Promise<LiveFeedItem[]> {
       .limit(8),
     supabase
       .from('custom_game_sessions')
-      .select('wallet_address, score, finished_at, custom_games(name)')
-      .not('finished_at', 'is', null)
-      .order('finished_at', { ascending: false })
+      // Column is completed_at on this table (game_sessions uses finished_at;
+      // custom_game_sessions uses completed_at — known schema divergence).
+      .select('wallet_address, score, completed_at, custom_games(name)')
+      .not('completed_at', 'is', null)
+      .order('completed_at', { ascending: false })
       .limit(10),
     supabase
       .from('player_profiles')
@@ -1441,10 +1446,10 @@ export async function getLiveFeed(limit = 14): Promise<LiveFeedItem[]> {
     const at = new Date(g.finished_at).getTime();
     const roundNum = g.daily_rounds ? (g.daily_rounds.round_number ?? 0) + 1 : null;
     const roundTag = roundNum ? ` · Round #${roundNum}` : '';
-    const sol = (g.payout_lamports ?? 0) / 1_000_000_000;
-    if (sol > 0) {
-      items.push({ id: `gs-win-${g.wallet_address}-${at}`, text: `${name(g.wallet_address)} won ${sol.toFixed(3)} SOL${roundTag}`, kind: 'win', highlight: true, at });
-    } else if (g.rank != null && g.rank <= 5) {
+    // Payout lives on round_payouts (not game_sessions). Live feed renders
+    // rank-based "placed #N" for top-5 finishers; dedicated round-winners
+    // carousel surfaces the actual SOL prize separately.
+    if (g.rank != null && g.rank <= 5) {
       items.push({ id: `gs-place-${g.wallet_address}-${at}`, text: `${name(g.wallet_address)} placed #${g.rank}${roundTag}`, kind: 'place', highlight: false, at });
     } else if (g.score != null) {
       items.push({ id: `gs-xp-${g.wallet_address}-${at}`, text: `${name(g.wallet_address)} earned ${Number(g.score).toLocaleString()} XP${roundTag}`, kind: 'xp', highlight: false, at });
@@ -1466,8 +1471,9 @@ export async function getLiveFeed(limit = 14): Promise<LiveFeedItem[]> {
   }
 
   for (const c of (customRes.data ?? []) as any[]) {
-    if (!c.finished_at) continue;
-    const at = new Date(c.finished_at).getTime();
+    // custom_game_sessions column is completed_at (game_sessions uses finished_at).
+    if (!c.completed_at) continue;
+    const at = new Date(c.completed_at).getTime();
     const game = c.custom_games?.name ?? 'a custom game';
     if (c.score != null) {
       items.push({ id: `custom-${c.wallet_address}-${at}`, text: `${name(c.wallet_address)} scored ${Number(c.score).toLocaleString()} in ${game}`, kind: 'xp', highlight: false, at });

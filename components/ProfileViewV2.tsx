@@ -419,10 +419,12 @@ const ProfileViewV2: React.FC<Props> = ({
             .limit(6),
           supabase
             .from('custom_game_sessions')
-            .select('custom_game_id, score, finished_at, custom_games(name, slug)')
+            // Schema: column is game_id (FK to custom_games.id) and completed_at,
+            // NOT custom_game_id / finished_at. Kyle 2026-06-09.
+            .select('game_id, score, completed_at, custom_games(name, slug)')
             .eq('wallet_address', wallet)
-            .not('finished_at', 'is', null)
-            .order('finished_at', { ascending: false })
+            .not('completed_at', 'is', null)
+            .order('completed_at', { ascending: false })
             .limit(6),
         ]);
 
@@ -469,16 +471,17 @@ const ProfileViewV2: React.FC<Props> = ({
           });
         }
         for (const c of (customRes.data ?? []) as any[]) {
-          if (!c.finished_at) continue;
+          // custom_game_sessions uses completed_at + game_id (not finished_at/custom_game_id).
+          if (!c.completed_at) continue;
           const game = c.custom_games;
           const label = game?.name ?? 'Custom game';
           rows.push({
-            key: `custom-${c.custom_game_id}-${c.finished_at}`,
+            key: `custom-${c.game_id}-${c.completed_at}`,
             txt: label,
             meta: c.score != null ? `${c.score.toLocaleString()} pts` : 'Finished',
             col: C.blue,
             icon: 'bolt',
-            at: new Date(c.finished_at).getTime(),
+            at: new Date(c.completed_at).getTime(),
           });
         }
         rows.sort((a, b) => b.at - a.at);
