@@ -46,27 +46,37 @@ function colorFor(w: string): string {
   return AVATAR_COLORS[h];
 }
 
-function PodiumColumn({ player, isMode }: { player: Player; isMode: boolean }) {
+function PodiumColumn({ player, isMode, isMobile = false }: { player: Player; isMode: boolean; isMobile?: boolean }) {
   const isFirst = player.rank === 1;
   const isTop3 = player.rank <= 3;
-  const blockH = player.rank === 1 ? 132 : player.rank === 2 || player.rank === 3 ? 88 : 52;
+  // Tighten everything for mobile so 5 columns fit in a 375px viewport
+  // without horizontal scroll. Was 130px each → 340px+. Now ~58px each.
+  const blockH = isMobile
+    ? (player.rank === 1 ? 92 : player.rank === 2 || player.rank === 3 ? 64 : 40)
+    : (player.rank === 1 ? 132 : player.rank === 2 || player.rank === 3 ? 88 : 52);
+  const avatarSize = isMobile ? (isFirst ? 36 : 28) : (isFirst ? 56 : 44);
   return (
     <div className="flex flex-col items-center">
       <div
         className="w-full text-center relative rounded-xl"
-        style={{ background: '#0c0c0c', border: `1.5px solid ${player.col}`, padding: '12px 10px', marginBottom: 6 }}
+        style={{
+          background: '#0c0c0c',
+          border: `1.5px solid ${player.col}`,
+          padding: isMobile ? '8px 4px' : '12px 10px',
+          marginBottom: 6,
+        }}
       >
         {isTop3 ? (
-          <div style={{ position: 'absolute', top: -12, left: 0, right: 0, textAlign: 'center', fontSize: 20 }}>
+          <div style={{ position: 'absolute', top: -12, left: 0, right: 0, textAlign: 'center', fontSize: isMobile ? 14 : 20 }}>
             {player.badge}
           </div>
         ) : null}
         <div
           className="mx-auto rounded-full overflow-hidden"
           style={{
-            marginTop: isTop3 ? 10 : 0,
-            width: isFirst ? 56 : 44,
-            height: isFirst ? 56 : 44,
+            marginTop: isTop3 ? (isMobile ? 6 : 10) : 0,
+            width: avatarSize,
+            height: avatarSize,
             background: player.avatar,
             border: `2px solid ${player.col}`,
           }}
@@ -84,31 +94,33 @@ function PodiumColumn({ player, isMode }: { player: Player; isMode: boolean }) {
             />
           ) : null}
         </div>
-        <div className="font-black italic uppercase mt-2 truncate" style={{ fontSize: 9, color: '#fff', letterSpacing: '0.12em' }}>
+        <div className="font-black italic uppercase mt-2 truncate" style={{ fontSize: isMobile ? 7 : 9, color: '#fff', letterSpacing: '0.1em' }}>
           {player.user}
         </div>
         <div
           className="font-black italic mt-1"
-          style={{ fontSize: isFirst ? 16 : 13, color: '#14F195', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}
+          style={{ fontSize: isMobile ? (isFirst ? 11 : 9) : (isFirst ? 16 : 13), color: '#14F195', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}
         >
           {isMode ? `${player.metric} ${player.metric === 1 ? 'WIN' : 'WINS'}` : player.metric.toLocaleString()}
         </div>
         <div
           className="font-black italic uppercase mt-0.5"
-          style={{ fontSize: 8, color: '#FFD700', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.14em' }}
+          style={{ fontSize: isMobile ? 6 : 8, color: '#FFD700', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.12em' }}
         >
           {player.sol.toFixed(3)} SOL
         </div>
       </div>
       <div
         className="w-full flex items-start justify-center relative overflow-hidden"
-        style={{ height: blockH, background: player.col, borderTopLeftRadius: 8, borderTopRightRadius: 8, paddingTop: isFirst ? 12 : 8 }}
+        style={{ height: blockH, background: player.col, borderTopLeftRadius: 8, borderTopRightRadius: 8, paddingTop: isFirst ? (isMobile ? 8 : 12) : (isMobile ? 6 : 8) }}
       >
         <div className="absolute left-0 right-0 top-0" style={{ height: 3, background: 'rgba(255,255,255,0.35)' }} />
         <span
           className="font-black italic"
           style={{
-            fontSize: isFirst ? 36 : player.rank === 2 || player.rank === 3 ? 26 : 20,
+            fontSize: isMobile
+              ? (isFirst ? 22 : player.rank === 2 || player.rank === 3 ? 18 : 14)
+              : (isFirst ? 36 : player.rank === 2 || player.rank === 3 ? 26 : 20),
             color: '#000',
             lineHeight: 1,
             letterSpacing: '-0.02em',
@@ -349,23 +361,24 @@ const LeaderboardViewV2: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* Olympic podium — adaptive width centers low-count podiums cleanly.
-              Mobile: 68px per column (5 cols ≈ 340px) fits in 375px viewport,
-              no horizontal scroll. Desktop: 130px per column. Kyle 2026-06-09. */}
+          {/* Olympic podium — on mobile fill the viewport with grid 1fr (no
+              max-width cap) and shrink all internal sizes via isMobile flag.
+              Was overflowing by ~13px causing horizontal swipe on the 4th slot.
+              Kyle 2026-06-09. */}
           {podiumOrdered.length > 0 && (
             <div
               className="mb-5 mx-auto"
               style={{
                 display: 'grid',
                 gridTemplateColumns: `repeat(${podiumOrdered.length}, 1fr)`,
-                gap: isMobile ? 4 : 8,
+                gap: isMobile ? 3 : 8,
                 alignItems: 'flex-end',
-                maxWidth: `${podiumOrdered.length * (isMobile ? 68 : 130)}px`,
+                maxWidth: isMobile ? '100%' : `${podiumOrdered.length * 130}px`,
                 width: '100%',
               }}
             >
               {podiumOrdered.map((p) => (
-                <PodiumColumn key={p.rank} player={p} isMode={isMode} />
+                <PodiumColumn key={p.rank} player={p} isMode={isMode} isMobile={isMobile} />
               ))}
             </div>
           )}
