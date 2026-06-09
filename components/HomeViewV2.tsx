@@ -382,6 +382,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
   const [activeCustomGameCount, setActiveCustomGameCount] = useState(0);
   const [countdown, setCountdown] = useState(getNextRoundCountdown());
   const [recentWinners, setRecentWinners] = useState<RecentWinner[]>([]);
+  const [winnersPage, setWinnersPage] = useState(0); // 5 per page, Kyle 2026-06-09
   const [streak, setStreak] = useState(0);
   const [feed, setFeed] = useState<LiveFeedItem[]>([]);
 
@@ -502,15 +503,16 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
     let mounted = true;
     (async () => {
       try {
-        // Last 3 paid rounds, top finishers per round. (Status is 'paid' after
+        // Last 25 paid rounds, top finisher per round. (Status is 'paid' after
         // winners are posted on-chain, not 'finalized' — Kyle 2026-06-09.)
+        // Bumped from 3 → 25 to give pagination 5 pages of data.
         const { data: rounds } = await supabase
           .from('daily_rounds')
           .select('id, date, round_number')
           .in('status', ['paid', 'finalized'])
           .order('date', { ascending: false })
           .order('round_number', { ascending: false })
-          .limit(3);
+          .limit(25);
         if (!mounted || !rounds?.length) return;
 
         const roundIds = rounds.map((r: any) => r.id);
@@ -537,7 +539,6 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
         for (const r of rounds as any[]) roundByIdLocal[r.id] = r;
 
         const winners: RecentWinner[] = payouts
-          .slice(0, 5)
           .map((p: any) => {
             const r = roundByIdLocal[p.round_id];
             return {
@@ -933,7 +934,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             border: '1.5px solid #FF3131',
             padding: '14px 16px',
             color: '#fff',
-            minHeight: isMobile ? 224 : 108, // taller on mobile to span 2 rows visually
+            minHeight: isMobile ? 168 : 108, // mobile: 2 rows × 80px tile + 8px gap
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
@@ -1002,7 +1003,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             border: '1.5px solid #38BDF8',
             padding: '14px 16px',
             color: '#fff',
-            minHeight: 108,
+            minHeight: isMobile ? 80 : 108,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
@@ -1080,7 +1081,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             border: '1.5px solid #14F195',
             padding: '14px 16px',
             color: '#fff',
-            minHeight: 108,
+            minHeight: isMobile ? 80 : 108,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
@@ -1275,7 +1276,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             overflow: 'hidden',
           }}
         >
-          {recentWinners.map((w, i) => (
+          {recentWinners.slice(winnersPage * 5, winnersPage * 5 + 5).map((w, i) => (
             <div
               key={`${w.wallet}-${w.roundNumber}`}
               className="flex items-center gap-4 px-4 py-3"
@@ -1341,12 +1342,74 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
                   width: 90,
                   textAlign: 'right',
                   fontVariantNumeric: 'tabular-nums',
+                  flexShrink: 0,
                 }}
               >
                 +{w.payoutSol.toFixed(3)}
               </span>
             </div>
           ))}
+          {/* Pagination — 5 winners per page, Kyle 2026-06-09 */}
+          {recentWinners.length > 5 && (
+            <div
+              className="flex items-center justify-between px-4 py-3"
+              style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: '#070707' }}
+            >
+              <button
+                onClick={() => setWinnersPage((p) => Math.max(0, p - 1))}
+                disabled={winnersPage === 0}
+                className="font-black italic uppercase rounded-md"
+                style={{
+                  background: 'transparent',
+                  color: winnersPage === 0 ? '#52525b' : '#fff',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  padding: '6px 12px',
+                  fontSize: 10,
+                  letterSpacing: '0.14em',
+                  cursor: winnersPage === 0 ? 'not-allowed' : 'pointer',
+                  opacity: winnersPage === 0 ? 0.5 : 1,
+                }}
+              >
+                ← PREV
+              </button>
+              <span
+                className="font-black italic uppercase"
+                style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.18em' }}
+              >
+                {winnersPage + 1} / {Math.ceil(recentWinners.length / 5)}
+              </span>
+              <button
+                onClick={() =>
+                  setWinnersPage((p) =>
+                    Math.min(Math.ceil(recentWinners.length / 5) - 1, p + 1),
+                  )
+                }
+                disabled={winnersPage >= Math.ceil(recentWinners.length / 5) - 1}
+                className="font-black italic uppercase rounded-md"
+                style={{
+                  background: 'transparent',
+                  color:
+                    winnersPage >= Math.ceil(recentWinners.length / 5) - 1
+                      ? '#52525b'
+                      : '#fff',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  padding: '6px 12px',
+                  fontSize: 10,
+                  letterSpacing: '0.14em',
+                  cursor:
+                    winnersPage >= Math.ceil(recentWinners.length / 5) - 1
+                      ? 'not-allowed'
+                      : 'pointer',
+                  opacity:
+                    winnersPage >= Math.ceil(recentWinners.length / 5) - 1
+                      ? 0.5
+                      : 1,
+                }}
+              >
+                NEXT →
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

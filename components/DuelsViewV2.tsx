@@ -362,12 +362,13 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel, onViewOwnDuel 
             style={{
               background: '#000',
               color: '#fff',
-              padding: '14px 28px',
-              fontSize: 13,
-              letterSpacing: '0.14em',
+              padding: isMobile ? '8px 16px' : '14px 28px',
+              fontSize: isMobile ? 11 : 13,
+              letterSpacing: isMobile ? '0.1em' : '0.14em',
               border: 'none',
               cursor: canCreate ? 'pointer' : 'not-allowed',
               opacity: canCreate ? 1 : 0.55,
+              whiteSpace: 'nowrap',
             }}
           >
             {ctaText}
