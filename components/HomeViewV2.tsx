@@ -383,6 +383,26 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
   const [countdown, setCountdown] = useState(getNextRoundCountdown());
   const [recentWinners, setRecentWinners] = useState<RecentWinner[]>([]);
   const [streak, setStreak] = useState(0);
+  const [feed, setFeed] = useState<LiveFeedItem[]>([]);
+
+  // Live feed ticker — continuously refreshes every 30s. Used by the
+  // marquee strip between MINT CTA and QUICK PLAY tiles.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      getLiveFeed(12)
+        .then((items) => {
+          if (!cancelled) setFeed(items);
+        })
+        .catch(() => {});
+    };
+    load();
+    const interval = setInterval(load, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Real daily streak for the Free Play tile badge.
   useEffect(() => {
@@ -809,6 +829,95 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           {/* Arrow chip */}
           <div className="rounded-full flex items-center justify-center flex-shrink-0 font-black" style={{ width: 36, height: 36, background: 'linear-gradient(135deg,#FBBF24,#E89F0F)', color: '#070F26', fontSize: 22, lineHeight: 1 }}>→</div>
         </button>
+      )}
+
+      {/* ── LIVE FEED TICKER ── continuously scrolling marquee.
+          Renders the same `feed` data used by the bottom box, but here it
+          slides left forever. Items are doubled so the loop is seamless.
+          Hidden when feed is empty (avoids the empty marquee box). */}
+      {feed.length > 0 && (
+        <div
+          className="mb-3 rounded-xl relative overflow-hidden"
+          style={{
+            background: 'linear-gradient(90deg, #0a0a0a, #111111, #0a0a0a)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            padding: '10px 0',
+          }}
+        >
+          <style>{`
+            @keyframes st-feed-marquee {
+              0% { transform: translateX(0); }
+              100% { transform: translateX(-50%); }
+            }
+            .st-feed-track {
+              display: inline-flex;
+              gap: 28px;
+              white-space: nowrap;
+              animation: st-feed-marquee 42s linear infinite;
+              will-change: transform;
+            }
+          `}</style>
+          {/* LIVE label (sticky-left) */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              left: 0,
+              zIndex: 2,
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0 12px',
+              background: 'linear-gradient(90deg, #0a0a0a 70%, transparent)',
+            }}
+          >
+            <span
+              className="font-black italic uppercase"
+              style={{
+                fontSize: 9,
+                color: '#14F195',
+                letterSpacing: '0.18em',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: '#14F195',
+                  display: 'inline-block',
+                }}
+              />
+              LIVE
+            </span>
+          </div>
+          {/* Scrolling track , items doubled for seamless loop */}
+          <div className="st-feed-track" style={{ paddingLeft: 72 }}>
+            {[...feed, ...feed].map((f, i) => (
+              <span
+                key={`${f.id}-${i}`}
+                style={{
+                  fontSize: 12,
+                  color: f.highlight ? '#fff' : '#a1a1aa',
+                  fontWeight: 600,
+                }}
+              >
+                <span
+                  style={{
+                    color: f.highlight ? '#14F195' : '#52525b',
+                    marginRight: 8,
+                  }}
+                >
+                  ●
+                </span>
+                {f.text}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* QUICK PLAY label */}
