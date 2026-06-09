@@ -941,7 +941,8 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           gap: 10,
         }}
       >
-        {/* ARENA — wide red tile (left col on mobile, spans both rows) */}
+        {/* ARENA — compact red tile (mobile: top-right small slot now that
+            CUSTOM took the tall left position). Kyle 2026-06-09 swap. */}
         <button
           onClick={onEnterDuels}
           className="text-left rounded-xl active:opacity-90"
@@ -950,17 +951,14 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             border: '1.5px solid #FF3131',
             padding: '14px 16px',
             color: '#fff',
-            minHeight: isMobile ? 168 : 108, // mobile: 2 rows × 80px tile + 8px gap
+            minHeight: isMobile ? 80 : 108,
             display: 'flex',
             flexDirection: 'column',
-            // Mobile: ARENA spans 2 rows — center content vertically instead
-            // of pushing it to top/bottom edges. Desktop: keep space-between.
-            // Kyle 2026-06-09.
-            justifyContent: isMobile ? 'center' : 'space-between',
-            alignItems: isMobile ? 'center' : 'flex-start',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
             position: 'relative',
             cursor: 'pointer',
-            ...(isMobile ? { gridRow: '1 / span 2' } : {}),
+            ...(isMobile ? { gridRow: '1', gridColumn: '2' } : {}),
           }}
         >
           {/* Swords icon top-right */}
@@ -977,7 +975,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           >
             <path d="M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5L18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2" />
           </svg>
-          <div style={{ textAlign: isMobile ? 'center' : 'left' }}>
+          <div>
             <div
               className="font-black italic uppercase"
               style={{ fontSize: 9, color: '#FF3131', letterSpacing: '0.18em' }}
@@ -986,36 +984,24 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             </div>
             <div
               className="font-black italic uppercase mt-1"
-              style={{ fontSize: 22, lineHeight: 0.95, letterSpacing: '-0.02em' }}
+              style={{ fontSize: isMobile ? 17 : 22, lineHeight: 0.95, letterSpacing: '-0.02em' }}
             >
               ENTER <span style={{ color: '#FF3131' }}>ARENA</span>
             </div>
           </div>
-          {/* Mobile: stack centered. Desktop: spread between with arrow on right. */}
-          <div
-            className="mt-2"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              ...(isMobile ? { flexDirection: 'column', justifyContent: 'center' } : { flexDirection: 'row' }),
-              width: '100%',
-            }}
-          >
+          <div className="flex items-center gap-2 mt-2" style={{ width: '100%' }}>
             <span
               className="font-black italic uppercase"
               style={{
                 fontSize: 9,
-                color: '#FF3131', // red to match arena/duels accent. Kyle 2026-06-09.
+                color: '#FF3131',
                 letterSpacing: '0.14em',
                 fontVariantNumeric: 'tabular-nums',
-                textAlign: isMobile ? 'center' : 'left',
               }}
             >
-              {activeDuelCount > 0 ? `${activeDuelCount} OPEN` : 'HOST OR JOIN'} ·
-              0.01–1 SOL
+              {activeDuelCount > 0 ? `${activeDuelCount} OPEN` : 'HOST OR JOIN'}
             </span>
-            {!isMobile && <div className="flex-1" />}
+            <div className="flex-1" />
             <span
               className="font-black italic"
               style={{ fontSize: 14, color: '#FF3131' }}
@@ -1025,7 +1011,8 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           </div>
         </button>
 
-        {/* CUSTOM — stat poster */}
+        {/* CUSTOM — promoted to tall left tile on mobile (was ARENA's spot).
+            Kyle 2026-06-09 swap: custom games are the bigger growth bet. */}
         <button
           onClick={onCreateCustomGame}
           className="text-left rounded-xl active:opacity-90"
@@ -1034,12 +1021,15 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             border: '1.5px solid #38BDF8',
             padding: '14px 16px',
             color: '#fff',
-            minHeight: isMobile ? 80 : 108,
+            minHeight: isMobile ? 168 : 108,
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'space-between',
+            justifyContent: isMobile ? 'center' : 'space-between',
+            alignItems: isMobile ? 'center' : 'flex-start',
+            textAlign: isMobile ? 'center' : 'left',
             position: 'relative',
             cursor: 'pointer',
+            ...(isMobile ? { gridRow: '1 / span 2', gridColumn: '1' } : {}),
           }}
         >
           {/* Wand icon top-right */}
@@ -1056,49 +1046,60 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           >
             <path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72ZM14 7l3 3M5 6v4M19 14v4M10 2v2M7 8H3M21 16h-4M11 3H9" />
           </svg>
-          {activeCustomGameCount > 0 ? (
-            <div
-              className="font-black italic"
-              style={{
-                fontSize: 44,
-                color: '#38BDF8',
-                lineHeight: 0.85,
-                letterSpacing: '-0.04em',
-                opacity: 0.95,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {activeCustomGameCount}
-            </div>
-          ) : (
-            // Empty state: punchy CREATE prompt instead of dead space.
-            // Mirrors the empty-state design on CustomGamesViewV2. Kyle 2026-06-09.
-            <div
-              className="font-black italic uppercase"
-              style={{
-                fontSize: 28,
-                color: '#38BDF8',
-                lineHeight: 0.85,
-                letterSpacing: '-0.04em',
-                textShadow: '0 0 24px rgba(56,189,248,0.4)',
-              }}
-            >
-              CREATE +
-            </div>
-          )}
-          <div>
-            <div
-              className="font-black italic uppercase"
-              style={{ fontSize: 13, lineHeight: 1 }}
-            >
-              CUSTOM GAMES
-            </div>
-            <div
-              className="font-black italic uppercase mt-1"
-              style={{ fontSize: 8, color: '#38BDF8', letterSpacing: '0.16em' }}
-            >
-              {activeCustomGameCount > 0 ? 'OPEN ROOMS · HOST FREE' : 'BE THE FIRST · HOST FREE'}
-            </div>
+          {/* Top eyebrow: HOST YOUR OWN · LIVE: N (mirrors "1V1 · LIVE" rhythm
+              on the ARENA tile). Centered + no-wrap. Kyle 2026-06-09. */}
+          <div
+            className="font-black italic uppercase"
+            style={{
+              fontSize: 9,
+              color: '#38BDF8',
+              letterSpacing: '0.16em',
+              textAlign: 'center',
+              width: '100%',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            HOST YOUR OWN
+            {activeCustomGameCount > 0 && (
+              <>
+                <span style={{ color: '#52525b', margin: '0 4px' }}>·</span>
+                <span style={{ color: '#fff' }}>LIVE: {activeCustomGameCount}</span>
+              </>
+            )}
+          </div>
+          {/* Centerpiece: CREATE + glyph, big cyan glow, dead center */}
+          <div
+            className="font-black italic uppercase"
+            style={{
+              fontSize: isMobile ? 38 : 48,
+              color: '#38BDF8',
+              lineHeight: 0.85,
+              letterSpacing: '-0.04em',
+              textShadow: '0 0 24px rgba(56,189,248,0.4)',
+              textAlign: 'center',
+              width: '100%',
+              marginTop: isMobile ? 8 : 10,
+              marginBottom: isMobile ? 8 : 10,
+            }}
+          >
+            CREATE +
+          </div>
+          {/* Bottom sublabel: 0.005 SOL · WIN POT — shortened so it fits on one
+              line at small width; centered. Kyle 2026-06-09. */}
+          <div
+            className="font-black italic uppercase"
+            style={{
+              fontSize: 9,
+              color: '#a1a1aa',
+              letterSpacing: '0.12em',
+              textAlign: 'center',
+              width: '100%',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            0.005 SOL
+            <span style={{ color: '#52525b', margin: '0 5px' }}>·</span>
+            <span style={{ color: '#38BDF8' }}>WIN POT</span>
           </div>
         </button>
 
