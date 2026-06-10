@@ -187,14 +187,14 @@ export function HomeRightRail({
           className="font-black italic uppercase mb-2"
           style={{
             fontSize: 9,
-            color: '#52525b',
+            color: '#fff',
             letterSpacing: '0.18em',
           }}
         >
           LIVE FEED
         </div>
         {feed.length === 0 ? (
-          <div className="py-2" style={{ fontSize: 12, color: '#52525b', lineHeight: 1.4 }}>
+          <div className="py-2" style={{ fontSize: 12, color: '#fff', lineHeight: 1.4 }}>
             Waiting for the next move…
           </div>
         ) : (
@@ -212,14 +212,14 @@ export function HomeRightRail({
                   width: 6,
                   height: 6,
                   borderRadius: '50%',
-                  background: f.highlight ? '#14F195' : '#52525b',
+                  background: f.highlight ? '#14F195' : '#a1a1aa',
                   marginTop: 5,
                 }}
               />
               <span
                 style={{
                   fontSize: 12,
-                  color: f.highlight ? '#fff' : '#a1a1aa',
+                  color: '#fff',
                   lineHeight: 1.4,
                 }}
               >
@@ -329,10 +329,10 @@ function BuyNerdCard({ onOpenSwap }: { onOpenSwap: () => void }) {
         </span>
         <img src="/token-nerd.png" alt="NERD" style={{ width: 20, height: 20, borderRadius: 10 }} />
       </div>
-      <div style={{ fontSize: 11, color: '#a1a1aa', marginTop: 6 }}>Swap SOL ↔ NERD, in-app.</div>
+      <div style={{ fontSize: 11, color: '#fff', marginTop: 6 }}>Swap SOL ↔ NERD, in-app.</div>
       {/* CA row: short mint + copy button. Click outside of BUY NERD so taps don't bubble. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
-        <span className="st-mono" style={{ fontSize: 9, color: '#71717a', fontVariantNumeric: 'tabular-nums' }}>
+        <span className="st-mono" style={{ fontSize: 9, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>
           CA: {shortCa}
         </span>
         <button
@@ -923,26 +923,27 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
       {/* QUICK PLAY label */}
       <div
         className="font-black italic uppercase mb-3"
-        style={{ fontSize: 10, color: '#52525b', letterSpacing: '0.18em' }}
+        style={{ fontSize: 10, color: '#fff', letterSpacing: '0.18em' }}
       >
         QUICK PLAY
       </div>
 
-      {/* Tile mosaic — on mobile: 2-col grid with ARENA tall on left spanning
-          both rows, CUSTOM + FREE PLAY stacked on the right (mirrors native
-          SolTriviaNative/src/screens/HomeScreen.tsx flex-row mosaic).
-          On desktop: 3-col side-by-side. Kyle 2026-06-09. */}
+      {/* Tile mosaic — on mobile: 2-col grid with CUSTOM tall on left spanning
+          both rows, ARENA + FREE PLAY stacked on the right (mirrors native).
+          On desktop: 3 EQUAL columns all with same height + centerpiece-CTA
+          structure. Kyle 2026-06-10 — was 1.4fr 1fr 1fr (ARENA bigger). */}
       <div
         className="mb-3"
         style={{
           display: 'grid',
-          gridTemplateColumns: isMobile ? '1.15fr 1fr' : '1.4fr 1fr 1fr',
+          gridTemplateColumns: isMobile ? '1.15fr 1fr' : '1fr 1fr 1fr',
           gridTemplateRows: isMobile ? '1fr 1fr' : 'auto',
           gap: 10,
         }}
       >
-        {/* ARENA — compact red tile (mobile: top-right small slot now that
-            CUSTOM took the tall left position). Kyle 2026-06-09 swap. */}
+        {/* ARENA — redesigned 2026-06-10 to match CUSTOM's centerpiece-CTA
+            structure (eyebrow on top, big bold glyph mid, sublabel bottom).
+            All 3 tiles now share the same hierarchy on desktop. */}
         <button
           onClick={onEnterDuels}
           className="text-left rounded-xl active:opacity-90"
@@ -954,8 +955,9 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             minHeight: isMobile ? 80 : 108,
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
+            justifyContent: isMobile ? 'space-between' : 'center',
+            alignItems: isMobile ? 'flex-start' : 'center',
+            textAlign: isMobile ? 'left' : 'center',
             position: 'relative',
             cursor: 'pointer',
             ...(isMobile ? { gridRow: '1', gridColumn: '2' } : {}),
@@ -975,39 +977,58 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           >
             <path d="M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5L18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2" />
           </svg>
-          <div>
-            <div
-              className="font-black italic uppercase"
-              style={{ fontSize: 9, color: '#FF3131', letterSpacing: '0.18em' }}
-            >
-              1V1 · LIVE
-            </div>
-            <div
-              className="font-black italic uppercase mt-1"
-              style={{ fontSize: isMobile ? 17 : 22, lineHeight: 0.95, letterSpacing: '-0.02em' }}
-            >
-              ENTER <span style={{ color: '#FF3131' }}>ARENA</span>
-            </div>
+          {/* Top eyebrow: 1V1 · LIVE: N (matches CUSTOM's HOST YOUR OWN rhythm) */}
+          <div
+            className="font-black italic uppercase"
+            style={{
+              fontSize: 9,
+              color: '#FF3131',
+              letterSpacing: '0.16em',
+              textAlign: isMobile ? 'left' : 'center',
+              width: '100%',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            1V1 BATTLE
+            {activeDuelCount > 0 && (
+              <>
+                <span style={{ color: '#fff', margin: '0 4px' }}>·</span>
+                <span style={{ color: '#fff' }}>LIVE: {activeDuelCount}</span>
+              </>
+            )}
           </div>
-          <div className="flex items-center gap-2 mt-2" style={{ width: '100%' }}>
-            <span
-              className="font-black italic uppercase"
-              style={{
-                fontSize: 9,
-                color: '#FF3131',
-                letterSpacing: '0.14em',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {activeDuelCount > 0 ? `${activeDuelCount} OPEN` : 'HOST OR JOIN'}
-            </span>
-            <div className="flex-1" />
-            <span
-              className="font-black italic"
-              style={{ fontSize: 14, color: '#FF3131' }}
-            >
-              →
-            </span>
+          {/* Centerpiece glyph: 1V1, big red glow, dead center */}
+          <div
+            className="font-black italic uppercase"
+            style={{
+              fontSize: isMobile ? 28 : 48,
+              color: '#FF3131',
+              lineHeight: 0.85,
+              letterSpacing: '-0.04em',
+              textShadow: '0 0 24px rgba(255,49,49,0.4)',
+              textAlign: isMobile ? 'left' : 'center',
+              width: '100%',
+              marginTop: isMobile ? 6 : 10,
+              marginBottom: isMobile ? 6 : 10,
+            }}
+          >
+            1V1
+          </div>
+          {/* Bottom sublabel — white for legibility, red accent on payoff */}
+          <div
+            className="font-black italic uppercase"
+            style={{
+              fontSize: 9,
+              color: '#fff',
+              letterSpacing: '0.12em',
+              textAlign: isMobile ? 'left' : 'center',
+              width: '100%',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            ANY SPL
+            <span style={{ color: '#fff', margin: '0 5px' }}>·</span>
+            <span style={{ color: '#FF3131' }}>TAKE POT</span>
           </div>
         </button>
 
@@ -1062,7 +1083,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             HOST YOUR OWN
             {activeCustomGameCount > 0 && (
               <>
-                <span style={{ color: '#52525b', margin: '0 4px' }}>·</span>
+                <span style={{ color: '#fff', margin: '0 4px' }}>·</span>
                 <span style={{ color: '#fff' }}>LIVE: {activeCustomGameCount}</span>
               </>
             )}
@@ -1084,13 +1105,12 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
           >
             CREATE +
           </div>
-          {/* Bottom sublabel: 0.005 SOL · WIN POT — shortened so it fits on one
-              line at small width; centered. Kyle 2026-06-09. */}
+          {/* Bottom sublabel — white for legibility, cyan accent on payoff */}
           <div
             className="font-black italic uppercase"
             style={{
               fontSize: 9,
-              color: '#a1a1aa',
+              color: '#fff',
               letterSpacing: '0.12em',
               textAlign: 'center',
               width: '100%',
@@ -1098,13 +1118,14 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             }}
           >
             0.005 SOL
-            <span style={{ color: '#52525b', margin: '0 5px' }}>·</span>
+            <span style={{ color: '#fff', margin: '0 5px' }}>·</span>
             <span style={{ color: '#38BDF8' }}>WIN POT</span>
           </div>
         </button>
 
-        {/* FREE PLAY — streak focus. Routes to View.PLAY (FreePlayViewV2)
-            per Kyle 2026-06-04 , no more category-modal popup from Home. */}
+        {/* FREE PLAY — redesigned 2026-06-10 to match CUSTOM/ARENA centerpiece
+            structure. Streak badge moves to top-right corner as a small chip
+            so the centerpiece glyph has room. */}
         <button
           onClick={onOpenFreePlay ?? onStartPractice}
           className="text-left rounded-xl active:opacity-90"
@@ -1116,73 +1137,110 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
             minHeight: isMobile ? 80 : 108,
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'space-between',
+            justifyContent: isMobile ? 'space-between' : 'center',
+            alignItems: isMobile ? 'flex-start' : 'center',
+            textAlign: isMobile ? 'left' : 'center',
             position: 'relative',
             cursor: 'pointer',
           }}
         >
-          {streak > 0 && (
+          {/* Gamepad icon top-right */}
+          {streak > 0 ? (
+            // Streak chip overrides the icon when streak is non-zero
             <div
               style={{
                 position: 'absolute',
-                top: 10,
+                top: 8,
                 right: 10,
-                textAlign: 'right',
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 3,
               }}
             >
               <span
                 className="font-black italic"
                 style={{
-                  fontSize: 30,
+                  fontSize: 16,
                   color: '#FFD700',
-                  lineHeight: 0.85,
-                  display: 'block',
+                  lineHeight: 1,
                   fontVariantNumeric: 'tabular-nums',
                 }}
               >
                 {streak}
               </span>
-              <span
-                className="font-black italic uppercase"
-                style={{
-                  fontSize: 7,
-                  color: '#FFD700',
-                  display: 'block',
-                  marginTop: 1,
-                  letterSpacing: '0.14em',
-                }}
-              >
-                🔥 STREAK
-              </span>
+              <span style={{ fontSize: 11 }}>🔥</span>
             </div>
+          ) : (
+            <svg
+              width={18}
+              height={18}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#14F195"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ position: 'absolute', top: 10, right: 10, opacity: 0.4 }}
+            >
+              <line x1="6" y1="11" x2="10" y2="11" />
+              <line x1="8" y1="9" x2="8" y2="13" />
+              <line x1="15" y1="12" x2="15.01" y2="12" />
+              <line x1="18" y1="10" x2="18.01" y2="10" />
+              <path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z" />
+            </svg>
           )}
-          <div>
-            <div
-              className="font-black italic uppercase"
-              style={{
-                fontSize: 9,
-                color: '#14F195',
-                letterSpacing: '0.18em',
-              }}
-            >
-              NO STAKES
-            </div>
-            <div
-              className="font-black italic uppercase mt-1"
-              style={{ fontSize: 20, lineHeight: 0.95, letterSpacing: '-0.02em' }}
-            >
-              FREE <span style={{ color: '#14F195' }}>PLAY</span>
-            </div>
-          </div>
+          {/* Top eyebrow */}
           <div
             className="font-black italic uppercase"
             style={{
-              fontSize: 8,
-              color: '#14F195', // green to match free play accent. Kyle 2026-06-09.
-              letterSpacing: '0.14em',
+              fontSize: 9,
+              color: '#14F195',
+              letterSpacing: '0.16em',
+              textAlign: isMobile ? 'left' : 'center',
+              width: '100%',
+              whiteSpace: 'nowrap',
             }}
           >
-            7 CATEGORIES · UNLIMITED W/ PASS
+            NO STAKES
+            {streak > 0 && (
+              <>
+                <span style={{ color: '#fff', margin: '0 4px' }}>·</span>
+                <span style={{ color: '#fff' }}>KEEP IT</span>
+              </>
+            )}
+          </div>
+          {/* Centerpiece glyph: FREE PLAY, big green glow */}
+          <div
+            className="font-black italic uppercase"
+            style={{
+              fontSize: isMobile ? 24 : 38,
+              color: '#14F195',
+              lineHeight: 0.85,
+              letterSpacing: '-0.04em',
+              textShadow: '0 0 24px rgba(20,241,149,0.4)',
+              textAlign: isMobile ? 'left' : 'center',
+              width: '100%',
+              marginTop: isMobile ? 6 : 10,
+              marginBottom: isMobile ? 6 : 10,
+            }}
+          >
+            FREE PLAY
+          </div>
+          {/* Bottom sublabel — white for legibility, green accent on payoff */}
+          <div
+            className="font-black italic uppercase"
+            style={{
+              fontSize: 9,
+              color: '#fff',
+              letterSpacing: '0.12em',
+              textAlign: isMobile ? 'left' : 'center',
+              width: '100%',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            7 CATEGORIES
+            <span style={{ color: '#fff', margin: '0 5px' }}>·</span>
+            <span style={{ color: '#14F195' }}>WIN XP</span>
           </div>
         </button>
       </div>
@@ -1282,7 +1340,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
       {/* Recent top finishes */}
       <div
         className="font-black italic uppercase mb-3"
-        style={{ fontSize: 10, color: '#52525b', letterSpacing: '0.18em' }}
+        style={{ fontSize: 10, color: '#fff', letterSpacing: '0.18em' }}
       >
         RECENT TOP FINISHES
       </div>
