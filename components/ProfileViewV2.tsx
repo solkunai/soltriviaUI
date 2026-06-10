@@ -1930,7 +1930,7 @@ const ProfileViewV2: React.FC<Props> = ({
           ) : (
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 13, color: '#d4d4d8', marginBottom: 14 }}>
-                Own a Seeker? Verify your SGT to unlock +25% XP, 50% off lives + pass, and the SGT badge.
+                Own a Seeker? Verify your SGT to unlock +25% XP, 35% off lives, and the gold SGT badge.
               </div>
               {seekerError && (
                 <div style={{ ...baseLabel, fontSize: 10, color: C.red, marginBottom: 10 }}>
