@@ -166,7 +166,14 @@ const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, sha
     window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
   };
 
+  // Once the creator has banked their score, refund is no longer allowed.
+  // Anti-grief: a player can't pre-play 5 questions, see they scored low,
+  // and then cancel for a refund. Their score must be left on-chain for any
+  // future opponent to challenge. Kyle 2026-06-10.
+  const canRefund = !creatorFinished;
+
   const handleCancel = async () => {
+    if (!canRefund) return;
     setCancelling(true);
     try {
       if (expired) {
@@ -281,14 +288,15 @@ const DuelWaitingView: React.FC<DuelWaitingViewProps> = ({ duelId, dbDuelId, sha
         <div className="flex gap-3">
           <button
             onClick={handleCancel}
-            disabled={cancelling}
-            className={`flex-1 px-4 py-3 font-black uppercase text-xs rounded-lg disabled:opacity-50 transition-all ${
+            disabled={cancelling || !canRefund}
+            title={canRefund ? undefined : 'You banked your score — refund locked'}
+            className={`flex-1 px-4 py-3 font-black uppercase text-xs rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all ${
               expired
                 ? 'bg-[#14F195]/10 border border-[#14F195]/30 text-[#14F195] hover:bg-[#14F195]/20'
                 : 'bg-white/5 border border-white/10 text-zinc-400 hover:text-white'
             }`}
           >
-            {cancelling ? (expired ? 'Claiming Refund...' : 'Cancelling...') : expired ? 'Claim Refund' : 'Cancel Duel'}
+            {cancelling ? (expired ? 'Claiming Refund...' : 'Cancelling...') : !canRefund ? 'Score Banked' : expired ? 'Claim Refund' : 'Cancel Duel'}
           </button>
           <button
             onClick={onBack}

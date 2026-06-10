@@ -3045,6 +3045,27 @@ const App: React.FC = () => {
                 }
               }}
               onViewOwnDuel={handleViewOwnDuel}
+              // onJoinDuel: fetch the duel to learn the entry_fee_lamports, then
+              // route through handleJoinDuel which auto-detects SOL vs SPL.
+              // Was missing pre-2026-06-10 — clicking JOIN looked dead. Kyle.
+              onJoinDuel={async (onChainDuelId) => {
+                if (!connected || !publicKey) { setShowWalletRequired(true); return; }
+                try {
+                  const duelInfo = await getDuel({
+                    duel_id: onChainDuelId,
+                    wallet_address: publicKey.toBase58(),
+                    cluster: SOLANA_NETWORK,
+                  });
+                  if (duelInfo.status !== 'waiting') {
+                    alert('This duel is no longer available.');
+                    return;
+                  }
+                  await handleJoinDuel(duelInfo.duel_id, duelInfo.entry_fee_lamports);
+                } catch (err: any) {
+                  console.error('Failed to join duel from lobby:', err);
+                  alert(err?.message || 'Could not join. Try again.');
+                }
+              }}
             />
           </WebShell>
         );
