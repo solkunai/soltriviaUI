@@ -134,18 +134,19 @@ export async function fetchClaimableRefundEntries(
   const candidates = await fetchRefundableEntries(walletAddress).catch(() => []);
   if (candidates.length === 0) return [];
   const playerKey = new PublicKey(walletAddress);
-  const checks = await Promise.all(
-    candidates.map(async (e) => {
-      try {
-        const pda = getEntryReceiptPda(e.contract_round_id, e.tier_index, playerKey);
-        const info = await connection.getAccountInfo(pda);
-        return info ? e : null; // null => already refunded / never existed
-      } catch {
-        return e;
-      }
-    }),
+  // Batch all PDA lookups into ONE getMultipleAccountsInfo call instead of N
+  // sequential getAccountInfo calls. Kyle 2026-06-10 — was burning Helius
+  // proxy quota on every Profile load.
+  const pdas = candidates.map((e) =>
+    getEntryReceiptPda(e.contract_round_id, e.tier_index, playerKey),
   );
-  return checks.filter((x): x is RefundableEntry => x != null);
+  try {
+    const infos = await connection.getMultipleAccountsInfo(pdas);
+    return candidates.filter((_, i) => infos[i] != null);
+  } catch {
+    // On RPC failure, return raw DB candidates rather than break the UI.
+    return candidates;
+  }
 }
 
 /** Custom-game entries refundable on-chain (CustomEntry PDA still exists). */
@@ -156,18 +157,15 @@ export async function fetchClaimableRefundCustoms(
   const candidates = await fetchRefundableCustomGames(walletAddress).catch(() => []);
   if (candidates.length === 0) return [];
   const playerKey = new PublicKey(walletAddress);
-  const checks = await Promise.all(
-    candidates.map(async (cg) => {
-      try {
-        const pda = getCustomEntryPda(cg.on_chain_game_id, playerKey);
-        const info = await connection.getAccountInfo(pda);
-        return info ? cg : null;
-      } catch {
-        return cg;
-      }
-    }),
+  const pdas = candidates.map((cg) =>
+    getCustomEntryPda(cg.on_chain_game_id, playerKey),
   );
-  return checks.filter((x): x is RefundableCustomGame => x != null);
+  try {
+    const infos = await connection.getMultipleAccountsInfo(pdas);
+    return candidates.filter((_, i) => infos[i] != null);
+  } catch {
+    return candidates;
+  }
 }
 
 /** Duels refundable on-chain (Duel PDA still exists; closes on cancel/expire refund). */
@@ -177,16 +175,11 @@ export async function fetchClaimableRefundDuels(
 ): Promise<RefundableDuel[]> {
   const candidates = await fetchMyRefundableDuels(walletAddress).catch(() => []);
   if (candidates.length === 0) return [];
-  const checks = await Promise.all(
-    candidates.map(async (d) => {
-      try {
-        const pda = getDuelPda(d.duel_id);
-        const info = await connection.getAccountInfo(pda);
-        return info ? d : null;
-      } catch {
-        return d;
-      }
-    }),
-  );
-  return checks.filter((x): x is RefundableDuel => x != null);
+  const pdas = candidates.map((d) => getDuelPda(d.duel_id));
+  try {
+    const infos = await connection.getMultipleAccountsInfo(pdas);
+    return candidates.filter((_, i) => infos[i] != null);
+  } catch {
+    return candidates;
+  }
 }
