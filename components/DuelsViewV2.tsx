@@ -233,7 +233,7 @@ const DuelsViewV2: React.FC<Props> = ({ onCreateDuel, onJoinDuel, onViewOwnDuel 
     const load = async () => {
       try {
         const [open, completed] = await Promise.all([
-          getOpenDuels().catch(() => []),
+          getOpenDuels(walletAddress).catch(() => []),
           fetchCompletedDuels(10).catch(() => ({ duels: [], totalCount: 0 })),
         ]);
         if (!mounted) return;

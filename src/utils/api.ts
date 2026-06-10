@@ -2611,7 +2611,7 @@ export async function submitDuelAnswer(params: SubmitDuelAnswerParams): Promise<
   return data;
 }
 
-export async function getOpenDuels(): Promise<Array<{
+export async function getOpenDuels(viewerWallet?: string | null): Promise<Array<{
   id: string;
   duel_id: number;
   player1_wallet: string;
@@ -2633,13 +2633,25 @@ export async function getOpenDuels(): Promise<Array<{
   // VITE_SOLANA_NETWORK env (defaults to 'mainnet-beta' which the EF +
   // schema treat as 'mainnet').
   const clusterFilter = SOLANA_NETWORK === 'devnet' ? 'devnet' : 'mainnet';
-  const { data, error } = await supabase
+  const baseCols =
+    'id, duel_id, player1_wallet, entry_fee_lamports, is_public, share_code, created_at, expires_at, token_mint, token_symbol, token_decimals, entry_token_amount';
+  // Returns:
+  //   (is_public=true) OR (player1_wallet=viewerWallet)
+  // so the creator can babysit their OWN private duels in the lobby until
+  // either an opponent joins or the 24h expiry hits and refund unlocks.
+  // Public duels still show to everyone. Kyle 2026-06-10.
+  let query = supabase
     .from('duels')
-    .select('id, duel_id, player1_wallet, entry_fee_lamports, is_public, share_code, created_at, expires_at, token_mint, token_symbol, token_decimals, entry_token_amount')
+    .select(baseCols)
     .eq('status', 'waiting')
-    .eq('is_public', true)
     .eq('cluster', clusterFilter)
-    .gt('expires_at', new Date().toISOString())
+    .gt('expires_at', new Date().toISOString());
+  if (viewerWallet && viewerWallet.length > 0) {
+    query = query.or(`is_public.eq.true,player1_wallet.eq.${viewerWallet}`);
+  } else {
+    query = query.eq('is_public', true);
+  }
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(20);
   if (error) throw new Error(error.message);
