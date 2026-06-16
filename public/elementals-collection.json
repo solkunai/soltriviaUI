@@ -1,0 +1,28 @@
+{
+  "name": "Sol Trivia Elementals",
+  "symbol": "NERDS",
+  "description": "Sol Trivia Elementals — the commemorative cNFT collection for Sol Trivia, the on-chain trivia game on Solana. Four LEGENDARY brain types: Champion, Competitor, Genius, Scholar. Each mint is a provably-fair on-chain random reveal. Built on Metaplex Core + Bubblegum. soltrivia.app",
+  "image": "https://soltrivia.app/mint/mint-icon.png",
+  "external_url": "https://soltrivia.app",
+  "attributes": [
+    { "trait_type": "Drop", "value": "Commemorative" },
+    { "trait_type": "Network", "value": "Solana Mainnet" },
+    { "trait_type": "Standard", "value": "Compressed NFT" },
+    { "trait_type": "Archetypes", "value": "4" },
+    { "trait_type": "Total Supply", "value": "100,000" },
+    { "trait_type": "Per Archetype", "value": "25,000" }
+  ],
+  "properties": {
+    "files": [
+      { "uri": "https://soltrivia.app/mint/mint-icon.png", "type": "image/png" }
+    ],
+    "category": "image",
+    "creators": [
+      { "address": "741QuFGz2pzLQqfk42niJWKY1B8VV17yCrh2UM7VXs9o", "share": 100 }
+    ]
+  },
+  "collection": {
+    "name": "Sol Trivia Elementals",
+    "family": "Sol Trivia"
+  }
+}
