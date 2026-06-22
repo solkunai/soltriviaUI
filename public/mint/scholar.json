@@ -1,0 +1,26 @@
+{
+  "name": "The Scholar",
+  "symbol": "NERDS",
+  "description": "Curious, studious, hungry for knowledge. One of 25,000 Scholars in the Sol Trivia Elementals commemorative drop on Solana.",
+  "image": "https://soltrivia.app/mint/nft-scholar.png",
+  "external_url": "https://soltrivia.app",
+  "seller_fee_basis_points": 500,
+  "attributes": [
+    { "trait_type": "Brain Type", "value": "Ice" },
+    { "trait_type": "Background", "value": "Crystal Glacier" },
+    { "trait_type": "Accessory", "value": "Trivia Nerd 101" },
+    { "trait_type": "Eyewear", "value": "Gold Round" },
+    { "trait_type": "Mood", "value": "Studious" },
+    { "trait_type": "Aura", "value": "Frost" },
+    { "trait_type": "Rarity", "value": "Legendary" }
+  ],
+  "properties": {
+    "files": [
+      { "uri": "https://soltrivia.app/mint/nft-scholar.png", "type": "image/png" }
+    ],
+    "category": "image",
+    "creators": [
+      { "address": "8WBaZo8W8GtXY5NGpc1TRd9Dw8q1nXeyswsgMQwikmAp", "share": 100 }
+    ]
+  }
+}

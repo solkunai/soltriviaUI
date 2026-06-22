@@ -1,0 +1,26 @@
+{
+  "name": "The Genius",
+  "symbol": "NERDS",
+  "description": "Patient, methodical, eternally observant. One of 25,000 Geniuses in the Sol Trivia Elementals commemorative drop on Solana.",
+  "image": "https://soltrivia.app/mint/nft-genius.png",
+  "external_url": "https://soltrivia.app",
+  "seller_fee_basis_points": 500,
+  "attributes": [
+    { "trait_type": "Brain Type", "value": "Earth" },
+    { "trait_type": "Background", "value": "Enchanted Forest" },
+    { "trait_type": "Accessory", "value": "Wooden Staff" },
+    { "trait_type": "Headpiece", "value": "Moss Crown" },
+    { "trait_type": "Mood", "value": "Curious" },
+    { "trait_type": "Aura", "value": "Wisdom" },
+    { "trait_type": "Rarity", "value": "Legendary" }
+  ],
+  "properties": {
+    "files": [
+      { "uri": "https://soltrivia.app/mint/nft-genius.png", "type": "image/png" }
+    ],
+    "category": "image",
+    "creators": [
+      { "address": "8WBaZo8W8GtXY5NGpc1TRd9Dw8q1nXeyswsgMQwikmAp", "share": 100 }
+    ]
+  }
+}
