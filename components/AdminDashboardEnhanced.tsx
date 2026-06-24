@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../src/utils/supabase';
 import { Connection, PublicKey, LAMPORTS_PER_SOL, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { REVENUE_WALLET, SUPABASE_FUNCTIONS_URL, OPERATOR_WALLET, OWNER_WALLET } from '../src/utils/constants';
-import { getAuthHeaders, getAdminHeaders, fetchRoundPayouts, markPayoutPaid, postWinnersOnChain, finalizeCustomGame, type RoundPayout } from '../src/utils/api';
+import { getAuthHeaders, getAdminHeaders, fetchRoundPayouts, markPayoutPaid, postWinnersOnChain, finalizeCustomGame, listRefundableGames, markRefundPaid, type RoundPayout, type RefundableGame, type RefundLogEntry } from '../src/utils/api';
 import { getSolanaRpcEndpoint, getRecentBlockhashWithRetry } from '../src/utils/rpc';
 import { useWallet } from '../src/contexts/WalletContext';
 import { WalletMultiButton } from '../src/contexts/WalletContext';
@@ -12,7 +12,7 @@ import Pagination from './Pagination';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
 
-type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'referrals' | 'answer_debug' | 'game_passes' | 'custom_games' | 'duels' | 'notifications';
+type TabType = 'questions' | 'users' | 'rounds' | 'stats' | 'lives' | 'rankings' | 'quests' | 'round_winners' | 'referrals' | 'answer_debug' | 'game_passes' | 'custom_games' | 'duels' | 'notifications' | 'refunds';
 
 interface Question {
   id?: string;
@@ -231,6 +231,7 @@ const AdminDashboardEnhanced: React.FC = () => {
           { id: 'lives', label: '❤️ Lives', icon: '❤️' },
           { id: 'game_passes', label: '🎫 Game Passes', icon: '🎫' },
           { id: 'custom_games', label: '🎲 Custom Games', icon: '🎲' },
+          { id: 'refunds', label: '💸 Refunds', icon: '💸' },
           { id: 'duels', label: '⚔️ Duels', icon: '⚔️' },
           { id: 'referrals', label: '🔗 Referrals', icon: '🔗' },
           { id: 'notifications', label: '🔔 Notifications', icon: '🔔' },
@@ -262,6 +263,7 @@ const AdminDashboardEnhanced: React.FC = () => {
         {activeTab === 'lives' && <LivesView />}
         {activeTab === 'game_passes' && <GamePassesView />}
         {activeTab === 'custom_games' && <CustomGamesAdminView />}
+        {activeTab === 'refunds' && <RefundsAdminView />}
         {activeTab === 'duels' && <DuelsAdminView />}
         {activeTab === 'referrals' && <ReferralsView />}
         {activeTab === 'notifications' && <NotificationsView />}
@@ -3303,6 +3305,264 @@ const NotificationsView: React.FC = () => {
             );
           })}
         </div>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v44: Refunds admin view
+// Lists custom games that hit a refund/reclaim path. For each, surfaces the
+// refund_log rows and lets the admin mark them paid after manual transfer.
+// ─────────────────────────────────────────────────────────────────────────────
+type RefundFilter = 'all' | 'pending' | 'completed' | 'needs_review';
+
+const REFUND_ACTION_LABELS: Record<string, string> = {
+  sol_native: 'SOL native refund',
+  spl_finalize_creator: 'SPL finalize → creator',
+  spl_finalize_player: 'SPL finalize → player',
+  spl_manual_review: 'SPL manual review',
+  nft_reclaim: 'NFT reclaim (Core)',
+  pnft_reclaim: 'pNFT manual reclaim',
+};
+
+const ASSET_TYPE_COLORS: Record<string, string> = {
+  sol: 'bg-purple-500/20 text-purple-300',
+  spl: 'bg-blue-500/20 text-blue-300',
+  nft: 'bg-cyan-500/20 text-cyan-300',
+  pnft: 'bg-pink-500/20 text-pink-300',
+};
+
+const RefundsAdminView: React.FC = () => {
+  const [games, setGames] = useState<RefundableGame[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<RefundFilter>('all');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const fetchGames = async (f: RefundFilter) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await listRefundableGames(f, 200);
+      setGames(res.games || []);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load refundable games');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGames(filter);
+  }, [filter]);
+
+  const toggleExpanded = (gameId: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(gameId)) next.delete(gameId);
+      else next.add(gameId);
+      return next;
+    });
+  };
+
+  const handleMarkPaid = async (refundLogId: string) => {
+    const txSig = window.prompt('Paste the manual transfer tx signature (or leave blank if no on-chain tx needed):');
+    if (txSig === null) return; // user cancelled
+    try {
+      await markRefundPaid(refundLogId, txSig.trim() || null);
+      fetchGames(filter); // refresh
+    } catch (err: any) {
+      alert(`Failed to mark refund paid: ${err?.message || err}`);
+    }
+  };
+
+  const formatAssetAmount = (amount: number, assetType: string, tokenDecimals?: number | null) => {
+    if (amount === 0) return '0';
+    if (assetType === 'sol') return `${(amount / 1_000_000_000).toFixed(4)} SOL`;
+    if (assetType === 'spl' && tokenDecimals != null) {
+      return `${(amount / 10 ** tokenDecimals).toFixed(tokenDecimals)} base`;
+    }
+    return amount.toLocaleString();
+  };
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h2 className="text-2xl font-black uppercase mb-2">Refunds Needed</h2>
+        <p className="text-zinc-500 text-sm">Custom games that hit a refund/reclaim path. Mark manual top-ups paid after off-chain transfer.</p>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-2 mb-6">
+        {(['all', 'pending', 'needs_review', 'completed'] as RefundFilter[]).map(f => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-4 py-2 text-xs font-black uppercase rounded-lg transition-all ${
+              filter === f
+                ? 'bg-[#14F195] text-black'
+                : 'bg-white/5 text-zinc-400 hover:bg-white/10'
+            }`}
+          >
+            {f === 'needs_review' ? 'Manual Review' : f === 'all' ? 'All' : f === 'pending' ? 'Pending Top-Up' : 'Completed'}
+          </button>
+        ))}
+        <button
+          onClick={() => fetchGames(filter)}
+          className="ml-auto px-4 py-2 text-xs font-black uppercase rounded-lg bg-white/5 text-zinc-400 hover:bg-white/10"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-4 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300 text-sm">
+          {error}
+        </div>
+      )}
+
+      {loading && games.length === 0 && (
+        <div className="py-12 text-center text-zinc-400">Loading refundable games...</div>
+      )}
+
+      {!loading && games.length === 0 && !error && (
+        <div className="py-12 text-center text-zinc-500">
+          <div className="text-sm">No games need refund handling under this filter.</div>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {games.map(g => {
+          const isExpanded = expanded.has(g.id);
+          const assetType: string = g.token_mint ? 'spl' : g.nft_standard === 'pnft' ? 'pnft' : g.nft_mint ? 'nft' : 'sol';
+          const assetBadge = ASSET_TYPE_COLORS[assetType] || 'bg-white/5 text-zinc-400';
+          const tokenLabel = g.token_symbol || (g.token_mint ? g.token_mint.slice(0, 6) : g.nft_standard ? g.nft_standard.toUpperCase() : 'SOL');
+          const actionLabel = REFUND_ACTION_LABELS[g.refund_action || ''] || g.refund_action || 'pending';
+
+          return (
+            <div key={g.id} className="bg-black/30 border border-white/10 rounded-xl overflow-hidden">
+              <button
+                onClick={() => toggleExpanded(g.id)}
+                className="w-full p-4 flex items-center gap-4 hover:bg-white/5 text-left"
+              >
+                <div className={`px-2 py-0.5 rounded text-xs font-black uppercase ${assetBadge}`}>
+                  {tokenLabel}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-white truncate">{g.name}</div>
+                  <div className="text-xs text-zinc-500 truncate">
+                    {actionLabel} · {g.player_count} player{g.player_count !== 1 ? 's' : ''} of {g.max_winners} needed · {g.refund_log_entry_count} log row{g.refund_log_entry_count !== 1 ? 's' : ''}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {g.pending_log_count > 0 && (
+                    <span className="px-2 py-1 bg-amber-500/20 text-amber-300 rounded text-xs font-black">
+                      {g.pending_log_count} PENDING
+                    </span>
+                  )}
+                  {g.creator_topup_owed_amount > 0 && !g.creator_topup_paid && (
+                    <span className="px-2 py-1 bg-red-500/20 text-red-300 rounded text-xs font-black">
+                      TOP-UP OWED
+                    </span>
+                  )}
+                  <span className="text-zinc-500 text-sm">{isExpanded ? '▲' : '▼'}</span>
+                </div>
+              </button>
+
+              {isExpanded && (
+                <div className="border-t border-white/10 p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <div className="text-zinc-500 uppercase font-bold mb-1">Creator</div>
+                      <div className="font-mono text-zinc-300 truncate">{g.creator_wallet}</div>
+                    </div>
+                    <div>
+                      <div className="text-zinc-500 uppercase font-bold mb-1">Status</div>
+                      <div className="text-zinc-300">{g.status}</div>
+                    </div>
+                    <div>
+                      <div className="text-zinc-500 uppercase font-bold mb-1">Slug</div>
+                      <div className="text-zinc-300">{g.slug}</div>
+                    </div>
+                    <div>
+                      <div className="text-zinc-500 uppercase font-bold mb-1">Finalized</div>
+                      <div className="text-zinc-300">{g.finalized_at ? new Date(g.finalized_at).toLocaleString() : 'N/A'}</div>
+                    </div>
+                    {g.creator_topup_owed_amount > 0 && (
+                      <div className="col-span-2">
+                        <div className="text-zinc-500 uppercase font-bold mb-1">Top-Up Owed (admin-only)</div>
+                        <div className="text-amber-300 font-bold">
+                          {formatAssetAmount(g.creator_topup_owed_amount, assetType, g.token_decimals)}
+                          {g.creator_topup_paid && <span className="ml-2 text-emerald-400">✓ PAID</span>}
+                        </div>
+                      </div>
+                    )}
+                    {g.finalize_tx_signature && (
+                      <div className="col-span-2">
+                        <div className="text-zinc-500 uppercase font-bold mb-1">Finalize Tx</div>
+                        <a
+                          href={`https://solscan.io/tx/${g.finalize_tx_signature}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-blue-400 hover:text-blue-300 truncate block"
+                        >
+                          {g.finalize_tx_signature}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="text-zinc-500 uppercase font-bold mb-2 text-xs">Refund Log Entries</div>
+                    {g.refund_log_entries.length === 0 ? (
+                      <div className="text-zinc-600 text-sm py-2">No refund log rows.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {g.refund_log_entries.map((log: RefundLogEntry) => (
+                          <div key={log.id} className="bg-black/30 border border-white/5 rounded-lg p-3 flex items-center gap-3">
+                            <div className={`px-2 py-0.5 rounded text-xs font-black uppercase ${ASSET_TYPE_COLORS[log.asset_type] || 'bg-white/5'}`}>
+                              {log.asset_type}
+                            </div>
+                            <div className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${log.role === 'creator' ? 'bg-amber-500/20 text-amber-300' : 'bg-zinc-700/50 text-zinc-300'}`}>
+                              {log.role}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-mono text-xs text-zinc-300 truncate">{log.wallet_address}</div>
+                              <div className="text-xs text-zinc-500">
+                                {log.on_chain_amount > 0 && <span>On-chain: {formatAssetAmount(log.on_chain_amount, log.asset_type, g.token_decimals)}</span>}
+                                {log.manual_topup_amount > 0 && <span className="ml-2 text-amber-400">Top-up: {formatAssetAmount(log.manual_topup_amount, log.asset_type, g.token_decimals)}</span>}
+                                {log.on_chain_tx_signature && (
+                                  <a href={`https://solscan.io/tx/${log.on_chain_tx_signature}`} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300">tx</a>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              {log.status === 'completed' ? (
+                                <span className="px-2 py-1 bg-emerald-500/20 text-emerald-300 rounded text-xs font-black">DONE</span>
+                              ) : log.status === 'on_chain_done' ? (
+                                <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-black">ON-CHAIN</span>
+                              ) : log.status === 'failed' ? (
+                                <span className="px-2 py-1 bg-red-500/20 text-red-300 rounded text-xs font-black">FAILED</span>
+                              ) : (
+                                <button
+                                  onClick={() => handleMarkPaid(log.id)}
+                                  className="px-3 py-1 bg-[#14F195] text-black text-xs font-black rounded hover:bg-[#14F195]/80"
+                                >
+                                  Mark Paid
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

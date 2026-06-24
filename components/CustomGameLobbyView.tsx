@@ -879,7 +879,9 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           ) : isPaid ? (
             /* ── Paid Game CTAs ── */
             <>
-              {/* Finalized: claim or view results */}
+              {/* Finalized: claim or view results.
+                  v44: if winner_is_refund=true, the on-chain "winner" is the
+                  refund recipient. UI labels it as REFUND, not PRIZE. */}
               {gameData.status === 'finalized' && (
                 isWinner ? (
                   <button
@@ -887,7 +889,11 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                     disabled={claiming}
                     className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98] disabled:opacity-50"
                   >
-                    {claiming ? 'Claiming...' : `Claim Prize (${winnerAmountSOL.toFixed(3)} ${tokenSymbol})`}
+                    {claiming
+                      ? (gameData.winner_is_refund ? 'Claiming Refund...' : 'Claiming...')
+                      : (gameData.winner_is_refund
+                        ? `Claim Refund (${winnerAmountSOL.toFixed(3)} ${tokenSymbol})`
+                        : `Claim Prize (${winnerAmountSOL.toFixed(3)} ${tokenSymbol})`)}
                   </button>
                 ) : (
                   <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">

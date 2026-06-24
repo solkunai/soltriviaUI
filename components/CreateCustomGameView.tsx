@@ -47,6 +47,7 @@ import {
   CUSTOM_GAME_MIN_DURATION_MINUTES,
   CUSTOM_GAME_MAX_DURATION_MINUTES,
   CUSTOM_GAME_DURATION_PRESETS,
+  CUSTOM_GAME_MAX_ENTRIES_PRESETS,
   CUSTOM_GAME_WINNER_SPLITS,
   CUSTOM_GAME_WINNER_SPLIT_LABELS,
   CUSTOM_GAME_PLATFORM_CUT_BPS,
@@ -204,6 +205,11 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   const [customDurationValue, setCustomDurationValue] = useState<string>('');
   const [customDurationUnit, setCustomDurationUnit] = useState<'M' | 'H' | 'D'>('M');
   const [maxWinners, setMaxWinners] = useState<number>(3);
+  // v44 re-entry settings. null max = unlimited (preserved default). When
+  // allowReEntries=false, EF effectively caps at 1. Player-funded games:
+  // each re-entry pays full entry fee and grows the pot.
+  const [allowReEntries, setAllowReEntries] = useState<boolean>(true);
+  const [maxEntriesPerPlayer, setMaxEntriesPerPlayer] = useState<number | null>(null);
   const [creatorDepositLamports, setCreatorDepositLamports] = useState<number>(CREATOR_FUNDED_PRIZE_PRESETS[2]); // 0.5 SOL default
   const [customCreatorDeposit, setCustomCreatorDeposit] = useState('');
   // NFT prize: the wallet asset that becomes the single-winner prize. Core or pNFT.
@@ -331,6 +337,8 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
       maxPlayers,
       gameDurationMinutes,
       maxWinners,
+      allowReEntries,
+      maxEntriesPerPlayer,
       creatorDepositLamports,
       customCreatorDeposit,
       questions,
@@ -359,6 +367,8 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
     setMaxPlayers(d.maxPlayers);
     setGameDurationMinutes(d.gameDurationMinutes);
     setMaxWinners(d.maxWinners);
+    setAllowReEntries(d.allowReEntries ?? true);
+    setMaxEntriesPerPlayer(d.maxEntriesPerPlayer ?? null);
     setCreatorDepositLamports(d.creatorDepositLamports);
     setCustomCreatorDeposit(d.customCreatorDeposit);
     setQuestions(d.questions);
@@ -716,6 +726,10 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
       if (isAdmin && isFeatured) {
         params.isFeatured = true;
       }
+
+      // v44: re-entry cap settings (applies to all game types, not just paid)
+      params.allowReEntries = allowReEntries;
+      params.maxEntriesPerPlayer = maxEntriesPerPlayer;
 
       // Add prize pool fields for paid games
       if (isPaid) {
@@ -1720,6 +1734,52 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   </span>
                 ))}
               </div>
+            </div>
+
+            {/* Re-Entry Cap (v44) */}
+            <div>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Re-Entries</label>
+              <div className="flex gap-2 mb-2">
+                <button
+                  onClick={() => { setAllowReEntries(true); setMaxEntriesPerPlayer(null); }}
+                  className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${allowReEntries ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                >
+                  Allow Re-Entries
+                </button>
+                <button
+                  onClick={() => { setAllowReEntries(false); setMaxEntriesPerPlayer(1); }}
+                  className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${!allowReEntries ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                >
+                  Single Attempt
+                </button>
+              </div>
+              {allowReEntries && (
+                <div>
+                  <div className="text-zinc-500 text-[10px] font-black uppercase tracking-wider mb-2">Max Entries Per Wallet</div>
+                  <div className="flex gap-2 flex-wrap">
+                    {CUSTOM_GAME_MAX_ENTRIES_PRESETS.map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setMaxEntriesPerPlayer(n)}
+                        className={`min-h-[40px] px-3 py-2 rounded-xl font-black text-[11px] uppercase transition-all active:scale-[0.98] ${maxEntriesPerPlayer === n ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setMaxEntriesPerPlayer(null)}
+                      className={`min-h-[40px] px-3 py-2 rounded-xl font-black text-[11px] uppercase transition-all active:scale-[0.98] ${maxEntriesPerPlayer === null ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    >
+                      ∞ Unlimited
+                    </button>
+                  </div>
+                </div>
+              )}
+              <p className="text-zinc-600 text-[10px] mt-2">
+                {prizeModel === 'player_funded'
+                  ? 'Each re-entry pays the full entry fee. Pot grows with re-entries.'
+                  : 'Each re-entry = another attempt at the prize. Best score wins.'}
+              </p>
             </div>
 
             {/* Sticky Next button: hovers at the bottom of the viewport so

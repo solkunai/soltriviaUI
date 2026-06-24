@@ -213,6 +213,13 @@ export const CUSTOM_GAME_WINNER_SPLIT_LABELS: Record<number, string[]> = {
 };
 export const CUSTOM_GAME_PLATFORM_CUT_BPS = 1000; // 10% of pot
 
+// ─── Re-Entry (v44) ──────────────────────────────────────────────────────
+// Creators pick a cap on how many times a single wallet can enter their game.
+// null sentinel = unlimited. Player-funded games: each re-entry pays the full
+// entry fee on-chain (pot grows). Free/NFT/creator-funded: just more attempts.
+export const CUSTOM_GAME_MAX_ENTRIES_PRESETS = [1, 3, 5, 10] as const;
+export type CustomGameMaxEntries = number | null;
+
 // ─── Creator-Funded Games ────────────────────────────────────────────────
 export const CREATOR_FUNDED_MIN_PRIZE_LAMPORTS = 50_000_000;       // 0.05 SOL
 export const CREATOR_FUNDED_MAX_PRIZE_LAMPORTS = 100_000_000_000;  // 100 SOL

@@ -1575,6 +1575,79 @@ export async function markPayoutPaid(
   return { success: true };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// v44 admin refund dashboard EFs
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface RefundLogEntry {
+  id: string;
+  game_id: string;
+  wallet_address: string;
+  role: 'creator' | 'player';
+  asset_type: 'sol' | 'spl' | 'nft' | 'pnft';
+  token_mint: string | null;
+  on_chain_amount: number;
+  manual_topup_amount: number;
+  status: 'pending' | 'on_chain_done' | 'completed' | 'failed';
+  on_chain_tx_signature: string | null;
+  manual_tx_signature: string | null;
+  processed_at: string | null;
+  created_at: string;
+}
+
+export interface RefundableGame {
+  id: string;
+  slug: string;
+  name: string;
+  creator_wallet: string;
+  prize_model: string;
+  token_mint: string | null;
+  token_symbol: string | null;
+  token_decimals: number | null;
+  nft_mint: string | null;
+  nft_standard: string | null;
+  max_winners: number;
+  player_count: number;
+  status: string;
+  finalized_at: string | null;
+  refund_action: string | null;
+  winner_is_refund: boolean;
+  creator_topup_owed_amount: number;
+  creator_topup_paid: boolean;
+  total_pot_lamports: number;
+  prize_pot_lamports: number;
+  on_chain_game_id: number | null;
+  finalize_tx_signature: string | null;
+  expires_at: string;
+  refund_log_entries: RefundLogEntry[];
+  refund_log_entry_count: number;
+  pending_log_count: number;
+}
+
+/** List custom games that have hit a refund/reclaim path. Admin-only. */
+export async function listRefundableGames(
+  filter: 'all' | 'pending' | 'completed' | 'needs_review' = 'all',
+  limit = 100,
+): Promise<{ games: RefundableGame[]; count: number; filter: string }> {
+  return efPost<{ games: RefundableGame[]; count: number; filter: string }>(
+    'admin-list-refundable-games',
+    { filter, limit },
+    { admin: true },
+  );
+}
+
+/** Mark a refund_log row as completed after manual transfer. Admin-only. */
+export async function markRefundPaid(
+  refundLogId: string,
+  manualTxSignature: string | null,
+): Promise<{ success: boolean; refund_log_id: string; game_id: string; all_refunds_cleared: boolean }> {
+  return efPost<{ success: boolean; refund_log_id: string; game_id: string; all_refunds_cleared: boolean }>(
+    'admin-mark-refund-paid',
+    { refund_log_id: refundLogId, manual_tx_signature: manualTxSignature },
+    { admin: true },
+  );
+}
+
 /** Mark payout as claimed (self-service after user claims on-chain). So profile shows "Claimed" and does not show Claim again. */
 export async function markPayoutClaimed(roundId: string, walletAddress: string, tierIndex?: number): Promise<{ success: boolean; error?: string }> {
   const url = `${FUNCTIONS_URL}/mark-payout-claimed`;
@@ -2091,6 +2164,10 @@ export interface CreateCustomGameParams {
   // v2.1 admin-only: marks game as "Featured by Sol Trivia". EF v41+ verifies
   // walletAddress is in the admin allowlist before honoring this flag.
   isFeatured?: boolean;
+  // v44: re-entry settings. Default allowReEntries=true, maxEntriesPerPlayer=null
+  // (unlimited) preserves existing client behavior.
+  allowReEntries?: boolean;
+  maxEntriesPerPlayer?: number | null;
 }
 
 export interface CreateCustomGameResponse {
@@ -2179,6 +2256,27 @@ export interface CustomGameData {
     correct_count: number;
     time_taken_ms: number;
     is_seeker_verified: boolean;
+  }>;
+  // v44: re-entry + refund fields
+  allow_re_entries?: boolean;
+  max_entries_per_player?: number | null;
+  refund_action?: string | null;
+  winner_is_refund?: boolean;
+  // v44: per-wallet entry + refund state (for connected wallet only)
+  player_entry_count?: number;
+  player_total_fee_paid?: number;
+  player_refunded?: boolean;
+  player_entries_remaining?: number | null;
+  player_refund_log?: Array<{
+    id: string;
+    role: 'creator' | 'player';
+    asset_type: 'sol' | 'spl' | 'nft' | 'pnft';
+    token_mint: string | null;
+    on_chain_amount: number;
+    status: 'pending' | 'on_chain_done' | 'completed' | 'failed';
+    on_chain_tx_signature: string | null;
+    processed_at: string | null;
+    created_at: string;
   }>;
 }
 

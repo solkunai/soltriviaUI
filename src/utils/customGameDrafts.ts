@@ -41,6 +41,9 @@ export interface CustomGameDraft {
   maxPlayers: number | null;  // null = "No Max" (∞)
   gameDurationMinutes: number;
   maxWinners: number;
+  // v44 re-entry settings. Optional for backward compat with older saved drafts.
+  allowReEntries?: boolean;
+  maxEntriesPerPlayer?: number | null;
   creatorDepositLamports: number;
   customCreatorDeposit: string;
   // Step 3: Questions
