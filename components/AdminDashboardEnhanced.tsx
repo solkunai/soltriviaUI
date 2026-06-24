@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../src/utils/supabase';
-import { Connection, PublicKey, LAMPORTS_PER_SOL, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
+import { Connection, PublicKey, LAMPORTS_PER_SOL, TransactionMessage, VersionedTransaction, TransactionInstruction } from '@solana/web3.js';
 import { REVENUE_WALLET, SUPABASE_FUNCTIONS_URL, OPERATOR_WALLET, OWNER_WALLET } from '../src/utils/constants';
 import { getAuthHeaders, getAdminHeaders, fetchRoundPayouts, markPayoutPaid, postWinnersOnChain, finalizeCustomGame, listRefundableGames, markRefundPaid, type RoundPayout, type RefundableGame, type RefundLogEntry } from '../src/utils/api';
 import { getSolanaRpcEndpoint, getRecentBlockhashWithRetry } from '../src/utils/rpc';
@@ -3314,8 +3314,21 @@ const NotificationsView: React.FC = () => {
 // v44: Refunds admin view
 // Lists custom games that hit a refund/reclaim path. For each, surfaces the
 // refund_log rows and lets the admin mark them paid after manual transfer.
+// v32: also exposes a "Send Refund" button that signs an SPL transfer from
+// the connected wallet (expected: sweep_wallet 4u1) directly to the recipient
+// and auto-marks the row paid with the tx signature.
 // ─────────────────────────────────────────────────────────────────────────────
 type RefundFilter = 'all' | 'pending' | 'completed' | 'needs_review';
+
+// Sweep wallet is the destination for any unclaimed funds the contract sweeps.
+// Per on-chain GameConfig: revenue_wallet = sweep_wallet = 4u1...Cv74.
+// Direct refunds for multi-winner SPL cases sign from THIS wallet.
+const SWEEP_WALLET_ADDRESS = '4u1UTyMBX8ghSQBagZHCzArt32XMFSw4CUXbdgo2Cv74';
+// SPL Token program IDs (covers both classic and Token-2022 paths)
+const SPL_TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+const SPL_TOKEN_2022_PROGRAM_ID = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
+const SPL_ATA_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
+const SYSTEM_PROGRAM_ID_PK = new PublicKey('11111111111111111111111111111111');
 
 const REFUND_ACTION_LABELS: Record<string, string> = {
   sol_native: 'SOL native refund',
@@ -3333,12 +3346,71 @@ const ASSET_TYPE_COLORS: Record<string, string> = {
   pnft: 'bg-pink-500/20 text-pink-300',
 };
 
+// v32: derive the recipient's associated token account.
+function getAtaAddress(mint: PublicKey, owner: PublicKey, tokenProgram: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [owner.toBytes(), tokenProgram.toBytes(), mint.toBytes()],
+    SPL_ATA_PROGRAM_ID,
+  )[0];
+}
+
+// v32: build an idempotent createAssociatedTokenAccount ix.
+function buildCreateAtaIdempotentIx(
+  payer: PublicKey,
+  ata: PublicKey,
+  owner: PublicKey,
+  mint: PublicKey,
+  tokenProgram: PublicKey,
+): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: SPL_ATA_PROGRAM_ID,
+    keys: [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: ata, isSigner: false, isWritable: true },
+      { pubkey: owner, isSigner: false, isWritable: false },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: SYSTEM_PROGRAM_ID_PK, isSigner: false, isWritable: false },
+      { pubkey: tokenProgram, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from([1]), // discriminator for create_idempotent
+  });
+}
+
+// v32: build SPL Token transferChecked instruction (works for both classic + Token-2022).
+// disc(1) + amount(u64 LE, 8) + decimals(u8, 1) = 10 bytes
+function buildSplTransferCheckedIx(
+  source: PublicKey,
+  mint: PublicKey,
+  destination: PublicKey,
+  authority: PublicKey,
+  amount: bigint,
+  decimals: number,
+  tokenProgram: PublicKey,
+): TransactionInstruction {
+  const buf = Buffer.alloc(10);
+  buf[0] = 12; // TransferChecked discriminator
+  buf.writeBigUInt64LE(amount, 1);
+  buf[9] = decimals;
+  return new TransactionInstruction({
+    programId: tokenProgram,
+    keys: [
+      { pubkey: source, isSigner: false, isWritable: true },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: destination, isSigner: false, isWritable: true },
+      { pubkey: authority, isSigner: true, isWritable: false },
+    ],
+    data: buf,
+  });
+}
+
 const RefundsAdminView: React.FC = () => {
+  const wallet = useWallet();
   const [games, setGames] = useState<RefundableGame[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<RefundFilter>('all');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [directRefundingId, setDirectRefundingId] = useState<string | null>(null);
 
   const fetchGames = async (f: RefundFilter) => {
     setLoading(true);
@@ -3374,6 +3446,88 @@ const RefundsAdminView: React.FC = () => {
       fetchGames(filter); // refresh
     } catch (err: any) {
       alert(`Failed to mark refund paid: ${err?.message || err}`);
+    }
+  };
+
+  // v32: Send Refund — signs an SPL transfer from connected wallet (should be
+  // sweep wallet 4u1) directly to the refund recipient, then auto-marks paid.
+  // Used for multi-winner SPL games where the contract refund path requires
+  // a sweep_delay wait we want to skip.
+  const handleDirectRefund = async (
+    refundLogId: string,
+    recipientWallet: string,
+    tokenMint: string,
+    amountBaseUnits: number,
+    tokenDecimals: number,
+    tokenSymbol: string | null,
+  ) => {
+    if (!wallet.connected || !wallet.publicKey || !wallet.sendTransaction) {
+      alert('Connect your wallet first (Phantom recommended). Should be the sweep wallet.');
+      return;
+    }
+    const connectedAddr = wallet.publicKey.toBase58();
+    if (connectedAddr !== SWEEP_WALLET_ADDRESS) {
+      const proceed = window.confirm(
+        `Warning: connected wallet is ${connectedAddr.slice(0,6)}...${connectedAddr.slice(-4)}, NOT the sweep wallet (${SWEEP_WALLET_ADDRESS.slice(0,6)}...${SWEEP_WALLET_ADDRESS.slice(-4)}). Proceed anyway?`
+      );
+      if (!proceed) return;
+    }
+    if (amountBaseUnits <= 0) {
+      alert('Refund amount is 0; nothing to send.');
+      return;
+    }
+    const friendlyAmount = (amountBaseUnits / 10 ** tokenDecimals).toFixed(tokenDecimals);
+    const confirm = window.confirm(
+      `Send ${friendlyAmount} ${tokenSymbol || tokenMint.slice(0, 6)} to ${recipientWallet.slice(0, 6)}...${recipientWallet.slice(-4)} ?\n\nThis signs from your connected wallet and broadcasts the tx.`
+    );
+    if (!confirm) return;
+
+    setDirectRefundingId(refundLogId);
+    try {
+      const rpcUrl = getSolanaRpcEndpoint();
+      const connection = new Connection(rpcUrl, 'confirmed');
+      const mintPk = new PublicKey(tokenMint);
+      const recipientPk = new PublicKey(recipientWallet);
+
+      // Detect token program (classic vs Token-2022) from mint account owner
+      const mintInfo = await connection.getAccountInfo(mintPk);
+      const tokenProgram = (mintInfo && mintInfo.owner.equals(SPL_TOKEN_2022_PROGRAM_ID))
+        ? SPL_TOKEN_2022_PROGRAM_ID
+        : SPL_TOKEN_PROGRAM_ID;
+
+      const sourceAta = getAtaAddress(mintPk, wallet.publicKey, tokenProgram);
+      const destAta = getAtaAddress(mintPk, recipientPk, tokenProgram);
+
+      // Pre-create recipient's ATA idempotently (no-op if exists)
+      const createAtaIx = buildCreateAtaIdempotentIx(
+        wallet.publicKey, destAta, recipientPk, mintPk, tokenProgram,
+      );
+      const transferIx = buildSplTransferCheckedIx(
+        sourceAta, mintPk, destAta, wallet.publicKey, BigInt(amountBaseUnits), tokenDecimals, tokenProgram,
+      );
+
+      const { blockhash } = await getRecentBlockhashWithRetry(connection);
+      const messageV0 = new TransactionMessage({
+        payerKey: wallet.publicKey,
+        recentBlockhash: blockhash,
+        instructions: [createAtaIx, transferIx],
+      }).compileToV0Message();
+
+      const tx = new VersionedTransaction(messageV0);
+      const sig = await wallet.sendTransaction(tx, connection);
+      await connection.confirmTransaction(sig, 'confirmed');
+
+      // Auto-mark the refund_log row as paid with the tx signature
+      await markRefundPaid(refundLogId, sig);
+
+      alert(`Refund sent! Tx: ${sig}`);
+      fetchGames(filter);
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      alert(`Direct refund failed: ${msg}`);
+      console.error('handleDirectRefund error:', err);
+    } finally {
+      setDirectRefundingId(null);
     }
   };
 
@@ -3537,7 +3691,7 @@ const RefundsAdminView: React.FC = () => {
                                 )}
                               </div>
                             </div>
-                            <div>
+                            <div className="flex items-center gap-2">
                               {log.status === 'completed' ? (
                                 <span className="px-2 py-1 bg-emerald-500/20 text-emerald-300 rounded text-xs font-black">DONE</span>
                               ) : log.status === 'on_chain_done' ? (
@@ -3545,12 +3699,32 @@ const RefundsAdminView: React.FC = () => {
                               ) : log.status === 'failed' ? (
                                 <span className="px-2 py-1 bg-red-500/20 text-red-300 rounded text-xs font-black">FAILED</span>
                               ) : (
-                                <button
-                                  onClick={() => handleMarkPaid(log.id)}
-                                  className="px-3 py-1 bg-[#14F195] text-black text-xs font-black rounded hover:bg-[#14F195]/80"
-                                >
-                                  Mark Paid
-                                </button>
+                                <>
+                                  {/* v32: Send Refund button — only for SPL rows with a manual top-up owed */}
+                                  {log.asset_type === 'spl' && log.token_mint && Number(log.manual_topup_amount || 0) > 0 && (
+                                    <button
+                                      onClick={() => handleDirectRefund(
+                                        log.id,
+                                        log.wallet_address,
+                                        log.token_mint!,
+                                        Number(log.manual_topup_amount || 0),
+                                        Number(g.token_decimals ?? 0),
+                                        g.token_symbol,
+                                      )}
+                                      disabled={directRefundingId === log.id}
+                                      className="px-3 py-1 bg-cyan-500/80 text-black text-xs font-black rounded hover:bg-cyan-400 disabled:opacity-50"
+                                      title="Sign + send SPL transfer from your connected wallet (should be sweep wallet 4u1), then auto-mark paid"
+                                    >
+                                      {directRefundingId === log.id ? 'Sending...' : 'Send Refund'}
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleMarkPaid(log.id)}
+                                    className="px-3 py-1 bg-[#14F195] text-black text-xs font-black rounded hover:bg-[#14F195]/80"
+                                  >
+                                    Mark Paid
+                                  </button>
+                                </>
                               )}
                             </div>
                           </div>
