@@ -38,7 +38,7 @@ export interface CustomGameDraft {
   manualDecimals: number;
   entryFeeLamports: number;
   customEntryFee: string;
-  maxPlayers: number;
+  maxPlayers: number | null;  // null = "No Max" (∞)
   gameDurationMinutes: number;
   maxWinners: number;
   creatorDepositLamports: number;

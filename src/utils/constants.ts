@@ -186,17 +186,20 @@ export const CUSTOM_GAME_ENTRY_FEE_PRESETS = [
 export const CUSTOM_GAME_ENTRY_FEE_LABELS = ['0.05', '0.1', '0.5', '1', '5'] as const;
 export const CUSTOM_GAME_MIN_ENTRY_FEE = 10_000_000;      // 0.01 SOL
 export const CUSTOM_GAME_MAX_ENTRY_FEE = 10_000_000_000;   // 10 SOL
-export const CUSTOM_GAME_MAX_PLAYER_PRESETS = [5, 10, 25, 50, 100] as const;
+export const CUSTOM_GAME_MAX_PLAYER_PRESETS = [5, 25, 100, 1000, 10_000] as const;
 export const CUSTOM_GAME_MIN_PLAYERS = 2;
+export const CUSTOM_GAME_MAX_PLAYERS = 10_000;
+// null sentinel for "No Max" (∞ players). Join EF already handles null/0 as no cap.
+export type CustomGameMaxPlayers = number | null;
+export const CUSTOM_GAME_MIN_DURATION_MINUTES = 15;
+export const CUSTOM_GAME_MAX_DURATION_MINUTES = 30 * 24 * 60; // 30 days = 43,200 min
 export const CUSTOM_GAME_DURATION_PRESETS = [
-  { minutes: 3, label: '3 Min' },
-  { minutes: 60, label: '1 Hour' },
-  { minutes: 120, label: '2 Hours' },
-  { minutes: 240, label: '4 Hours' },
-  { minutes: 480, label: '8 Hours' },
-  { minutes: 720, label: '12 Hours' },
-  { minutes: 1440, label: '24 Hours' },
-  { minutes: 2880, label: '48 Hours' },
+  { minutes: 15,    label: '15 Min'  },
+  { minutes: 60,    label: '1 Hour'  },
+  { minutes: 480,   label: '8 Hours' },
+  { minutes: 1440,  label: '24 Hours'},
+  { minutes: 2880,  label: '48 Hours'},
+  { minutes: 10080, label: '7 Days'  },
 ] as const;
 export const CUSTOM_GAME_WINNER_SPLITS: Record<number, number[]> = {
   1: [10000, 0, 0, 0, 0],

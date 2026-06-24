@@ -2075,7 +2075,7 @@ export interface CreateCustomGameParams {
   // Prize pool fields
   prizeModel?: 'free' | 'player_funded' | 'creator_funded' | 'nft';
   entryFeeLamports?: number;
-  maxPlayers?: number;
+  maxPlayers?: number | null;  // null = "No Max" (∞)
   gameDurationMinutes?: number;
   maxWinners?: number;
   creatorDepositLamports?: number;

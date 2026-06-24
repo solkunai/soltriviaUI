@@ -43,6 +43,9 @@ import {
   CUSTOM_GAME_MAX_ENTRY_FEE,
   CUSTOM_GAME_MAX_PLAYER_PRESETS,
   CUSTOM_GAME_MIN_PLAYERS,
+  CUSTOM_GAME_MAX_PLAYERS,
+  CUSTOM_GAME_MIN_DURATION_MINUTES,
+  CUSTOM_GAME_MAX_DURATION_MINUTES,
   CUSTOM_GAME_DURATION_PRESETS,
   CUSTOM_GAME_WINNER_SPLITS,
   CUSTOM_GAME_WINNER_SPLIT_LABELS,
@@ -193,8 +196,13 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
 
   const [entryFeeLamports, setEntryFeeLamports] = useState<number>(CUSTOM_GAME_ENTRY_FEE_PRESETS[1]); // 0.1 SOL default
   const [customEntryFee, setCustomEntryFee] = useState('');
-  const [maxPlayers, setMaxPlayers] = useState<number>(10);
-  const [gameDurationMinutes, setGameDurationMinutes] = useState<number>(1440); // 24h default
+  // Kyle 2026-06-24: maxPlayers can now be null = "No Max" (∞). Join EF already treats null/0 as no cap.
+  const [maxPlayers, setMaxPlayers] = useState<number | null>(5);
+  const [customMaxPlayers, setCustomMaxPlayers] = useState<string>('');
+  const [gameDurationMinutes, setGameDurationMinutes] = useState<number>(15); // 15 min default (streamer/friends use case)
+  // Custom duration input: number + M/H/D unit picker.
+  const [customDurationValue, setCustomDurationValue] = useState<string>('');
+  const [customDurationUnit, setCustomDurationUnit] = useState<'M' | 'H' | 'D'>('M');
   const [maxWinners, setMaxWinners] = useState<number>(3);
   const [creatorDepositLamports, setCreatorDepositLamports] = useState<number>(CREATOR_FUNDED_PRIZE_PRESETS[2]); // 0.5 SOL default
   const [customCreatorDeposit, setCustomCreatorDeposit] = useState('');
@@ -257,7 +265,9 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   const activeCreatorDeposit = customCreatorDeposit
     ? Math.round(parseFloat(customCreatorDeposit) * baseUnitMultiplier)
     : (isSplGame ? 0 : creatorDepositLamports);
-  const estimatedPot = isCreatorFunded ? activeCreatorDeposit : (isPaid ? activeEntryFee * maxPlayers : 0);
+  // For paid games with "No Max" (maxPlayers === null), the pot grows with
+  // entries — we show 0 as the placeholder estimate (UI hint: "grows w/ players").
+  const estimatedPot = isCreatorFunded ? activeCreatorDeposit : (isPaid ? activeEntryFee * (maxPlayers ?? 0) : 0);
   // Contract takes 0% from creator-funded games — winners receive the full deposit.
   const platformCut = isCreatorFunded ? 0 : Math.floor(estimatedPot * CUSTOM_GAME_PLATFORM_CUT_BPS / 10000);
   const prizePot = estimatedPot - platformCut;
@@ -456,7 +466,15 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
           return;
         }
       }
-      if (maxPlayers < CUSTOM_GAME_MIN_PLAYERS) { setError(`Minimum ${CUSTOM_GAME_MIN_PLAYERS} players`); return; }
+      // maxPlayers === null = "No Max" (∞), skip min check. Otherwise enforce min.
+      if (maxPlayers !== null && maxPlayers < CUSTOM_GAME_MIN_PLAYERS) { setError(`Minimum ${CUSTOM_GAME_MIN_PLAYERS} players`); return; }
+    }
+    // Duration validation applies to ALL game types (free + paid).
+    if (gameDurationMinutes < CUSTOM_GAME_MIN_DURATION_MINUTES) {
+      setError(`Minimum game duration is ${CUSTOM_GAME_MIN_DURATION_MINUTES} minutes`); return;
+    }
+    if (gameDurationMinutes > CUSTOM_GAME_MAX_DURATION_MINUTES) {
+      setError(`Maximum game duration is 30 days`); return;
     }
     if (isNftPrize) {
       if (!selectedNft) { setError('Pick an NFT prize from your wallet first'); return; }
@@ -1506,64 +1524,9 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   </div>
                 )}
 
-                {/* Max Players */}
-                <div>
-                  <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Max Players</label>
-                  <div className="flex gap-2 flex-wrap">
-                    {CUSTOM_GAME_MAX_PLAYER_PRESETS.map((count) => (
-                      <button
-                        key={count}
-                        onClick={() => setMaxPlayers(count)}
-                        className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${maxPlayers === count ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
-                      >
-                        {count}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Game Duration */}
-                <div>
-                  <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Game Duration</label>
-                  <div className="flex gap-2 flex-wrap">
-                    {CUSTOM_GAME_DURATION_PRESETS.map((d) => (
-                      <button
-                        key={d.minutes}
-                        onClick={() => setGameDurationMinutes(d.minutes)}
-                        className={`min-h-[40px] px-3 py-2 rounded-xl font-black text-[11px] uppercase transition-all active:scale-[0.98] ${gameDurationMinutes === d.minutes ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
-                      >
-                        {d.label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-zinc-600 text-[10px] mt-1">Players can join and play during this window</p>
-                </div>
-
-                {/* Winners */}
-                <div>
-                  <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Winner Count</label>
-                  <div className="flex gap-2">
-                    {([1, 3, 5] as const).map((w) => (
-                      <button
-                        key={w}
-                        onClick={() => setMaxWinners(w)}
-                        className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl transition-all active:scale-[0.98] ${maxWinners === w ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
-                      >
-                        <span className="font-[1000] italic text-lg block">{w}</span>
-                        <span className="text-[8px] font-black uppercase tracking-wider opacity-70">
-                          {w === 1 ? 'Winner' : 'Winners'}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-2 flex gap-2 flex-wrap">
-                    {CUSTOM_GAME_WINNER_SPLIT_LABELS[maxWinners].map((label, i) => (
-                      <span key={i} className="px-2 py-1 bg-[#38BDF8]/10 border border-[#38BDF8]/20 rounded text-[#38BDF8] text-[10px] font-black">
-                        {i + 1}{i === 0 ? 'st' : i === 1 ? 'nd' : i === 2 ? 'rd' : 'th'}: {label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                {/* Max Players, Duration, Winners moved OUT of {isPaid} block in
+                    the parent — they apply to all game types including free.
+                    See block immediately following the {isPaid && (...)} close. */}
 
                 {/* Prize Calculator. All amounts shown in the selected token's
                     natural units. For SPL games with a Jupiter-resolved price,
@@ -1585,7 +1548,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                     <div className="flex justify-between text-zinc-500 text-xs">
                       <span>Entry fee</span>
                       <span className="text-right">
-                        <span>{formatAmount(activeEntryFee)} {activeSymbol} x {maxPlayers} players</span>
+                        <span>{formatAmount(activeEntryFee)} {activeSymbol} x {maxPlayers ?? '∞'} players</span>
                         {formatUsd(activeEntryFee) && (
                           <span className="block text-zinc-600 text-[9px] tabular-nums">{formatUsd(activeEntryFee)} per player</span>
                         )}
@@ -1637,6 +1600,127 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 </div>
               </>
             )}
+
+            {/* Max Players + Game Duration + Winner Count apply to ALL game
+                types (free + paid). Moved out of {isPaid} gate 2026-06-24. */}
+
+            {/* Max Players */}
+            <div>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Max Players</label>
+              <div className="flex gap-2 flex-wrap">
+                {CUSTOM_GAME_MAX_PLAYER_PRESETS.map((count) => (
+                  <button
+                    key={count}
+                    onClick={() => { setMaxPlayers(count); setCustomMaxPlayers(''); }}
+                    className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${maxPlayers === count && !customMaxPlayers ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  >
+                    {count.toLocaleString()}
+                  </button>
+                ))}
+                <button
+                  onClick={() => { setMaxPlayers(null); setCustomMaxPlayers(''); }}
+                  className={`min-h-[44px] px-4 py-3 rounded-xl font-[1000] italic text-sm transition-all active:scale-[0.98] ${maxPlayers === null ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                >
+                  ∞ No Max
+                </button>
+              </div>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={CUSTOM_GAME_MIN_PLAYERS}
+                max={CUSTOM_GAME_MAX_PLAYERS}
+                value={customMaxPlayers}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setCustomMaxPlayers(raw);
+                  const v = parseInt(raw, 10);
+                  if (!isNaN(v)) setMaxPlayers(Math.max(CUSTOM_GAME_MIN_PLAYERS, Math.min(CUSTOM_GAME_MAX_PLAYERS, v)));
+                }}
+                placeholder={`Custom (${CUSTOM_GAME_MIN_PLAYERS} - ${CUSTOM_GAME_MAX_PLAYERS.toLocaleString()})`}
+                className="w-full mt-2 min-h-[40px] px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40"
+              />
+            </div>
+
+            {/* Game Duration */}
+            <div>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Game Duration</label>
+              <div className="flex gap-2 flex-wrap">
+                {CUSTOM_GAME_DURATION_PRESETS.map((d) => (
+                  <button
+                    key={d.minutes}
+                    onClick={() => { setGameDurationMinutes(d.minutes); setCustomDurationValue(''); }}
+                    className={`min-h-[40px] px-3 py-2 rounded-xl font-black text-[11px] uppercase transition-all active:scale-[0.98] ${gameDurationMinutes === d.minutes && !customDurationValue ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              {/* Custom duration: number + M/H/D picker */}
+              <div className="flex gap-2 mt-2 items-stretch">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={customDurationValue}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setCustomDurationValue(raw);
+                    const v = parseInt(raw, 10);
+                    if (!isNaN(v)) {
+                      const mins = customDurationUnit === 'M' ? v : customDurationUnit === 'H' ? v * 60 : v * 1440;
+                      setGameDurationMinutes(Math.max(CUSTOM_GAME_MIN_DURATION_MINUTES, Math.min(CUSTOM_GAME_MAX_DURATION_MINUTES, mins)));
+                    }
+                  }}
+                  placeholder="Custom"
+                  className="flex-1 min-h-[40px] px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-white font-bold text-sm placeholder-zinc-600 focus:outline-none focus:border-[#38BDF8]/40"
+                />
+                <div className="flex gap-1">
+                  {(['M', 'H', 'D'] as const).map((u) => (
+                    <button
+                      key={u}
+                      onClick={() => {
+                        setCustomDurationUnit(u);
+                        const v = parseInt(customDurationValue, 10);
+                        if (!isNaN(v)) {
+                          const mins = u === 'M' ? v : u === 'H' ? v * 60 : v * 1440;
+                          setGameDurationMinutes(Math.max(CUSTOM_GAME_MIN_DURATION_MINUTES, Math.min(CUSTOM_GAME_MAX_DURATION_MINUTES, mins)));
+                        }
+                      }}
+                      className={`min-w-[44px] px-3 rounded-xl font-black text-xs transition-all ${customDurationUnit === u ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                    >
+                      {u}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-zinc-600 text-[10px] mt-1">Min 15 min, max 30 days. Players can join and play during this window.</p>
+            </div>
+
+            {/* Winners */}
+            <div>
+              <label className="text-[#38BDF8] text-[10px] font-black uppercase tracking-wider block mb-2">Winner Count</label>
+              <div className="flex gap-2">
+                {([1, 3, 5] as const).map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => setMaxWinners(w)}
+                    className={`flex-1 min-h-[44px] px-4 py-3 rounded-xl transition-all active:scale-[0.98] ${maxWinners === w ? 'bg-[#38BDF8] text-black' : 'bg-white/5 border border-white/10 text-zinc-400 hover:bg-white/10'}`}
+                  >
+                    <span className="font-[1000] italic text-lg block">{w}</span>
+                    <span className="text-[8px] font-black uppercase tracking-wider opacity-70">
+                      {w === 1 ? 'Winner' : 'Winners'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 flex gap-2 flex-wrap">
+                {CUSTOM_GAME_WINNER_SPLIT_LABELS[maxWinners].map((label, i) => (
+                  <span key={i} className="px-2 py-1 bg-[#38BDF8]/10 border border-[#38BDF8]/20 rounded text-[#38BDF8] text-[10px] font-black">
+                    {i + 1}{i === 0 ? 'st' : i === 1 ? 'nd' : i === 2 ? 'rd' : 'th'}: {label}
+                  </span>
+                ))}
+              </div>
+            </div>
 
             {/* Sticky Next button: hovers at the bottom of the viewport so
                 users with long forms (NFT picker, many fields) don't have to
@@ -1790,7 +1874,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   </div>
                   <div>
                     <span className="text-zinc-600 text-[8px] font-black uppercase block">Max Players</span>
-                    <span className="text-white font-[1000] italic">{maxPlayers}</span>
+                    <span className="text-white font-[1000] italic">{maxPlayers === null ? '∞' : maxPlayers.toLocaleString()}</span>
                   </div>
                   <div>
                     <span className="text-zinc-600 text-[8px] font-black uppercase block">Duration</span>
@@ -1848,7 +1932,7 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                   </div>
                   <div>
                     <span className="text-zinc-500 text-[9px] font-black uppercase tracking-widest block mb-1">Max Players</span>
-                    <span className="text-white text-base md:text-lg font-[1000] italic uppercase tracking-tighter">{maxPlayers}</span>
+                    <span className="text-white text-base md:text-lg font-[1000] italic uppercase tracking-tighter">{maxPlayers === null ? '∞' : maxPlayers.toLocaleString()}</span>
                   </div>
                   <div>
                     <span className="text-zinc-500 text-[9px] font-black uppercase tracking-widest block mb-1">Duration</span>
