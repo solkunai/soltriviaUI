@@ -101,7 +101,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
   useEffect(() => {
     let cancel = false;
     const load = () =>
-      fetchMintedCount()
+      fetchMintedCount(connection)
         .then((n) => { if (!cancel) setMinted(n); })
         .catch(() => {});
     load();
@@ -149,7 +149,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
       // Refresh state — give Helius DAS a few seconds to index the new NFT.
       setTimeout(() => {
         refresh();
-        fetchMintedCount().then(setMinted).catch(() => {});
+        fetchMintedCount(connection).then(setMinted).catch(() => {});
       }, 3000);
     } catch (e) {
       setMintError(e instanceof Error ? e.message : 'Mint failed.');

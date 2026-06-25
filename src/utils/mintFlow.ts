@@ -122,15 +122,13 @@ export async function fetchCollection(
 
 // ── Total minted counter ──────────────────────────────────────────────────────
 // Live count of completed mints (drives the "X / 100,000 minted" + remaining
-// countdown). Sourced from nft_mints (status=done); the on-chain mint indexer
-// populates it post-launch. Returns 0 gracefully pre-launch.
-export async function fetchMintedCount(): Promise<number> {
+// countdown). Sourced from the on-chain NftMintConfig.minted_total counter
+// which the contract increments on every successful mint. No off-chain
+// indexer needed.
+export async function fetchMintedCount(connection: Connection): Promise<number> {
   try {
-    const { count } = await supabase
-      .from('nft_mints')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'done');
-    return count ?? 0;
+    const cfg = await fetchNftMintConfig(connection);
+    return cfg?.mintedTotal ?? 0;
   } catch {
     return 0;
   }
