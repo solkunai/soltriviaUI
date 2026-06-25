@@ -239,7 +239,17 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
 
             {/* CTA — gold bar; switches between OPENS-SOON / MINT NOW / MINTING… */}
             <button
-              onClick={mintLive && !minting ? () => setGateOpen(true) : undefined}
+              onClick={mintLive && !minting ? () => {
+                // Eligibility gate (Kyle 2026-06-25): mirror native — show
+                // popup with the qualifier rule if user hasn't earned the
+                // right to mint yet. Prevents an ineligible user from
+                // wasting a tx via the on-chain mint flow.
+                if (eligible === false) {
+                  window.alert('Not Eligible Yet\n\nPlay 1 paid game OR 3 practice games before minting.');
+                  return;
+                }
+                setGateOpen(true);
+              } : undefined}
               disabled={!mintLive || minting}
               className="w-full font-black italic uppercase rounded-xl mt-4 flex items-center justify-center gap-2"
               style={{
