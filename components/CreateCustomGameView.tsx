@@ -2055,14 +2055,27 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
               </div>
             </div>
 
+            {/* Safety guard (Kyle 2026-06-26): when game is SPL but selectedToken
+                hasn't resolved (e.g., Jupiter fetch in-flight or failed and no
+                manual override), block creation. Without this guard, EF would
+                receive no tokenMint → dispatched as SOL game → user accidentally
+                commits real SOL instead of intended SPL. Manual override path
+                (user-typed decimals + symbol) makes selectedToken truthy and
+                button enables. */}
             <button
               onClick={handleCreate}
-              disabled={creating}
+              disabled={creating || (isSplGame && !selectedToken)}
               className={`w-full min-h-[52px] px-6 py-4 rounded-xl font-[1000] italic uppercase text-xl tracking-tighter transition-all active:scale-[0.98] ${
-                creating ? 'bg-zinc-800 text-zinc-500 cursor-wait' : 'bg-[#38BDF8] text-black hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)]'
+                creating || (isSplGame && !selectedToken)
+                  ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                  : 'bg-[#38BDF8] text-black hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)]'
               }`}
             >
-              {creating ? 'Creating...' : `Create Game (${creationFeeSol} SOL)`}
+              {creating
+                ? 'Creating...'
+                : (isSplGame && !selectedToken)
+                  ? 'Waiting for token info — re-select token'
+                  : `Create Game (${creationFeeSol} SOL)`}
             </button>
           </div>
         )}
