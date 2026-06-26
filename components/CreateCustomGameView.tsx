@@ -117,6 +117,26 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
   // on a network call. Devnet equivalent (for future testing): 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU.
   const USDC_MAINNET_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
+  // Cache the last-resolved Jupiter token info (Kyle 2026-06-26 deeper fix).
+  // jupiterToken can transiently flip to null on re-renders (e.g., a sibling
+  // state change causes the Jupiter fetch effect to re-run during a brief
+  // window where setJupiterToken(null) executes before the refetch completes).
+  // Without this cache, selectedToken collapses to null mid-session, which
+  // displays "1.20 SOL" instead of "1200 SKR" and (pre-safety-guard) could
+  // have let a creator accidentally commit real SOL instead of an SPL token.
+  // Cache is reset when customSplMint changes (user picked a different token).
+  const [resolvedJupiterToken, setResolvedJupiterToken] = useState<JupiterToken | null>(null);
+  useEffect(() => {
+    // Mint changed -> reset cache so a previously-resolved token from a
+    // different mint doesn't bleed into the new selection.
+    setResolvedJupiterToken(null);
+  }, [customSplMint]);
+  useEffect(() => {
+    // Persist whatever the latest valid Jupiter resolution is. Only updates
+    // when jupiterToken is non-null; null transients leave cache intact.
+    if (jupiterToken) setResolvedJupiterToken(jupiterToken);
+  }, [jupiterToken]);
+
   // Auto-fetch token metadata from Jupiter when the pasted mint is a valid
   // base58 address. Debounced cancellation via the cancelled flag so a fast
   // typer doesn't see stale results from earlier requests.
@@ -172,11 +192,15 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
     if (pick === 'usdc') return { mint: USDC_MAINNET_MINT, decimals: 6, symbol: 'USDC' };
     if (pick === 'spl') {
       if (!customSplMint) return null;
-      // Jupiter-resolved token is the source of truth when available.
-      if (jupiterToken) return {
-        mint: jupiterToken.address,
-        decimals: jupiterToken.decimals,
-        symbol: jupiterToken.symbol,
+      // Jupiter-resolved token is the source of truth when available. Falls
+      // back to the cached last-resolved token (resolvedJupiterToken) if
+      // jupiterToken is transiently null on this render — see the cache
+      // useEffects above for why this can happen.
+      const tokenInfo = jupiterToken ?? resolvedJupiterToken;
+      if (tokenInfo) return {
+        mint: tokenInfo.address,
+        decimals: tokenInfo.decimals,
+        symbol: tokenInfo.symbol,
       };
       // Manual fallback (only when Jupiter doesn't know the token).
       if (manualSymbol) return {
