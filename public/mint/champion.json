@@ -2,25 +2,52 @@
   "name": "The Champion",
   "symbol": "NERDS",
   "description": "Master of the storm. Reigns supreme. One of 25,000 Champions in the Sol Trivia Elementals commemorative drop on Solana.",
-  "image": "https://soltrivia.app/mint/nft-champion.png",
+  "image": "https://gateway.irys.xyz/7bQDKAC2WSTn3FPPfbvuAu8TEFzCNGBe9Mwys2YQR5LN",
   "external_url": "https://soltrivia.app",
   "seller_fee_basis_points": 500,
   "attributes": [
-    { "trait_type": "Brain Type", "value": "Lightning" },
-    { "trait_type": "Background", "value": "Storm Over City" },
-    { "trait_type": "Accessory", "value": "Onyx Fists" },
-    { "trait_type": "Effect", "value": "Chain Lightning" },
-    { "trait_type": "Mood", "value": "Triumphant" },
-    { "trait_type": "Aura", "value": "Storm" },
-    { "trait_type": "Rarity", "value": "Legendary" }
+    {
+      "trait_type": "Brain Type",
+      "value": "Lightning"
+    },
+    {
+      "trait_type": "Background",
+      "value": "Storm Over City"
+    },
+    {
+      "trait_type": "Accessory",
+      "value": "Onyx Fists"
+    },
+    {
+      "trait_type": "Effect",
+      "value": "Chain Lightning"
+    },
+    {
+      "trait_type": "Mood",
+      "value": "Triumphant"
+    },
+    {
+      "trait_type": "Aura",
+      "value": "Storm"
+    },
+    {
+      "trait_type": "Rarity",
+      "value": "Legendary"
+    }
   ],
   "properties": {
     "files": [
-      { "uri": "https://soltrivia.app/mint/nft-champion.png", "type": "image/png" }
+      {
+        "uri": "https://gateway.irys.xyz/7bQDKAC2WSTn3FPPfbvuAu8TEFzCNGBe9Mwys2YQR5LN",
+        "type": "image/jpeg"
+      }
     ],
     "category": "image",
     "creators": [
-      { "address": "8WBaZo8W8GtXY5NGpc1TRd9Dw8q1nXeyswsgMQwikmAp", "share": 100 }
+      {
+        "address": "8WBaZo8W8GtXY5NGpc1TRd9Dw8q1nXeyswsgMQwikmAp",
+        "share": 100
+      }
     ]
   }
 }

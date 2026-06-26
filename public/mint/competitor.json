@@ -2,25 +2,52 @@
   "name": "The Competitor",
   "symbol": "NERDS",
   "description": "Fierce, driven, never backs down. One of 25,000 Competitors in the Sol Trivia Elementals commemorative drop on Solana.",
-  "image": "https://soltrivia.app/mint/nft-competitor.png",
+  "image": "https://gateway.irys.xyz/HF6nQQid39fvv5bWaMzHE8BavLXyucgmJN2454kZweEB",
   "external_url": "https://soltrivia.app",
   "seller_fee_basis_points": 500,
   "attributes": [
-    { "trait_type": "Brain Type", "value": "Fire" },
-    { "trait_type": "Background", "value": "Erupting Volcano" },
-    { "trait_type": "Accessory", "value": "Red Boxing Gloves" },
-    { "trait_type": "Effect", "value": "Roaring Flames" },
-    { "trait_type": "Mood", "value": "Fierce" },
-    { "trait_type": "Aura", "value": "Inferno" },
-    { "trait_type": "Rarity", "value": "Legendary" }
+    {
+      "trait_type": "Brain Type",
+      "value": "Fire"
+    },
+    {
+      "trait_type": "Background",
+      "value": "Erupting Volcano"
+    },
+    {
+      "trait_type": "Accessory",
+      "value": "Red Boxing Gloves"
+    },
+    {
+      "trait_type": "Effect",
+      "value": "Roaring Flames"
+    },
+    {
+      "trait_type": "Mood",
+      "value": "Fierce"
+    },
+    {
+      "trait_type": "Aura",
+      "value": "Inferno"
+    },
+    {
+      "trait_type": "Rarity",
+      "value": "Legendary"
+    }
   ],
   "properties": {
     "files": [
-      { "uri": "https://soltrivia.app/mint/nft-competitor.png", "type": "image/png" }
+      {
+        "uri": "https://gateway.irys.xyz/HF6nQQid39fvv5bWaMzHE8BavLXyucgmJN2454kZweEB",
+        "type": "image/jpeg"
+      }
     ],
     "category": "image",
     "creators": [
-      { "address": "8WBaZo8W8GtXY5NGpc1TRd9Dw8q1nXeyswsgMQwikmAp", "share": 100 }
+      {
+        "address": "8WBaZo8W8GtXY5NGpc1TRd9Dw8q1nXeyswsgMQwikmAp",
+        "share": 100
+      }
     ]
   }
 }
