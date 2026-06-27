@@ -781,8 +781,11 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
           </div>
         )}
 
-        {/* \u2500\u2500 YOU HAVEN'T PLAYED callout (cyan dashed, per 3:10am screenshot) \u2500\u2500 */}
-        {gameData.status === 'active' && !hasEntered && !isCreator && (
+        {/* \u2500\u2500 YOU HAVEN'T PLAYED callout (cyan dashed, per 3:10am screenshot) \u2500\u2500
+            Kyle 2026-06-27: also show during 'started' \u2014 creator-funded SPL games
+            skip the 'active' phase entirely (auto-fund on creation), so this
+            invitation-to-play wouldn't otherwise appear for them. */}
+        {(gameData.status === 'active' || gameData.status === 'started') && !hasEntered && !isCreator && (
           <div
             className="rounded-xl px-4 py-3 mb-6 flex items-center justify-between gap-3"
             style={{
@@ -1072,8 +1075,11 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                 )
               )}
 
-              {/* Active: join / start timer / waiting */}
-              {gameData.status === 'active' && (
+              {/* Active OR started: join / start timer / waiting.
+                  Kyle 2026-06-27: was only 'active', which blocked creator-funded
+                  SPL games (they auto-fund + flip to 'started' on creation).
+                  Contract permits joins anytime until expires_at. */}
+              {(gameData.status === 'active' || gameData.status === 'started') && (
                 <>
                   {showJoinButton && (
                     <>
