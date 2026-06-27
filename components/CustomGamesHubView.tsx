@@ -39,6 +39,11 @@ interface InProgressGame {
   player_count: number | null;
   max_players: number | null;
   prize_pot_lamports: number | null;
+  // Kyle 2026-06-27: SPL game token fields. NULL token_mint = SOL game.
+  // Decimals + symbol drive the display so SKR shows as "1200 SKR" not "1.20 SOL".
+  token_symbol: string | null;
+  token_decimals: number | null;
+  token_mint: string | null;
 }
 
 interface EndedGame {
@@ -91,7 +96,7 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
         // In Progress: status='started' (timer running)
         const { data: startedGames } = await supabase
           .from('custom_games')
-          .select('id, slug, name, creator_wallet, question_count, total_plays, ends_at, prize_model, entry_fee_lamports, creator_deposit_lamports, player_count, max_players, prize_pot_lamports')
+          .select('id, slug, name, creator_wallet, question_count, total_plays, ends_at, prize_model, entry_fee_lamports, creator_deposit_lamports, player_count, max_players, prize_pot_lamports, token_symbol, token_decimals, token_mint')
           .eq('status', 'started')
           .order('started_at', { ascending: false })
           .limit(10);
@@ -226,7 +231,12 @@ const CustomGamesHubView: React.FC<CustomGamesHubViewProps> = ({ walletAddress, 
                         <span>{game.question_count} Q</span>
                         <span>{game.player_count ?? 0}{game.max_players ? `/${game.max_players}` : ''} players</span>
                         {isPaid && game.prize_pot_lamports ? (
-                          <span className="text-amber-400">{(game.prize_pot_lamports / 1e9).toFixed(3)} SOL pot</span>
+                          <span className="text-amber-400">
+                            {/* Kyle 2026-06-27: SPL games show actual token + decimals.
+                                Was hardcoded "/ 1e9 SOL" which broke SKR (6 decimals → 1200 SKR
+                                displayed as 1.20 SOL). NULL token_mint = SOL game, default 9 decimals. */}
+                            {(game.prize_pot_lamports / Math.pow(10, game.token_decimals ?? 9)).toFixed(Math.min(game.token_decimals ?? 9, 4))} {game.token_symbol ?? 'SOL'} pot
+                          </span>
                         ) : null}
                         {isCreatorFunded && <span className="text-green-400">Free Entry</span>}
                       </div>

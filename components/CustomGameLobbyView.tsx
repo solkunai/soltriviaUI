@@ -306,23 +306,28 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   const baseDivisor = Math.pow(10, tokenDecimals);
   const formatToken = (baseUnits: number) => (baseUnits / baseDivisor).toFixed(Math.min(tokenDecimals, 4));
 
-  // Live Jupiter USD price for the game's token. Only fetched for SPL games
-  // (NULL token_mint = SOL, which has its own price feed elsewhere). Refreshes
-  // on mount; not stored in DB so always current at view time.
+  // Live Jupiter USD price + logo for the game's token. Only fetched for SPL
+  // games (NULL token_mint = SOL, which has its own price feed elsewhere).
+  // Kyle 2026-06-27: also captures logoURI so we can display the token icon
+  // alongside the symbol in the prize/entry rows.
   const [tokenUsdPrice, setTokenUsdPrice] = useState<number | null>(null);
+  const [tokenLogo, setTokenLogo] = useState<string | null>(null);
   useEffect(() => {
     const mint = gameData?.token_mint;
     if (!mint) {
       setTokenUsdPrice(null);
+      setTokenLogo(null);
       return;
     }
     let cancelled = false;
     getJupiterToken(mint)
       .then((tok) => {
-        if (!cancelled) setTokenUsdPrice(tok?.usdPrice ?? null);
+        if (cancelled) return;
+        setTokenUsdPrice(tok?.usdPrice ?? null);
+        setTokenLogo(tok?.logoURI ?? null);
       })
       .catch(() => {
-        if (!cancelled) setTokenUsdPrice(null);
+        if (!cancelled) { setTokenUsdPrice(null); setTokenLogo(null); }
       });
     return () => { cancelled = true; };
   }, [gameData?.token_mint]);
@@ -675,7 +680,15 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   // Block join on creator-funded games until the creator has funded the prize pool —
   // protects players from wasting the 0.0025 SOL platform fee on an empty pot.
   const awaitingCreatorFunding = isCreatorFunded && !isFunded;
-  const showJoinButton = isPaid && !hasEntered && !isCreator && gameData.status === 'active' && !awaitingCreatorFunding;
+  // Kyle 2026-06-27: contract allows joins anytime until expires_at — there's no
+  // "lobby-only" phase. Previously this required status === 'active', which broke
+  // creator-funded SPL games (those auto-fund + flip to 'started' on creation,
+  // collapsing the join window to milliseconds). Now allows joins for either
+  // 'active' OR 'started'. expired/completed/finalized/banned states already
+  // short-circuit higher up in the component so they can't reach here.
+  const showJoinButton = isPaid && !hasEntered && !isCreator &&
+    (gameData.status === 'active' || gameData.status === 'started') &&
+    !awaitingCreatorFunding;
 
   // Duration label
   const durationLabel = gameData.game_duration_minutes
@@ -694,7 +707,11 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
         {/* Banner Image */}
         {gameData.banner_url && (
           <div className="mb-4 -mx-2 md:mx-0">
-            <img src={gameData.banner_url} alt={gameData.name} className="w-full h-36 md:h-48 object-cover rounded-2xl border border-white/5" />
+            {/* Kyle 2026-06-27: aspect-[4/1] keeps the banner's full 4:1 aspect ratio
+                visible on every screen size (was h-36 md:h-48 which gave ~2.5:1 on
+                mobile widths, cropping the sides of 4:1 source banners and cutting
+                off content like the Sol Trivia logo on the left edge). */}
+            <img src={gameData.banner_url} alt={gameData.name} className="w-full aspect-[4/1] object-cover rounded-2xl border border-white/5" />
           </div>
         )}
 
@@ -795,7 +812,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             <div className="text-center border-x border-white/5">
               <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest block mb-1">Entries</span>
               <span className="text-white text-base sm:text-lg font-[1000] italic">
-                1<span className="text-xs">\u00d7</span>
+                1<span className="text-xs">{'\u00d7'}</span>
               </span>
               <span className="text-zinc-500 text-[8px] font-black uppercase tracking-widest block mt-0.5">per player</span>
             </div>
@@ -855,7 +872,12 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                       <span className={`font-[1000] italic text-base md:text-lg ${idx === 0 ? 'text-yellow-400' : 'text-zinc-300'}`}>
                         {amount.toFixed(3)}
                       </span>
-                      <span className="text-zinc-600 text-[9px] font-black uppercase inline-flex items-center gap-1">{tokenSymbol}<JupiterVerifiedBadge mint={gameData.token_mint ?? null} size={10} style={{ marginLeft: 2 }} /></span>
+                      <span className="text-zinc-600 text-[9px] font-black uppercase inline-flex items-center gap-1">
+                        {/* Kyle 2026-06-27: token logo (SKR/USDC/any SPL) shown next to symbol */}
+                        {tokenLogo && <img src={tokenLogo} alt="" className="w-3 h-3 rounded-full" />}
+                        {tokenSymbol}
+                        <JupiterVerifiedBadge mint={gameData.token_mint ?? null} size={10} style={{ marginLeft: 2 }} />
+                      </span>
                       {formatTokenUsd(amount) && (
                         <span className="text-zinc-700 text-[9px] tabular-nums block">{formatTokenUsd(amount)}</span>
                       )}
