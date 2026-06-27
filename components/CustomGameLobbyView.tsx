@@ -912,7 +912,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                 status, falls into this branch, only finalized CTAs were checked,
                 nothing rendered → no Join button). Edit 2 widens the next
                 branch's selector to (isPaid || isNftPrize) so paid games can
-                also reach the full set of state-aware CTAs below. */}
+                also reach the full set of state-aware CTAs below. */
             <>
               {/* v44: if winner_is_refund=true, the on-chain "winner" is the
                   refund recipient. UI labels it as REFUND, not PRIZE. */}
