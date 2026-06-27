@@ -901,11 +901,20 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
             >
               Connect Wallet {isPaid ? (isCreatorFunded ? 'to Join (Free)' : 'to Join') : 'to Play'}
             </button>
-          ) : isPaid ? (
-            /* ── Paid Game CTAs ── */
+          ) : (isPaid && gameData.status === 'finalized' && !isNftPrize) ? (
+            /* ── Paid SOL/SPL FINALIZED — claim or view results ──
+                Kyle 2026-06-27: scope of this branch shrunk from "all paid games"
+                to "paid SOL/SPL games that are FINALIZED only". The bigger
+                "non-finalized paid game" CTAs (Started, Active+Join button,
+                Play Now, etc.) ALWAYS lived in the next (isNftPrize) branch
+                and were therefore unreachable for SOL/SPL paid games — exactly
+                the World Cup bug (creator-funded SPL game starts at 'started'
+                status, falls into this branch, only finalized CTAs were checked,
+                nothing rendered → no Join button). Edit 2 widens the next
+                branch's selector to (isPaid || isNftPrize) so paid games can
+                also reach the full set of state-aware CTAs below. */}
             <>
-              {/* Finalized: claim or view results.
-                  v44: if winner_is_refund=true, the on-chain "winner" is the
+              {/* v44: if winner_is_refund=true, the on-chain "winner" is the
                   refund recipient. UI labels it as REFUND, not PRIZE. */}
               {gameData.status === 'finalized' && (
                 isWinner ? (
@@ -928,8 +937,16 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                 )
               )}
             </>
-          ) : isNftPrize ? (
-            /* ── NFT Prize Game CTAs (v2.1) ── */
+          ) : (isPaid || isNftPrize) ? (
+            /* ── Paid (SOL/SPL/NFT) Game CTAs — all non-finalized paid states ──
+                Kyle 2026-06-27: selector widened from `isNftPrize` to
+                `(isPaid || isNftPrize)` so paid SOL/SPL games reach the full
+                set of state-aware CTAs below (Started, Active+Join button,
+                Play Now, awaiting funding, etc.). The earlier branch above
+                catches the FINALIZED case for paid SOL/SPL (claim button).
+                NFT-specific blocks below remain guarded with isNftPrize so
+                they only render for NFT games (the NftPrizeCard hero +
+                NFT-specific finalized message + NFT Prize Game wrapper). */
             <>
               {/* Artwork hero — shown for every NFT game state so all players
                   see what the prize actually IS. Fetches metadata from Helius
@@ -978,10 +995,14 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                 </div>
               )}
 
-              {/* Active/started NFT game: lobby is shared with SOL games' active flow.
-                  Players join via onJoinGame (which builds enter_custom_game_nft when prize_model=nft).
-                  Creator sees their game status; non-creator players see join button. */}
-              {(gameData.status === 'active' || gameData.status === 'started') && (
+              {/* Active/started NFT game: NFT-specific hero card with join button.
+                  Kyle 2026-06-27: added isNftPrize guard. Was unguarded inside the
+                  isNftPrize branch (so naturally only rendered for NFT games). Now
+                  this branch ALSO serves paid SOL/SPL games (post Edit 2 widening),
+                  so an explicit guard is needed to prevent SPL games from rendering
+                  the NFT-styled card. SOL/SPL games render the generic Started /
+                  Active OR started blocks farther down instead. */}
+              {isNftPrize && (gameData.status === 'active' || gameData.status === 'started') && (
                 <div className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8]/10 border border-[#38BDF8]/30 rounded-xl text-center">
                   <span className="text-[#7DD3FC] font-[1000] italic uppercase text-lg">NFT Prize Game</span>
                   <p className="text-zinc-400 text-xs font-black mt-1">
