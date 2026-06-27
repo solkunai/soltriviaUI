@@ -734,7 +734,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
 
           <p className="text-zinc-500 text-[10px] sm:text-xs font-black italic uppercase tracking-[0.2em] mb-3">
             HOSTED BY <span className="text-zinc-300">{creatorShort}</span>
-            <span className="text-zinc-700 mx-2">\u00b7</span>
+            <span className="text-zinc-700 mx-2">{'\u00b7'}</span>
             <span className="text-zinc-300 tabular-nums">{gameData.player_count}</span> IN
           </p>
 
@@ -798,7 +798,7 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                 You haven't played
               </p>
               <p className="text-zinc-400 text-[11px] sm:text-xs font-bold italic mt-0.5">
-                {gameData.question_count} Q's \u00b7 {gameData.time_limit_seconds}s each
+                {gameData.question_count} Q's {'\u00b7'} {gameData.time_limit_seconds}s each
               </p>
             </div>
           </div>
@@ -1067,12 +1067,13 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                       <p className="text-zinc-500 text-xs font-black mt-1">Your best: {gameData.player_best_score} XP</p>
                     )}
                   </div>
-                ) : (
-                  <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
-                    <span className="text-zinc-400 font-[1000] italic uppercase text-lg">Entry Required</span>
-                    <p className="text-zinc-500 text-xs font-black mt-1">Game is in progress but you haven't joined.</p>
-                  </div>
-                )
+                ) : null
+                /* Kyle 2026-06-27: !hasEntered case intentionally falls through to
+                   the "Active OR started" wrapper below, which renders the Join
+                   button. Previously this branch showed a dead-end "Entry Required"
+                   message that blocked the Join button from rendering for
+                   creator-funded SPL games (which skip 'active' and start in
+                   'started' status). Contract permits joins anytime until expires_at. */
               )}
 
               {/* Active OR started: join / start timer / waiting.
