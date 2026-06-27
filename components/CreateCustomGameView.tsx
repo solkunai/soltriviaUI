@@ -1954,7 +1954,8 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <span className="text-zinc-600 text-[8px] font-black uppercase block">Entry Fee</span>
-                    <span className="text-white font-[1000] italic">{(activeEntryFee / 1_000_000_000).toFixed(2)} SOL</span>
+                    {/* Kyle 2026-06-27: same SOL-hardcoded bug as Est. Prize Pool below */}
+                    <span className="text-white font-[1000] italic">{formatAmount(activeEntryFee)} {activeSymbol}</span>
                   </div>
                   <div>
                     <span className="text-zinc-600 text-[8px] font-black uppercase block">Max Players</span>
@@ -1972,7 +1973,12 @@ const CreateCustomGameView: React.FC<CreateCustomGameViewProps> = ({ hasGamePass
                 <div className="mt-3 pt-3 border-t border-[#38BDF8]/10">
                   <div className="flex justify-between text-sm">
                     <span className="text-zinc-400">Est. Prize Pool</span>
-                    <span className="text-[#38BDF8] font-[1000] italic">{(prizePot / 1_000_000_000).toFixed(2)} SOL</span>
+                    {/* Kyle 2026-06-27: was hardcoded `/ 1e9 SOL` which displayed
+                        "1.20 SOL" for an SKR-priced 1200 SKR game (1200 * 1e6 = 1.2e9
+                        base units, then displayed as if it were lamports of SOL).
+                        Now uses formatAmount + activeSymbol so SPL games show their
+                        token correctly. */}
+                    <span className="text-[#38BDF8] font-[1000] italic">{formatAmount(prizePot)} {activeSymbol}</span>
                   </div>
                 </div>
               </div>
