@@ -63,7 +63,10 @@ export const ARCHETYPES: Record<ArchetypeKey, Archetype> = {
     bg1: '#A5E07B',
     bg2: '#5B9C3E',
     lore: 'Patient, methodical, eternally observant.',
-    img: '/mint/nft-genius.png',
+    // Kyle 2026-06-27: showcase uses portrait "trading card" style art for the
+    // "Meet the Four" gallery (2:3 aspect ratio). Actual NFT metadata still uses
+    // the 1500x1500 squares (locked on Arweave) — only this UI display uses cards.
+    img: '/mint/card-genius.png',
     icon: '/mint/icon-earth.png',
     attributes: [
       { trait: 'Brain Type', value: 'Earth', pct: '65%' },
@@ -84,7 +87,7 @@ export const ARCHETYPES: Record<ArchetypeKey, Archetype> = {
     bg1: '#A9E4F7',
     bg2: '#5BAFD6',
     lore: 'Curious, studious, hungry for knowledge.',
-    img: '/mint/nft-scholar.png',
+    img: '/mint/card-scholar.png',
     icon: '/mint/icon-ice.png',
     attributes: [
       { trait: 'Brain Type', value: 'Ice', pct: '25%' },
@@ -105,7 +108,7 @@ export const ARCHETYPES: Record<ArchetypeKey, Archetype> = {
     bg1: '#FF9264',
     bg2: '#D14424',
     lore: 'Fierce, driven, never backs down.',
-    img: '/mint/nft-competitor.png',
+    img: '/mint/card-competitor.png',
     icon: '/mint/icon-fire.png',
     attributes: [
       { trait: 'Brain Type', value: 'Fire', pct: '9%' },
@@ -126,7 +129,7 @@ export const ARCHETYPES: Record<ArchetypeKey, Archetype> = {
     bg1: '#FFE26B',
     bg2: '#D9A91A',
     lore: 'Master of the storm. Reigns supreme.',
-    img: '/mint/nft-champion.png',
+    img: '/mint/card-champion.png',
     icon: '/mint/icon-lightning.png',
     attributes: [
       { trait: 'Brain Type', value: 'Lightning', pct: '1%' },
