@@ -12,6 +12,7 @@ import { useIsMobile } from '../src/hooks/useIsMobile';
 import { useWallet, useConnection } from '../src/contexts/WalletContext';
 import {
   getReferralStats,
+  getReferralCode,
   claimReferralPayout,
   fetchLifetimeReferralClaimed,
   setReferralCode,
@@ -70,16 +71,20 @@ const ReferralsViewV2: React.FC = () => {
       return;
     }
     setLoading(true);
-    getReferralStats(walletAddress)
-      .then((r) => {
+    (async () => {
+      try {
+        let r = await getReferralStats(walletAddress);
+        if (!r.code) {
+          await getReferralCode(walletAddress);
+          r = await getReferralStats(walletAddress);
+        }
         if (!cancelled) setStats(r);
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setStats(null);
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
