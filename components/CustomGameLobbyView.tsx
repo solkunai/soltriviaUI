@@ -1153,14 +1153,12 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                     </div>
                   )}
 
-                  {hasEntered && !isCreator && canPlay && !isReEntry && (
-                    <button
-                      onClick={() => onStartGame(gameData)}
-                      className="w-full min-h-[56px] px-6 py-4 bg-[#38BDF8] text-black font-[1000] italic uppercase text-xl tracking-tighter rounded-xl hover:bg-[#7DD3FC] shadow-[0_10px_40px_-10px_rgba(56,189,248,0.3)] transition-all active:scale-[0.98]"
-                    >
-                      Play Now
-                    </button>
-                  )}
+                  {/* Kyle 2026-06-27: removed duplicate Play Now button. The Started
+                      block above (around line 1056) already renders it for the same
+                      condition (hasEntered+canPlay+!isReEntry). With my structural
+                      fix making the merged branch reachable for paid SOL/SPL games,
+                      this branch + the Started block both fired → two stacked
+                      Play Now buttons. Single source of truth restored. */}
 
                   {hasEntered && !isCreator && !canPlay && (
                     <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
