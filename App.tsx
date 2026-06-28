@@ -64,7 +64,7 @@ function pathForView(view: View, customSlug?: string | null, duelShareCode?: str
   return '/' + view.toLowerCase();
 }
 import { useWallet, useConnection } from './src/contexts/WalletContext';
-import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
+import { SystemProgram, PublicKey, TransactionMessage, VersionedTransaction, TransactionInstruction } from '@solana/web3.js';
 import Sidebar from './components/Sidebar';
 import HomeView from './components/HomeView';
 import HomeViewV2, { HomeRightRail } from './components/HomeViewV2';
@@ -141,11 +141,8 @@ import {
   buildClaimDuelPrizeIx,
   buildClaimDuelPrizeSplIx,
   buildEnterCustomGameIx,
-  // Kyle 2026-06-27: SPL entry builder for paid SPL custom games. The SOL
-  // ix above is rejected by the contract for SPL games (account-shape mismatch
-  // → Anchor 3012 AccountNotInitialized), which silently dropped every World
-  // Cup join attempt with "payment confirmed but registration failed".
   buildEnterCustomGameSplIx,
+  buildCreateAtaIdempotentIx,
   buildFundCustomGameIx,
   buildClaimCustomPrizeIx,
   buildClaimCustomPrizeSplIx,
@@ -1322,41 +1319,39 @@ const App: React.FC = () => {
       return;
     }
     const { blockhash } = await getRecentBlockhashWithRetry(connection);
-    // Three branches, one per game shape:
-    //   - NFT prize: enter_custom_game_nft (escrow PDA, no SPL/SOL pot move).
-    //   - SPL game: enter_custom_game_spl (SPL token from player ATA to vault
-    //     ATA + 0.0025 SOL platform fee). REQUIRED for any game with
-    //     token_mint set — otherwise the SOL ix below reverts on-chain with
-    //     Anchor 3012 (AccountNotInitialized) because account shapes differ
-    //     (SPL ix needs mint + player ATA + vault ATA + token program; SOL ix
-    //     uses a different vault PDA seed). Kyle 2026-06-27: the World Cup
-    //     featured game blocker (creator-funded SKR) was this missing branch.
-    //   - SOL game: enter_custom_game (vault PDA + 0.0025 SOL fee).
-    // Native (CustomGameLobbyScreen.tsx#handleJoinPaid) already had the SPL
-    // branch — web was the only surface missing it.
     const isSplGame = !!gameData.token_mint;
-    const ix = gameData.prize_model === 'nft'
-      ? buildEnterCustomGameNftIx({
-          player: publicKey,
-          gameId: gameData.on_chain_game_id,
-          revenueWallet: new PublicKey(REVENUE_WALLET),
-        })
-      : isSplGame
-        ? buildEnterCustomGameSplIx({
+    const instructions: TransactionInstruction[] = [];
+    if (isSplGame) {
+      instructions.push(buildCreateAtaIdempotentIx({
+        payer: publicKey,
+        owner: publicKey,
+        mint: new PublicKey(gameData.token_mint!),
+      }));
+    }
+    instructions.push(
+      gameData.prize_model === 'nft'
+        ? buildEnterCustomGameNftIx({
             player: publicKey,
             gameId: gameData.on_chain_game_id,
-            mint: new PublicKey(gameData.token_mint!),
             revenueWallet: new PublicKey(REVENUE_WALLET),
           })
-        : buildEnterCustomGameIx(
-            publicKey,
-            gameData.on_chain_game_id,
-            new PublicKey(REVENUE_WALLET),
-          );
+        : isSplGame
+          ? buildEnterCustomGameSplIx({
+              player: publicKey,
+              gameId: gameData.on_chain_game_id,
+              mint: new PublicKey(gameData.token_mint!),
+              revenueWallet: new PublicKey(REVENUE_WALLET),
+            })
+          : buildEnterCustomGameIx(
+              publicKey,
+              gameData.on_chain_game_id,
+              new PublicKey(REVENUE_WALLET),
+            ),
+    );
     const messageV0 = new TransactionMessage({
       payerKey: publicKey,
       recentBlockhash: blockhash,
-      instructions: [ix],
+      instructions,
     }).compileToV0Message();
     const tx = new VersionedTransaction(messageV0);
     const signature = await sendTransaction(tx, connection);

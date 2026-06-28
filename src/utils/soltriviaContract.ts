@@ -1179,6 +1179,29 @@ export function getAssociatedTokenAddress(
   )[0];
 }
 
+/** Idempotent ATA creation. No-op if the ATA already exists. */
+export function buildCreateAtaIdempotentIx(args: {
+  payer: PublicKey;
+  owner: PublicKey;
+  mint: PublicKey;
+  tokenProgram?: PublicKey;
+}): TransactionInstruction {
+  const tokenProgram = args.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const ata = getAssociatedTokenAddress(args.mint, args.owner, tokenProgram);
+  return new TransactionInstruction({
+    programId: SPL_ATA_PROGRAM_ID,
+    keys: [
+      { pubkey: args.payer,             isSigner: true,  isWritable: true  },
+      { pubkey: ata,                    isSigner: false, isWritable: true  },
+      { pubkey: args.owner,             isSigner: false, isWritable: false },
+      { pubkey: args.mint,              isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: tokenProgram,           isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from([1]),
+  });
+}
+
 // ─── Account Data Type + Deserializer ───
 
 export type CustomGameNftData = {
