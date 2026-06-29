@@ -168,7 +168,6 @@ const CustomGameShareCard = React.forwardRef<HTMLDivElement, CustomGameShareCard
                 <img
                   src="/trivia-logo-black.png"
                   alt="Sol Trivia"
-                  crossOrigin="anonymous"
                   style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'invert(1)' }}
                 />
               </div>
@@ -245,7 +244,6 @@ const CustomGameShareCard = React.forwardRef<HTMLDivElement, CustomGameShareCard
             >
               {truncate(gameName)}
             </div>
-            {/* Score gradient */}
             <div
               style={{
                 fontFamily: '"Saira Condensed", "JetBrains Mono", system-ui, sans-serif',
@@ -254,15 +252,12 @@ const CustomGameShareCard = React.forwardRef<HTMLDivElement, CustomGameShareCard
                 fontSize: 64,
                 lineHeight: 1,
                 marginTop: 12,
-                background: `linear-gradient(135deg, ${t.accentLight}, ${t.accent} 50%, ${t.accentDark})`,
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
+                color: t.accent,
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
               {correctCount}
-              <span style={{ fontSize: 28, color: '#71717a', WebkitTextFillColor: '#71717a' }}>
+              <span style={{ fontSize: 28, color: '#71717a' }}>
                 /{totalQuestions}
               </span>
             </div>
