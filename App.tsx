@@ -230,11 +230,13 @@ const App: React.FC = () => {
     return null;
   });
   const [customGameSessionId, setCustomGameSessionId] = useState<string | null>(null);
-  const [customGameData, setCustomGameData] = useState<{ name: string; questionCount: number; roundCount: number; timeLimitSeconds: number; isPaidGame?: boolean; isCreatorFunded?: boolean; prizePotSol?: number; entryFeeLamports?: number } | null>(null);
+  const [customGameData, setCustomGameData] = useState<{ name: string; questionCount: number; roundCount: number; timeLimitSeconds: number; isPaidGame?: boolean; isCreatorFunded?: boolean; prizePotSol?: number; entryFeeLamports?: number; tokenSymbol?: string; tokenDecimals?: number; tokenMint?: string | null; gameStatus?: string; entriesRemaining?: number | null } | null>(null);
   const [customGameResults, setCustomGameResults] = useState<{
     score: number; correctCount: number; totalQuestions: number; totalPoints: number;
     timeTakenMs: number; rank: number | null; gameName: string; slug: string;
     isPaidGame?: boolean; isCreatorFunded?: boolean; prizePotSol?: number; entryFeeLamports?: number;
+    tokenSymbol?: string; tokenDecimals?: number; tokenMint?: string | null;
+    gameStatus?: string; entriesRemaining?: number | null;
   } | null>(null);
   const [customGameAttemptsUsed, setCustomGameAttemptsUsed] = useState(0);
   const [showContentDisclaimer, setShowContentDisclaimer] = useState(false);
@@ -1260,6 +1262,8 @@ const App: React.FC = () => {
 
       const res = await startCustomGame(gameData.game_id, walletAddr, txSignature);
       setCustomGameSessionId(res.session_id);
+      const tokenDecimals = gameData.token_decimals ?? 9;
+      const tokenDivisor = Math.pow(10, tokenDecimals);
       setCustomGameData({
         name: gameData.name,
         questionCount: gameData.question_count,
@@ -1267,8 +1271,13 @@ const App: React.FC = () => {
         timeLimitSeconds: gameData.time_limit_seconds,
         isPaidGame,
         isCreatorFunded: gameData.prize_model === 'creator_funded',
-        prizePotSol: gameData.prize_pot_lamports / 1e9,
+        prizePotSol: gameData.prize_pot_lamports / tokenDivisor,
         entryFeeLamports: gameData.entry_fee_lamports,
+        tokenSymbol: gameData.token_symbol ?? 'SOL',
+        tokenDecimals,
+        tokenMint: gameData.token_mint ?? null,
+        gameStatus: gameData.status,
+        entriesRemaining: gameData.player_entries_remaining ?? null,
       });
       setCustomGameAttemptsUsed(gameData.player_attempts + (res.resumed ? 0 : 1));
       setCurrentView(View.CUSTOM_GAME_PLAY);
@@ -1291,6 +1300,11 @@ const App: React.FC = () => {
       isCreatorFunded: customGameData?.isCreatorFunded,
       prizePotSol: customGameData?.prizePotSol,
       entryFeeLamports: customGameData?.entryFeeLamports,
+      tokenSymbol: customGameData?.tokenSymbol,
+      tokenDecimals: customGameData?.tokenDecimals,
+      tokenMint: customGameData?.tokenMint,
+      gameStatus: customGameData?.gameStatus,
+      entriesRemaining: customGameData?.entriesRemaining,
     });
     setCustomGameSessionId(null);
     setCustomGameData(null);
@@ -3024,6 +3038,8 @@ const App: React.FC = () => {
               isCreatorFunded={customGameResults.isCreatorFunded}
               prizePotSol={customGameResults.prizePotSol}
               entryFeeLamports={customGameResults.entryFeeLamports}
+              gameStatus={customGameResults.gameStatus}
+              entriesRemaining={customGameResults.entriesRemaining}
               onPlayAgain={handleCustomGamePlayAgain}
               onViewLeaderboard={() => {
                 if (customGameSlug) setCurrentView(View.CUSTOM_GAME_LOBBY);

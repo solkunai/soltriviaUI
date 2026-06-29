@@ -27,6 +27,9 @@ interface CustomGameResultsViewProps {
     rank: number | null;
     gameName: string;
     slug: string;
+    tokenSymbol?: string;
+    tokenDecimals?: number;
+    tokenMint?: string | null;
   };
   attemptsUsed: number;
   maxAttempts: number;
@@ -34,6 +37,8 @@ interface CustomGameResultsViewProps {
   isCreatorFunded?: boolean;
   prizePotSol?: number;
   entryFeeLamports?: number;
+  gameStatus?: string;
+  entriesRemaining?: number | null;
   onPlayAgain: () => void;
   onViewLeaderboard: () => void;
   onBackToHome: () => void;
@@ -47,6 +52,8 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
   isCreatorFunded,
   prizePotSol,
   entryFeeLamports,
+  gameStatus,
+  entriesRemaining,
   onPlayAgain,
   onViewLeaderboard,
   onBackToHome,
@@ -55,13 +62,12 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
   const [showReEntryConfirm, setShowReEntryConfirm] = useState(false);
   const [sharing, setSharing] = useState(false);
   const shareUrl = `${window.location.origin}/game/${results.slug}`;
-  const canPlayAgain = attemptsUsed < maxAttempts;
-  const isReEntry = isPaidGame && attemptsUsed > 0;
-  // Token-aware display. tokenSymbol/tokenDecimals come from the props (passed
-  // by the screen wrapper from CustomGameData). Default to SOL for back-compat.
-  const tokenSymbol = (results as any).tokenSymbol ?? 'SOL';
-  const tokenDecimals = (results as any).tokenDecimals ?? 9;
-  const tokenMint = (results as any).tokenMint ?? null;
+  const canPlayAgain = entriesRemaining != null ? entriesRemaining > 0 : attemptsUsed < maxAttempts;
+  const isReEntry = !!isPaidGame && attemptsUsed > 0 && canPlayAgain;
+  const isFinalized = gameStatus === 'finalized';
+  const tokenSymbol = results.tokenSymbol ?? 'SOL';
+  const tokenDecimals = results.tokenDecimals ?? 9;
+  const tokenMint = results.tokenMint ?? null;
   const baseDivisor = Math.pow(10, tokenDecimals);
   const reEntryFeeSOL = isReEntry && entryFeeLamports != null ? getReEntryFeeLamports(entryFeeLamports) / baseDivisor : 0;
 
@@ -205,7 +211,7 @@ const CustomGameResultsView: React.FC<CustomGameResultsViewProps> = ({
                 lineHeight: 1,
               }}
             >
-              YOU PLACED{' '}
+              {isFinalized ? 'YOU PLACED' : "YOU'RE CURRENTLY"}{' '}
             </span>
             <span
               className="font-black italic"
