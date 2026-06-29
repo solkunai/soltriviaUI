@@ -27,8 +27,11 @@ type FeaturedGame = {
   plays: number;
   status: string;
   entryFeeLamports: number;
+  prizePotLamports: number;
   expiresAt: string | null;
   prizeModel: string;
+  tokenSymbol: string | null;
+  tokenDecimals: number | null;
 };
 
 // Display shape the room grid renders. Mapped from custom_games rows.
@@ -104,7 +107,7 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
             .limit(20),
           supabase
             .from('custom_games')
-            .select('slug, name, total_plays, status, entry_fee_lamports, expires_at, prize_model')
+            .select('slug, name, total_plays, status, entry_fee_lamports, prize_pot_lamports, expires_at, prize_model, token_symbol, token_decimals')
             .eq('is_featured', true)
             .in('status', ['active', 'started'])
             .order('created_at', { ascending: false })
@@ -118,8 +121,11 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
           plays: g.total_plays ?? 0,
           status: g.status ?? 'active',
           entryFeeLamports: g.entry_fee_lamports ?? 0,
+          prizePotLamports: g.prize_pot_lamports ?? 0,
           expiresAt: g.expires_at ?? null,
           prizeModel: g.prize_model ?? 'free',
+          tokenSymbol: g.token_symbol ?? null,
+          tokenDecimals: g.token_decimals ?? null,
         }));
         setFeaturedGames(featured);
 
@@ -336,43 +342,94 @@ const CustomGamesViewV2: React.FC<Props> = ({ onCreate, onJoinByCode, onView }) 
             </div>
           )}
           {featuredGames.map((g) => {
+            const tokDec = g.tokenDecimals ?? 9;
+            const tokSym = g.tokenSymbol ?? 'SOL';
             const entryLabel = g.entryFeeLamports > 0
-              ? `${(g.entryFeeLamports / SOL).toFixed(g.entryFeeLamports / SOL >= 1 ? 2 : 3)} SOL`
-              : 'FREE';
+              ? `${(g.entryFeeLamports / Math.pow(10, tokDec)).toFixed(Math.min(tokDec, 3))} ${tokSym} ENTRY`
+              : 'FREE ENTRY';
+            const prizeLabel = g.prizePotLamports > 0
+              ? `${(g.prizePotLamports / Math.pow(10, tokDec)).toLocaleString(undefined, { maximumFractionDigits: Math.min(tokDec, 2) })} ${tokSym}`
+              : null;
             return (
               <button
                 key={g.slug}
                 onClick={() => onView?.(g.slug)}
-                className="rounded-xl text-left active:opacity-90"
+                className="rounded-xl text-left active:opacity-90 flex flex-col"
                 style={{
                   background: 'rgba(255,215,0,0.06)',
                   border: '1.5px solid rgba(255,215,0,0.4)',
-                  padding: '12px 14px',
+                  padding: '14px 14px 12px',
                   cursor: 'pointer',
                   color: '#fff',
                   flex: '0 0 auto',
                   width: isMobile ? '78%' : 'calc((100% - 30px) / 4)',
-                  minWidth: isMobile ? 220 : 160,
+                  minWidth: isMobile ? 220 : 200,
                   scrollSnapAlign: 'start',
+                  gap: 10,
                 }}
               >
                 <div
-                  className="font-black italic uppercase flex items-center gap-1"
-                  style={{ fontSize: 8, color: '#FFD700', letterSpacing: '0.18em' }}
+                  className="font-black italic uppercase flex items-center gap-1 self-start"
+                  style={{
+                    background: '#FFD700',
+                    color: '#0a0a0a',
+                    fontSize: 8,
+                    letterSpacing: '0.18em',
+                    padding: '2px 6px',
+                    borderRadius: 3,
+                  }}
                 >
-                  ★ {entryLabel}
+                  ★ OFFICIAL
                 </div>
                 <div
-                  className="font-black italic uppercase mt-2"
-                  style={{ fontSize: 14, letterSpacing: '-0.01em' }}
+                  className="font-black italic uppercase"
+                  style={{ fontSize: 16, letterSpacing: '-0.01em', lineHeight: 1.15 }}
                 >
                   {g.name}
                 </div>
                 <div
-                  className="font-black italic uppercase mt-3"
+                  className="font-black italic uppercase"
                   style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.14em', fontVariantNumeric: 'tabular-nums' }}
                 >
-                  {g.plays.toLocaleString()} PLAYS · {g.status.toUpperCase()}
+                  {entryLabel} · {g.plays.toLocaleString()} PLAYS
+                </div>
+                <div className="flex items-end justify-between mt-auto pt-2">
+                  {prizeLabel ? (
+                    <div className="flex flex-col">
+                      <span
+                        className="font-black italic uppercase"
+                        style={{ fontSize: 8, color: '#71717a', letterSpacing: '0.16em' }}
+                      >
+                        Prize
+                      </span>
+                      <span
+                        className="font-black italic tabular-nums"
+                        style={{ fontSize: 18, color: '#FFD700', letterSpacing: '-0.01em', lineHeight: 1 }}
+                      >
+                        {prizeLabel}
+                      </span>
+                    </div>
+                  ) : (
+                    <span
+                      className="font-black italic uppercase"
+                      style={{ fontSize: 14, color: '#14F195', letterSpacing: '0.06em' }}
+                    >
+                      FREE
+                    </span>
+                  )}
+                  <div
+                    className="font-black italic uppercase"
+                    style={{
+                      background: '#FFD700',
+                      color: '#0a0a0a',
+                      borderRadius: 8,
+                      padding: '10px 18px',
+                      fontSize: 14,
+                      letterSpacing: '0.14em',
+                    }}
+                  >
+                    PLAY ▶
+                  </div>
                 </div>
               </button>
             );
