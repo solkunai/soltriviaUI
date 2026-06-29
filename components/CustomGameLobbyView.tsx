@@ -580,24 +580,10 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
   const hasEntered = gameData.player_has_entered;
   const attemptsUsed = gameData.player_attempts ?? 0;
   const hasInProgress = gameData.player_has_in_progress;
-  // Kyle 2026-06-28: gate canPlay on the per-game entry cap from the EF, not
-  // the global CUSTOM_GAME_MAX_ATTEMPTS fallback. Without this gate, a wallet
-  // that already burned its entries on a 1x-cap game (like World Cup) would
-  // still see Play Again, sign the tx, pay 0.0025 SOL on-chain, then the EF
-  // rejected the registration → wallet loses fee for no entry.
-  //
-  // Precedence:
-  //   1) hasInProgress → finishing an unfinished session, always allowed
-  //   2) player_entries_remaining (computed by EF from max_entries_per_player
-  //      AND current entry_count) → 0 means truly capped, >0 means more entries
-  //   3) Fallback to old global limit if EF hasn't returned the field (defensive
-  //      for stale clients hitting an old EF version)
+  const entryCount = gameData.player_entry_count ?? (hasEntered ? 1 : 0);
   const entriesRemaining = gameData.player_entries_remaining;
-  const canPlay = hasInProgress
-    || (entriesRemaining != null
-        ? entriesRemaining > 0
-        : attemptsUsed < CUSTOM_GAME_MAX_ATTEMPTS);
-  const isReEntry = isPaid && hasEntered && attemptsUsed > 0 && !hasInProgress;
+  const canPlay = hasInProgress || entryCount > attemptsUsed;
+  const isReEntry = isPaid && hasEntered && attemptsUsed >= entryCount && !hasInProgress && (entriesRemaining ?? Infinity) > 0;
   // Token-aware display amounts. Variable names kept *SOL for back-compat with
   // call sites; each holds the human-readable amount in whatever token the
   // game uses (formatToken() divides by 10^decimals).
