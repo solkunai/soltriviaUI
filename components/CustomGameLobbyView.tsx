@@ -1162,15 +1162,6 @@ const CustomGameLobbyView: React.FC<CustomGameLobbyViewProps> = ({
                       this branch + the Started block both fired → two stacked
                       Play Now buttons. Single source of truth restored. */}
 
-                  {hasEntered && !isCreator && !canPlay && (
-                    <div className="w-full min-h-[56px] px-6 py-4 bg-zinc-800/50 border border-zinc-700/30 rounded-xl text-center">
-                      <span className="text-zinc-400 font-[1000] italic uppercase text-lg">Max Attempts Reached</span>
-                      {gameData.player_best_score != null && (
-                        <p className="text-zinc-500 text-xs font-black mt-1">Your best: {gameData.player_best_score} XP</p>
-                      )}
-                    </div>
-                  )}
-
                   {isCreator && (
                     <div className="flex flex-col gap-3">
                       {canCreatorFund ? (
