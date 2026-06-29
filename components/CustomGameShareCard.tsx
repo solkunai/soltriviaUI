@@ -155,20 +155,18 @@ const CustomGameShareCard = React.forwardRef<HTMLDivElement, CustomGameShareCard
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div
                 style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 9,
-                  background: '#0a0a0a',
-                  border: `1px solid ${t.accent}40`,
+                  width: 40,
+                  height: 40,
+                  borderRadius: 10,
+                  overflow: 'hidden',
                   display: 'grid',
                   placeItems: 'center',
-                  padding: 6,
                 }}
               >
                 <img
-                  src="/trivia-logo-black.png"
+                  src="/sol_trivia_logo_final.png"
                   alt="Sol Trivia"
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'invert(1)' }}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                 />
               </div>
               <span
