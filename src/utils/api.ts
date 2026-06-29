@@ -2432,6 +2432,19 @@ export async function getMyCustomGames(walletAddress: string): Promise<{ games: 
 
 // ─── Custom Game Prize Pool Functions ────────────────────────────────────
 
+export async function verifyNftQuest(walletAddress: string, questSlug: string): Promise<{ verified: boolean; count: number; required?: number; ready_to_claim?: boolean; already_claimed?: boolean }> {
+  const response = await fetch(`${FUNCTIONS_URL}/verify-nft-quest`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ wallet_address: walletAddress, quest_slug: questSlug }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to verify NFT quest');
+  }
+  return response.json();
+}
+
 export async function prepareSplAta(walletAddress: string, mint: string): Promise<{ status: 'exists' | 'created'; ata: string; tx_signature?: string }> {
   const response = await fetch(`${FUNCTIONS_URL}/prepare-spl-ata`, {
     method: 'POST',

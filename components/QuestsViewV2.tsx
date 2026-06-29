@@ -17,6 +17,7 @@ import {
   claimQuestReward,
   submitQuestProof,
   updateQuestProgress,
+  verifyNftQuest,
   type Quest,
   type QuestSubmissionStatus,
 } from '../src/utils/api';
@@ -107,9 +108,9 @@ function QuestRow({ q, progress, claimed, submission, busy, proofUrl, showProof,
   const pct = max ? Math.min(100, (progress / max) * 100) : 0;
   const claimable = !claimed && progress >= max;
   const isSocial = kind === 'social';
+  const isNftQuest = q.requirement_type === 'nft_collection_owns';
   const pending = submission === 'pending';
 
-  // Button state machine.
   let label = 'ACTIVE';
   let actionable = false;
   let primary = false;
@@ -121,6 +122,9 @@ function QuestRow({ q, progress, claimed, submission, busy, proofUrl, showProof,
     primary = true;
   } else if (pending) {
     label = 'PENDING';
+  } else if (isNftQuest) {
+    label = 'VERIFY MINT';
+    actionable = true;
   } else if (isSocial) {
     label = 'START';
     actionable = true;
@@ -129,6 +133,7 @@ function QuestRow({ q, progress, claimed, submission, busy, proofUrl, showProof,
   const onClick = () => {
     if (busy) return;
     if (claimable) onClaim();
+    else if (isNftQuest) onVerify();
     else if (isSocial && !pending) onStart();
   };
 
@@ -365,8 +370,19 @@ const QuestsViewV2: React.FC = () => {
   };
 
   const handleVerify = async (q: Quest) => {
+    if (!wallet || busyKey) return;
+    if (q.requirement_type === 'nft_collection_owns') {
+      setBusyKey(q.id);
+      try {
+        await verifyNftQuest(wallet, q.slug);
+        await loadData();
+      } finally {
+        setBusyKey(null);
+      }
+      return;
+    }
     const url = (proofUrls[q.id] || '').trim();
-    if (!url || !wallet || busyKey) return;
+    if (!url) return;
     setBusyKey(q.id);
     try {
       const res = await submitQuestProof(wallet, q.slug, url);
