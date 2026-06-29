@@ -364,6 +364,7 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
   const {
     onEnterTrivia,
     onCreateCustomGame,
+    onViewCustomGame,
     onEnterDuels,
     onStartPractice,
     onOpenFreePlay,
@@ -385,6 +386,41 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
   const [winnersPage, setWinnersPage] = useState(0); // 5 per page, Kyle 2026-06-09
   const [streak, setStreak] = useState(0);
   const [feed, setFeed] = useState<LiveFeedItem[]>([]);
+  const [featuredGames, setFeaturedGames] = useState<Array<{
+    slug: string;
+    name: string;
+    plays: number;
+    status: string;
+    entryFeeLamports: number;
+    prizePotLamports: number;
+    tokenSymbol: string | null;
+    tokenDecimals: number | null;
+  }>>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('custom_games')
+      .select('slug, name, total_plays, status, entry_fee_lamports, prize_pot_lamports, prize_model, token_symbol, token_decimals')
+      .eq('is_featured', true)
+      .in('status', ['active', 'started'])
+      .order('created_at', { ascending: false })
+      .limit(5)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setFeaturedGames(((data ?? []) as any[]).map((g) => ({
+          slug: g.slug,
+          name: g.name ?? 'Featured Game',
+          plays: g.total_plays ?? 0,
+          status: g.status ?? 'active',
+          entryFeeLamports: g.entry_fee_lamports ?? 0,
+          prizePotLamports: g.prize_pot_lamports ?? 0,
+          tokenSymbol: g.token_symbol ?? null,
+          tokenDecimals: g.token_decimals ?? null,
+        })));
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   // Live feed ticker — continuously refreshes every 30s. Used by the
   // marquee strip between MINT CTA and QUICK PLAY tiles.
@@ -914,6 +950,123 @@ const HomeViewV2: React.FC<HomeViewV2Props> = (props) => {
                   />
                   <span style={{ color: accentColor }}>{f.text}</span>
                 </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {featuredGames.length > 0 && (
+        <div className="mb-4">
+          <div
+            className="font-black italic uppercase mb-3 flex items-center"
+            style={{ fontSize: 10, color: '#FFD700', letterSpacing: '0.18em', gap: 6 }}
+          >
+            <span>★</span>
+            <span>FEATURED · BY SOL TRIVIA</span>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              overflowX: 'auto',
+              paddingBottom: 4,
+              scrollSnapType: 'x mandatory',
+              scrollbarWidth: 'none',
+            }}
+          >
+            <style>{`div::-webkit-scrollbar { display: none; }`}</style>
+            {featuredGames.map((g) => {
+              const tokDec = g.tokenDecimals ?? 9;
+              const tokSym = g.tokenSymbol ?? 'SOL';
+              const entryLabel = g.entryFeeLamports > 0
+                ? `${(g.entryFeeLamports / Math.pow(10, tokDec)).toFixed(Math.min(tokDec, 3))} ${tokSym} ENTRY`
+                : 'FREE ENTRY';
+              const prizeLabel = g.prizePotLamports > 0
+                ? `${(g.prizePotLamports / Math.pow(10, tokDec)).toLocaleString(undefined, { maximumFractionDigits: Math.min(tokDec, 2) })} ${tokSym}`
+                : null;
+              return (
+                <button
+                  key={g.slug}
+                  onClick={() => onViewCustomGame?.(g.slug)}
+                  className="rounded-xl text-left active:opacity-90 flex flex-col"
+                  style={{
+                    background: 'rgba(255,215,0,0.06)',
+                    border: '1.5px solid rgba(255,215,0,0.4)',
+                    padding: '14px',
+                    cursor: 'pointer',
+                    color: '#fff',
+                    flex: '0 0 auto',
+                    width: isMobile ? '85%' : 280,
+                    minWidth: isMobile ? 240 : 280,
+                    scrollSnapAlign: 'start',
+                    gap: 10,
+                  }}
+                >
+                  <div
+                    className="font-black italic uppercase flex items-center gap-1 self-start"
+                    style={{
+                      background: '#FFD700',
+                      color: '#0a0a0a',
+                      fontSize: 8,
+                      letterSpacing: '0.18em',
+                      padding: '2px 6px',
+                      borderRadius: 3,
+                    }}
+                  >
+                    ★ OFFICIAL
+                  </div>
+                  <div
+                    className="font-black italic uppercase"
+                    style={{ fontSize: 16, letterSpacing: '-0.01em', lineHeight: 1.15 }}
+                  >
+                    {g.name}
+                  </div>
+                  <div
+                    className="font-black italic uppercase"
+                    style={{ fontSize: 9, color: '#71717a', letterSpacing: '0.14em', fontVariantNumeric: 'tabular-nums' }}
+                  >
+                    {entryLabel} · {g.plays.toLocaleString()} PLAYS
+                  </div>
+                  <div className="flex items-end justify-between mt-auto pt-2">
+                    {prizeLabel ? (
+                      <div className="flex flex-col">
+                        <span
+                          className="font-black italic uppercase"
+                          style={{ fontSize: 8, color: '#71717a', letterSpacing: '0.16em' }}
+                        >
+                          Prize
+                        </span>
+                        <span
+                          className="font-black italic tabular-nums"
+                          style={{ fontSize: 18, color: '#FFD700', letterSpacing: '-0.01em', lineHeight: 1 }}
+                        >
+                          {prizeLabel}
+                        </span>
+                      </div>
+                    ) : (
+                      <span
+                        className="font-black italic uppercase"
+                        style={{ fontSize: 14, color: '#14F195', letterSpacing: '0.06em' }}
+                      >
+                        FREE
+                      </span>
+                    )}
+                    <div
+                      className="font-black italic uppercase"
+                      style={{
+                        background: '#FFD700',
+                        color: '#0a0a0a',
+                        borderRadius: 8,
+                        padding: '10px 18px',
+                        fontSize: 14,
+                        letterSpacing: '0.14em',
+                      }}
+                    >
+                      PLAY ▶
+                    </div>
+                  </div>
+                </button>
               );
             })}
           </div>
