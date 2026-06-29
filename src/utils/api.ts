@@ -2432,6 +2432,19 @@ export async function getMyCustomGames(walletAddress: string): Promise<{ games: 
 
 // ─── Custom Game Prize Pool Functions ────────────────────────────────────
 
+export async function prepareSplAta(walletAddress: string, mint: string): Promise<{ status: 'exists' | 'created'; ata: string; tx_signature?: string }> {
+  const response = await fetch(`${FUNCTIONS_URL}/prepare-spl-ata`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ wallet_address: walletAddress, mint }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to prepare SPL ATA');
+  }
+  return response.json();
+}
+
 export async function joinCustomGame(gameId: string, walletAddress: string, txSignature: string): Promise<{
   success: boolean;
   player_count: number;

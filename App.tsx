@@ -114,7 +114,7 @@ import DuelWaitingView from './components/DuelWaitingView';
 import DuelQuizView from './components/DuelQuizView';
 import DuelResultsView from './components/DuelResultsView';
 import CompeteLobbyView from './components/CompeteLobbyView';
-import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, buildRoundEntryTx, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, createDuel, joinDuel, getDuel, updateDuelStatus, getOnboardingStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type ActiveDuel } from './src/utils/api';
+import { getPlayerLives, getRoundEntriesUsed, startGame, completeSession, registerPlayerProfile, updateProfile, updateQuestProgress, getLeaderboard, ensureRoundOnChain, buildRoundEntryTx, initializeProgram, startPracticeGame, registerReferral, getSeekerProfile, checkGamePass, startCustomGame, joinCustomGame, startCustomGameTimer, recordCustomGameFunding, prepareSplAta, createDuel, joinDuel, getDuel, updateDuelStatus, getOnboardingStatus, type CustomGameData, type ClaimablePayout, type ClaimableCustomGameWin, type RefundableEntry, type RefundableCustomGame, type ActiveDuel } from './src/utils/api';
 import OnboardingModal from './components/OnboardingModal';
 import RoundRecoveryModal from './components/RoundRecoveryModal';
 import {
@@ -1332,8 +1332,15 @@ const App: React.FC = () => {
       alert('Game is not set up on-chain yet. Please try again later.');
       return;
     }
-    const { blockhash } = await getRecentBlockhashWithRetry(connection);
     const isSplGame = !!gameData.token_mint;
+    if (isSplGame) {
+      try {
+        await prepareSplAta(publicKey.toBase58(), gameData.token_mint!);
+      } catch (e) {
+        console.warn('prepare-spl-ata failed, falling back to client-paid ATA:', e);
+      }
+    }
+    const { blockhash } = await getRecentBlockhashWithRetry(connection);
     const instructions: TransactionInstruction[] = [];
     if (isSplGame) {
       instructions.push(buildCreateAtaIdempotentIx({
