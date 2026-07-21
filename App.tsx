@@ -94,6 +94,7 @@ import QuizView from './components/QuizView';
 import ResultsView from './components/ResultsView';
 import PracticeResultsView from './components/PracticeResultsView';
 import WalletRequiredModal from './components/WalletRequiredModal';
+import MintPromoPopup from './components/MintPromoPopup';
 import LegalDisclaimerModal from './components/LegalDisclaimerModal';
 import WalletConnectButton from './components/WalletConnectButton';
 import PwaInstallPrompt from './components/PwaInstallPrompt';
@@ -185,6 +186,9 @@ const App: React.FC = () => {
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [showWalletRequired, setShowWalletRequired] = useState(false);
+  // Mint promo popup: shows on every fresh page load/reload (in-memory state,
+  // no localStorage) so it re-appears on hard refresh but not on internal nav.
+  const [showMintPromo, setShowMintPromo] = useState(true);
   const [appLoading, setAppLoading] = useState(true);
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(() => {
     try { return localStorage.getItem('soltrivia_terms_accepted') === 'true'; } catch { return false; }
@@ -3455,6 +3459,14 @@ const App: React.FC = () => {
         onClose={() => setShowWalletRequired(false)}
         onOpenTerms={() => setCurrentView(View.TERMS)}
         onOpenPrivacy={() => setCurrentView(View.PRIVACY)}
+      />
+      <MintPromoPopup
+        isOpen={showMintPromo}
+        onClose={() => setShowMintPromo(false)}
+        onMintNow={() => {
+          setShowMintPromo(false);
+          setCurrentView(View.MINT);
+        }}
       />
       <ContentDisclaimerModal
         isOpen={showContentDisclaimer}
