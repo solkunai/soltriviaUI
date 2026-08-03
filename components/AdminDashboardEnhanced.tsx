@@ -336,6 +336,13 @@ const UsersView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const copyWallet = (wallet: string) => {
+    navigator.clipboard.writeText(wallet).then(() => {
+      setCopyFeedback(wallet);
+      setTimeout(() => setCopyFeedback(null), 1500);
+    });
+  };
   useEffect(() => {
     setLoading(true);
     const from = page * USERS_PAGE_SIZE;
@@ -369,7 +376,23 @@ const UsersView: React.FC = () => {
           <tbody>
             {list.map((p) => (
               <tr key={p.wallet_address} className="border-b border-white/5">
-                <td className="py-2 px-2 font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 8)}...{p.wallet_address.slice(-4)}</td>
+                <td className="py-2 px-2">
+                  <span className="font-mono text-xs text-zinc-300">{p.wallet_address.slice(0, 8)}...{p.wallet_address.slice(-4)}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyWallet(p.wallet_address)}
+                    className="ml-2 px-2 py-0.5 bg-white/10 hover:bg-[#14F195]/20 text-[10px] font-bold rounded"
+                  >
+                    {copyFeedback === p.wallet_address ? 'Copied!' : 'Copy'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.open(`https://solscan.io/account/${p.wallet_address}`, '_blank')}
+                    className="ml-1 px-2 py-0.5 bg-white/10 hover:bg-blue-400/20 text-[10px] font-bold rounded"
+                  >
+                    Solscan
+                  </button>
+                </td>
                 <td className="py-2 px-2 text-white text-sm">{p.username || '—'}</td>
                 <td className="py-2 px-2 text-[#14F195]">{p.total_games_played ?? 0}</td>
                 <td className="py-2 px-2 text-[#14F195]">{(p.total_points ?? 0).toLocaleString()}</td>
