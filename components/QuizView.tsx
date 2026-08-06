@@ -398,7 +398,7 @@ const QuizView: React.FC<QuizViewProps> = ({ sessionId, onFinish, onQuit, mode =
     }
 
     // Reveal the correct answer (especially when user gets it wrong)
-    if (actualCorrectIndex >= 0 && !isPracticeMode) {
+    if (actualCorrectIndex >= 0) {
       const updatedQuestions = [...questions];
       updatedQuestions[currentIdx].correctAnswer = actualCorrectIndex;
       setQuestions(updatedQuestions);
