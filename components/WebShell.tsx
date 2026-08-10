@@ -668,6 +668,26 @@ export function WebShell({
               </span>
             </span>
           </button>
+          {/* How to Play — compact "?" between wordmark and lives/connect.
+              Onboarding should be one tap, not buried in the drawer. Kyle 2026-08-10. */}
+          {onOpenGuide && (
+            <button
+              onClick={onOpenGuide}
+              aria-label="How to play"
+              className="flex items-center justify-center active:scale-95 transition-all"
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: '50%',
+                background: accent,
+                border: 'none',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              <span className="text-black font-black text-xs italic">?</span>
+            </button>
+          )}
           <div className="flex-1" />
           {/* Lives chip — tappable to navigate to LIVES page. Heart is FILLED
               red to match the desktop topbar (was outline-only on mobile
@@ -931,16 +951,17 @@ export function WebShell({
                 ))}
               </div>
 
-              {/* HELP items — FAQ modal, not a navigable view so it's a plain
-                  button rather than an accountItems entry. Kyle 2026-08-10. */}
-              {onOpenFAQ && (
-                <div className="px-3 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                  <div
-                    className="px-3 mb-2 font-black italic uppercase"
-                    style={{ fontSize: 9, letterSpacing: '0.18em', color: '#52525b' }}
-                  >
-                    HELP
-                  </div>
+              {/* HELP items — FAQ modal + Discord link. Neither is a navigable
+                  view so they're plain buttons rather than accountItems
+                  entries. Kyle 2026-08-10. */}
+              <div className="px-3 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                <div
+                  className="px-3 mb-2 font-black italic uppercase"
+                  style={{ fontSize: 9, letterSpacing: '0.18em', color: '#52525b' }}
+                >
+                  HELP
+                </div>
+                {onOpenFAQ && (
                   <button
                     onClick={() => {
                       onOpenFAQ();
@@ -963,8 +984,31 @@ export function WebShell({
                       FAQ
                     </span>
                   </button>
-                </div>
-              )}
+                )}
+                <a
+                  href={SOCIAL_LINKS.discord}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setDrawerOpen(false)}
+                  className="w-full flex items-center justify-between rounded-lg active:opacity-70"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    padding: '11px 12px',
+                    marginBottom: 2,
+                    color: '#fff',
+                    cursor: 'pointer',
+                    textDecoration: 'none',
+                  }}
+                >
+                  <span
+                    className="font-black italic uppercase"
+                    style={{ fontSize: 13, letterSpacing: '0.06em' }}
+                  >
+                    DISCORD
+                  </span>
+                </a>
+              </div>
 
               {/* Footer disconnect */}
               {walletShort && (
