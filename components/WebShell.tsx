@@ -251,8 +251,10 @@ type WebShellProps = {
    *   - 'simple' (default): FAQ + lives + BUY LIVES + avatar
    */
   topbarMode?: 'search' | 'simple';
-  /** Opens the FAQ / How to Play modal. */
+  /** Opens the How to Play guide modal. */
   onOpenGuide?: () => void;
+  /** Opens the FAQ modal. */
+  onOpenFAQ?: () => void;
   /** Fired when a disconnected user clicks the CONNECT pill in the topbar. */
   onConnect?: () => void;
 };
@@ -476,6 +478,7 @@ export function WebShell({
   accent = '#14F195',
   topbarMode = 'simple',
   onOpenGuide,
+  onOpenFAQ,
   onConnect,
 }: WebShellProps) {
   const playItems: NavItem[] = [
@@ -927,6 +930,41 @@ export function WebShell({
                   </button>
                 ))}
               </div>
+
+              {/* HELP items — FAQ modal, not a navigable view so it's a plain
+                  button rather than an accountItems entry. Kyle 2026-08-10. */}
+              {onOpenFAQ && (
+                <div className="px-3 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                  <div
+                    className="px-3 mb-2 font-black italic uppercase"
+                    style={{ fontSize: 9, letterSpacing: '0.18em', color: '#52525b' }}
+                  >
+                    HELP
+                  </div>
+                  <button
+                    onClick={() => {
+                      onOpenFAQ();
+                      setDrawerOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between rounded-lg active:opacity-70"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      padding: '11px 12px',
+                      marginBottom: 2,
+                      color: '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span
+                      className="font-black italic uppercase"
+                      style={{ fontSize: 13, letterSpacing: '0.06em' }}
+                    >
+                      FAQ
+                    </span>
+                  </button>
+                </div>
+              )}
 
               {/* Footer disconnect */}
               {walletShort && (

@@ -84,6 +84,7 @@ import QuestsView from './components/QuestsView';
 import ProfileViewV2 from './components/ProfileViewV2';
 import PlayView from './components/PlayView';
 import GuideModal from './components/GuideModal';
+import FAQModal from './components/FAQModal';
 import BuyLivesModal from './components/BuyLivesModal';
 import FirstTimeDepositModal from './components/FirstTimeDepositModal';
 import { getBalanceSafely } from './src/utils/balance';
@@ -180,6 +181,7 @@ const App: React.FC = () => {
   const isEnteringRoundRef = useRef(false);
   const [isEnteringRound, setIsEnteringRound] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [isFAQOpen, setIsFAQOpen] = useState(false);
   const [nerdMintCopied, setNerdMintCopied] = useState(false);
   const [isBuyLivesOpen, setIsBuyLivesOpen] = useState(false);
   const [showFirstTimeDeposit, setShowFirstTimeDeposit] = useState(false);
@@ -2496,6 +2498,7 @@ const App: React.FC = () => {
             }}
             onConnect={() => setShowWalletRequired(true)}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             rightRail={
               <HomeRightRail
                 lives={livesDisplayReady ? lives : null}
@@ -2552,6 +2555,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <LeaderboardViewV2 />
@@ -2569,6 +2573,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
             rightRail={
               <HomeRightRail
@@ -2608,6 +2613,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <FreePlayViewV2
@@ -2630,6 +2636,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <QuestsViewV2 />
@@ -2647,6 +2654,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             {!connected ? (
@@ -2743,6 +2751,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <LivesViewV2
@@ -2769,6 +2778,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
             rightRail={
               <HomeRightRail
@@ -2821,6 +2831,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <ResultsView
@@ -2859,6 +2870,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <PracticeResultsView
@@ -2906,6 +2918,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
             topbarMode="search"
           >
@@ -2928,6 +2941,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             {connected ? (
@@ -2989,6 +3003,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <CustomGameLobbyView
@@ -3039,6 +3054,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <CustomGameResultsView
@@ -3074,6 +3090,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
             topbarMode="search"
           >
@@ -3125,6 +3142,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <DuelWaitingView
@@ -3178,6 +3196,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <DuelResultsView
@@ -3225,6 +3244,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <ReferralsViewV2 />
@@ -3242,6 +3262,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <GamePassViewV2
@@ -3263,6 +3284,7 @@ const App: React.FC = () => {
               else setIsBuyLivesOpen(true);
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onConnect={() => setShowWalletRequired(true)}
           >
             <MintViewV2
@@ -3285,6 +3307,7 @@ const App: React.FC = () => {
               }
             }}
             onOpenGuide={() => setIsGuideOpen(true)}
+            onOpenFAQ={() => setIsFAQOpen(true)}
             onOpenBuyLives={() => {
               if (!connected) {
                 setShowWalletRequired(true);
@@ -3423,6 +3446,10 @@ const App: React.FC = () => {
         onClose={() => setIsGuideOpen(false)}
         onOpenTerms={() => setCurrentView(View.TERMS)}
         onOpenPrivacy={() => setCurrentView(View.PRIVACY)}
+      />
+      <FAQModal
+        isOpen={isFAQOpen}
+        onClose={() => setIsFAQOpen(false)}
       />
       <CategorySelectorModal
         isOpen={showCategorySelector}
