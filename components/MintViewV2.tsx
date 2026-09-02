@@ -8,8 +8,8 @@
  * + mini thumbs → MEET THE FOUR gallery (4 large cards) → YOUR COLLECTION
  * (owned, when any) → recent mints chips → legend banner.
  *
- * All display data is live: eligibility, the wallet's collection (Helius DAS),
- * and the recent-mints feed. MINT IS NOT LIVE YET — `MINT_LIVE = false` renders
+ * All display data is live: the wallet's collection (Helius DAS) and the
+ * recent-mints feed. MINT IS NOT LIVE YET — `MINT_LIVE = false` renders
  * the gold CTA as a clearly-marked "MINTING OPENS SOON" placeholder. Flip
  * MINT_LIVE + wire the on-chain build→sign once the V2 `mint_commemorative`
  * instruction ships, and set COLLECTION_ADDRESS.
@@ -28,7 +28,6 @@ import {
   type ArchetypeKey,
 } from '../src/utils/mintData';
 import {
-  fetchMintEligibility,
   fetchCollection,
   fetchRecentMints,
   fetchMintedCount,
@@ -57,12 +56,11 @@ function timeAgo(iso: string) {
   return `${Math.floor(h / 24)}d`;
 }
 
-const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }) => {
+const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified }) => {
   const isMobile = useIsMobile();
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
 
-  const [eligible, setEligible] = useState<boolean | null>(null);
   const [collection, setCollection] = useState<CollectionState>({
     counts: { genius: 0, scholar: 0, competitor: 0, champion: 0 },
     typesOwned: 0,
@@ -113,12 +111,10 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
   const refresh = useCallback(async () => {
     if (!walletAddress) return;
     try {
-      const [elig, coll, rec] = await Promise.all([
-        fetchMintEligibility(walletAddress),
+      const [coll, rec] = await Promise.all([
         fetchCollection(walletAddress, collectionAddress),
         fetchRecentMints(8),
       ]);
-      setEligible(elig);
       setCollection(coll);
       setRecent(rec);
     } catch {
@@ -239,17 +235,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
 
             {/* CTA — gold bar; switches between OPENS-SOON / MINT NOW / MINTING… */}
             <button
-              onClick={mintLive && !minting ? () => {
-                // Eligibility gate (Kyle 2026-06-25): mirror native — show
-                // popup with the qualifier rule if user hasn't earned the
-                // right to mint yet. Prevents an ineligible user from
-                // wasting a tx via the on-chain mint flow.
-                if (eligible === false) {
-                  window.alert('Not Eligible Yet\n\nPlay 1 paid game OR 3 practice games before minting.');
-                  return;
-                }
-                setGateOpen(true);
-              } : undefined}
+              onClick={mintLive && !minting ? () => setGateOpen(true) : undefined}
               disabled={!mintLive || minting}
               className="w-full font-black italic uppercase rounded-xl mt-4 flex items-center justify-center gap-2"
               style={{
@@ -271,18 +257,7 @@ const MintViewV2: React.FC<Props> = ({ walletAddress, isSeekerVerified, onPlay }
                   : `MINT NOW · ${seekerPrice} SOL →`}
             </button>
             <div className="font-black italic uppercase text-center" style={{ fontSize: 8, color: '#a1a1aa', letterSpacing: '0.12em', marginTop: 9, lineHeight: 1.5 }}>
-              {!mintLive && (
-                <>
-                  {eligible === false ? 'PLAY 3 PRACTICE GAMES OR 1 PAID GAME TO UNLOCK · ' : 'ELIGIBILITY LOCKED IN · '}
-                </>
-              )}
               ONE-PER-MINT · STORED AS COMPRESSED NFT · REVEAL IS RANDOM, ASSIGNED ON-CHAIN
-              {!mintLive && eligible === false && onPlay && (
-                <>
-                  {' · '}
-                  <button onClick={onPlay} style={{ color: MTC.gold, cursor: 'pointer' }}>PLAY →</button>
-                </>
-              )}
             </div>
           </div>
         </div>

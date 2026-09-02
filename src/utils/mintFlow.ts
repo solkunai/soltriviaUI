@@ -1,13 +1,13 @@
 /**
  * mintFlow (web) — display reads + mint execution for the Sol Trivia Elementals.
  *
- * READS: mint eligibility, on-chain mint config + per-wallet mint count,
- * wallet collection holdings (Helius DAS), recent-mints feed, total supply.
+ * READS: on-chain mint config + per-wallet mint count, wallet collection
+ * holdings (Helius DAS), recent-mints feed, total supply.
  *
  * MINT EXECUTION: `executeMintCommemorative` builds the on-chain ix, wraps in
  * a VersionedTransaction, hands it to the wallet adapter for signing, and
  * confirms. The mint is gated client-side by the `mint_live` feature flag, and
- * gated server-side by the V2 program (eligibility + cap + paused check).
+ * gated server-side by the V2 program (cap + paused check only).
  */
 import {
   Connection,
@@ -43,43 +43,6 @@ export type CollectionState = {
   typesOwned: number;
   isLegend: boolean;
 };
-
-// ── Mint eligibility (GATE STEP 1) ────────────────────────────────────────────
-// Two paths to qualify (Kyle 2026-06-08):
-//   A. ANY paid play — round, custom game, or duel session in game_sessions
-//      with completed_at set. One play = eligible forever.
-//   B. Practice-only path — 3+ practice_runs entries AND username + onboarded
-//      timestamp set on player_profiles.
-// On-chain eligibility check was REMOVED from the contract; the contract only
-// enforces the per-wallet cap (max 15). Bypassing this client gate just means
-// the user paid 0.02/0.01 SOL to mint without "earning" it through gameplay.
-export async function fetchMintEligibility(walletAddress: string): Promise<boolean> {
-  const wallet = walletAddress?.trim();
-  if (!wallet) return false;
-
-  // Path A: any completed paid game session.
-  const { count: paidCount } = await supabase
-    .from('game_sessions')
-    .select('id', { count: 'exact', head: true })
-    .eq('wallet_address', wallet)
-    .not('completed_at', 'is', null)
-    .limit(1);
-  if ((paidCount ?? 0) > 0) return true;
-
-  // Path B: profile + 3+ practice runs.
-  const { data: profile } = await supabase
-    .from('player_profiles')
-    .select('username, onboarded_at')
-    .eq('wallet_address', wallet)
-    .maybeSingle();
-  if (!profile?.username || !profile?.onboarded_at) return false;
-
-  const { count: practiceCount } = await supabase
-    .from('practice_runs')
-    .select('id', { count: 'exact', head: true })
-    .eq('wallet_address', wallet);
-  return (practiceCount ?? 0) >= 3;
-}
 
 // ── Collection counts (Set Completion / Your Collection / Legend) ─────────────
 export async function fetchCollection(
